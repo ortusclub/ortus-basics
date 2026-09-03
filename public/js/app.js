@@ -16597,11 +16597,18 @@ function _decorateLocalLiveStatus(s) {
       // "Throttled": session-expired / login copy is authoritative and must
       // win in the compact pill too.
       const reason = `${a.state || ''} ${a.sub || ''} ${a.result || ''}`.toLowerCase();
-      const needsLogin = a.state === 'needs-login'
-        || /needs? (?:to )?(?:be )?logged|needs? login|log(?:ged)? (?:back )?in|session expired/.test(reason);
+      const needsLogin = a.needsLogin != null ? !!a.needsLogin : (a.state === 'needs-login'
+        || /needs? (?:to )?(?:be )?logged|needs? login|log(?:ged)? (?:back )?in|session expired/.test(reason));
+      // The engine's own verdict wins. Read off prose, a weekly cap missed both
+      // its patterns — the sentence is "used up its invitations for the week" —
+      // and landed in the /rate.?limit/ catch-all below, so a capped account's
+      // pill read "Throttled": the one word that promises it comes back on its
+      // own (operator, 2026-09-03).
+      const weeklyCap = a.weeklyCap != null ? !!a.weeklyCap
+        : /weekly|invitation limit|invitations for the week/.test(reason);
       const parkReason = needsLogin ? 'needslogin'
         : /proxy|407/.test(reason) ? 'proxy'
-        : /weekly|invitation limit/.test(reason) ? 'weekly'
+        : weeklyCap ? 'weekly'
         : /throttl|429|rate.?limit/.test(reason) ? 'throttle'
         : /cannot.?open|browser/.test(reason) ? 'browser-error'
         : (a.state || 'stopped');
@@ -16612,6 +16619,7 @@ function _decorateLocalLiveStatus(s) {
         dailyLimit: Number(a.dailyLimit) || 0,
         parked: ['benched', 'stopped', 'cannot-open', 'needs-login', 'identity-restricted'].includes(a.state),
         needsLogin,
+        weeklyCap,
         parkReason,
       };
     });
@@ -27601,12 +27609,12 @@ function _activeProfileChip(name, status) {
   if (parkedHit) {
     const r = parkedHit.reason;
     if (r === 'session_expired')  return { label: 'Needs login',         cls: 'is-warn' };
-    if (r === 'weekly_limit_429') return { label: 'LinkedIn cap·invites', cls: 'is-warn' };
+    if (r === 'weekly_limit_429') return { label: 'Weekly limit reached', cls: 'is-warn' };
     if (r === 'consecutive_skips') return { label: 'Parked·skips',       cls: 'is-warn' };
     return { label: 'Parked', cls: 'is-warn' };
   }
   if (warningHit) {
-    if (warningHit.kind === 'weekly_limit') return { label: 'LinkedIn cap·invites', cls: 'is-warn' };
+    if (warningHit.kind === 'weekly_limit') return { label: 'Weekly limit reached', cls: 'is-warn' };
     if (warningHit.kind === 'note_limit')   return { label: 'Out of note credits', cls: 'is-warn' };
     if (warningHit.kind === 'rate_limited') return { label: 'Rate limited', cls: 'is-warn' };
     return { label: 'Action needed', cls: 'is-warn' };
@@ -27615,7 +27623,7 @@ function _activeProfileChip(name, status) {
     const r = String(endHit.reason || '');
     if (/note credit/i.test(r))     return { label: 'Out of note credits', cls: 'is-warn' };
     if (/InMail/i.test(r))          return { label: 'LinkedIn cap·InMail', cls: 'is-warn' };
-    if (/weekly|429/i.test(r))      return { label: 'LinkedIn cap·invites', cls: 'is-warn' };
+    if (/weekly|429/i.test(r))      return { label: 'Weekly limit reached', cls: 'is-warn' };
     if (/session expired/i.test(r)) return { label: 'Needs login', cls: 'is-warn' };
     return { label: 'Batch done', cls: 'is-done' };
   }
@@ -27639,6 +27647,32 @@ async function toggleProfileSkip(id, checked, event) {
   }
 }
 window.toggleProfileSkip = toggleProfileSkip;
+
+// "I've logged back in" — the operator has re-authenticated the GoLogin profile
+// themselves, so clear the park and put the account back in the rotation for the
+// next round. Same unpark the Retry button uses, minus the browser launch: the
+// browser is already open, that is where they just logged in.
+const _reloginToast = (m) => { try { showCampaignToast(m, 4500); } catch (_) { /* toast is best-effort */ } };
+async function markLoggedBackIn(profileId, btn) {
+  if (!profileId) return;
+  const el = btn || null;
+  const was = el ? el.textContent : '';
+  if (el) { el.disabled = true; el.textContent = 'Putting it back…'; }
+  try {
+    const r = await fetch(`/api/campaign/profile/${encodeURIComponent(profileId)}/retry`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ open: false }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    if (el) el.textContent = 'Back in the rotation';
+    _reloginToast(`${j.profileName || 'That account'} rejoins on the next round.`);
+  } catch (err) {
+    if (el) { el.disabled = false; el.textContent = was; }
+    _reloginToast(`Couldn't put it back: ${err.message}`);
+  }
+}
+window.markLoggedBackIn = markLoggedBackIn;
 
 function renderPrimaryPanel(status) {
   const el = document.getElementById('primary-panel');
@@ -27714,6 +27748,11 @@ function renderActiveProfiles(status) {
     const openBtn = id
       ? `<button type="button" class="prof-open-btn" title="Open this account's browser to log in / fix issues" onclick="event.stopPropagation(); openProfileBrowser('${escHtml(id)}')">Open</button>`
       : '<span></span>';
+    // Only on the account that is actually signed out, and worded as the thing
+    // the operator has just done rather than as a command to the machine.
+    const reloginBtn = (id && chip.label === 'Needs login')
+      ? `<button type="button" class="prof-relogin-btn" title="You've signed this account back into LinkedIn — put it back in the rotation for the next round" onclick="event.stopPropagation(); markLoggedBackIn('${escHtml(id)}', this)">I'm logged back in</button>`
+      : '<span></span>';
     // v2.78: CC+IC connection-to-primary label.
     const pc = (status.primaryConn && id) ? status.primaryConn[id] : null;
     const primaryTag = pc === 'connected'
@@ -27729,6 +27768,7 @@ function renderActiveProfiles(status) {
         ${primaryTag}
         <span class="vj-prof-chip">${escHtml(isSkipped ? 'Skipped' : chip.label)}</span>
         <span class="vj-prof-today">${escHtml(todayCell)}</span>
+        ${reloginBtn}
         ${openBtn}
         ${toggle}
       </div>
@@ -28007,13 +28047,17 @@ function _stageAcctPill(a, isCurrent, counts) {
       : (sent ? `${sent} sent · ${cr.available} left` : `${cr.available} credits`);
   }
   const benchWord = _benchWord(a.bench);
-  let cls = '', text = count, tip = '';
+  // tipExact marks a tooltip that is already a complete sentence. The generic
+  // "— retries next run" suffix below is true of a bench and false of both a
+  // weekly cap (nothing until it resets) and a logged-out account (nothing
+  // until the operator says they are back in).
+  let cls = '', text = count, tip = '', tipExact = false;
   if (a.sweepAction) { cls = 'bad'; text = 'Needs login'; tip = a.sweepAction; }
   else if (a.sweepChecked && Number(a.sweepAccepted) > 0) { cls = 'ok'; text = `${a.sweepAccepted} accepted`; tip = 'Checked successfully during the latest acceptance sweep.'; }
   else if (a.sweepChecked) { cls = ''; text = '0 accepted'; tip = 'Checked successfully during the latest acceptance sweep.'; }
-  else if (a.needsLogin) { cls = 'bad'; text = 'Logged out'; }
+  else if (a.needsLogin) { cls = 'bad'; text = 'Logged out'; tipExact = true; tip = 'This account is signed out of LinkedIn. Log back in, then tell the campaign — it rejoins on the next round.'; }
   else if (a.parkReason === 'proxy') { cls = 'bad'; text = 'Proxy refused'; }
-  else if (a.weeklyCap || a.parkReason === 'weekly') { cls = 'bad'; text = 'Weekly cap'; }
+  else if (a.weeklyCap || a.parkReason === 'weekly') { cls = 'bad'; text = 'Weekly limit reached'; tipExact = true; tip = `LinkedIn's weekly invitation limit. This account sends nothing more until it resets ${_nextMondayText()}.`; }
   else if (benchWord) { cls = 'bad'; text = benchWord; tip = String(a.bench || ''); }
   else if (a.parkReason === 'throttle' || a.parkReason === 'throttle_paused') { cls = 'warn'; text = 'Throttled'; }
   else if (a.parkReason === 'unconfirmed_streak') { cls = 'bad'; text = '5 unconfirmed'; tip = 'Five leads in a row could not be confirmed. Open this account, then choose Retry.'; }
@@ -28053,7 +28097,7 @@ function _stageAcctPill(a, isCurrent, counts) {
   // Credits and the note allowance are separate LinkedIn limits and an account
   // can be short of both, so the tooltip carries whichever apply. Picking one
   // dropped the note explanation on every FG account that had credit data.
-  const title = tip ? `${tip} — retries next run` : [cr ? _fgCreditTip(cr) : '', noteTip].filter(Boolean).join('\n');
+  const title = tip ? (tipExact ? tip : `${tip} — retries next run`) : [cr ? _fgCreditTip(cr) : '', noteTip].filter(Boolean).join('\n');
   return `<button type="button" class="stg-acct" onclick="stageAcctPick(this,'${escHtml(a.profileId || '')}')"`
     + `${title ? ` title="${escHtml(title)}"` : ''}>`
     + `<span class="cap-badge ${cls}"><span class="nm">${escHtml(nm)}</span><span class="n">${escHtml(text)}</span></span></button>`;
@@ -28083,6 +28127,10 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '') {
   const acts = [];
   if (isCurrent && canWatch) acts.push(`<button type="button" onclick="openCloudCampaignView('${escHtml(cid)}')">👁 Watch this browser live</button>`);
   if (needsLogin && a.profileId) acts.push(`<button type="button" class="stg-login-btn" onclick="openProfileBrowser('${escHtml(a.profileId)}')">Open GoLogin profile</button>`);
+  // The other half of a logged-out account: the operator has signed back in and
+  // nothing on this machine can tell. Without it the account sat out the rest of
+  // the run for a problem that had already been fixed.
+  if (needsLogin && a.profileId) acts.push(`<button type="button" class="stg-relogin-btn" onclick="markLoggedBackIn('${escHtml(a.profileId)}',this)">I've logged back in</button>`);
   // No Retry on a weekly cap. It's a window, not a cooldown — nothing changes
   // until it rolls over, and asking again only spends strikes.
   if (benched && !a.needsLogin && !weekly) acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Retry — clear the bench</button>`);
@@ -28923,9 +28971,11 @@ function renderLiveStage(root, status) {
     email: a.email,
     dailyCount: a.sentToday,
     dailyLimit: a.dailyLimit,
-    needsLogin: /needs-login|logged-out|stopped/.test(String(a.state || '').toLowerCase())
-      && /login|logged/.test(`${a.state || ''} ${a.sub || ''}`.toLowerCase()),
-    weeklyCap: /weekly/.test(`${a.state || ''} ${a.sub || ''}`.toLowerCase()),
+    // Both come from the engine now. Sniffing them out of state/sub missed the
+    // weekly cap, whose sentence never contains the word "weekly", so a capped
+    // account's pill read "Stopped" with the reason only in a tooltip.
+    needsLogin: !!a.needsLogin,
+    weeklyCap: !!a.weeklyCap,
     parked: /stopped|benched|identity-restricted/.test(String(a.state || '').toLowerCase()),
     parkReason: /identity-restricted/.test(String(a.state || '').toLowerCase()) ? 'identity restricted' : '',
   }));

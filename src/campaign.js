@@ -4949,7 +4949,12 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
               consecutive429s.set(profileId, c429);
               if (c429 >= HTTP_429_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
                 const episodesSoFar = cooldowns429.get(profileId) || 0;
-                const { action, waitMs } = decide429({ consecutive429s: c429, cooldownsSoFar: episodesSoFar });
+                const _reached = ((campaign._reachedByProfile || {})[profileId] || []).length;
+                const { action, waitMs } = decide429({
+                  consecutive429s: c429,
+                  cooldownsSoFar: episodesSoFar,
+                  reachedThisRun: _reached,
+                });
                 if (action === 'cooldown') {
                   const newEpisodes = episodesSoFar + 1;
                   cooldowns429.set(profileId, newEpisodes);
@@ -4967,10 +4972,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                   log(`  ⏳ [${pName}] rate-limited (HTTP 429) — cooling down ${Math.round(waitMs / 60000)}min, will retry automatically (attempt ${newEpisodes}/3)`);
                 } else {
                   // action === 'park': 3rd episode, treat as real weekly cap
-                  log(`  ⚠ ${pName}: ${HTTP_429_PARK_THRESHOLD} consecutive HTTP 429s (3rd cooldown episode) — treating as weekly invitation limit. Parking account.`);
+                  const _capWhy = _reached === 0
+                    ? `every invite refused (HTTP 429) and nobody reached this run`
+                    : `${HTTP_429_PARK_THRESHOLD} consecutive HTTP 429s (3rd cooldown episode)`;
+                  log(`  ⚠ ${pName} has hit its WEEKLY INVITATION LIMIT — ${_capWhy}. It sends nothing more until LinkedIn resets it; the rest of its leads go to the other accounts.`);
                   weeklyLimited.add(profileId);
                   campaign._cooldown429.delete(profileId);
-                  recordProfileEnd(profileId, pName, `Weekly invitation limit reached (${HTTP_429_PARK_THRESHOLD}× HTTP 429)`);
+                  recordProfileEnd(profileId, pName, `Weekly invitation limit reached (${_reached === 0 ? 'every invite refused with HTTP 429' : HTTP_429_PARK_THRESHOLD + '× HTTP 429'})`);
                   campaign.parkedProfiles.push({
                     profileId,
                     pName,
@@ -6455,10 +6463,24 @@ function buildAccountPanel() {
       : '';
     const result = [missedLine, problem].filter(Boolean).join(' ');
 
+    // Two states the operator has to be able to act on, said as booleans rather
+    // than left for the browser to sniff out of prose. The weekly line reads
+    // "used up its invitations for the week", which the UI's old /weekly/ test
+    // never matched, so a capped account rendered as a bare "Stopped" with no
+    // reason on the pill (operator, 2026-09-03).
+    const _why = String((end && end.reason) || (park && park.reason) || '')
+      .toLowerCase().replace(/_/g, ' ');
+    const weeklyCap = /weekly|invitation limit|invite limit|invitations for the week/
+      .test(`${_why} ${sub}`.toLowerCase());
+    const needsLogin = state === 'needs-login'
+      || /log ?in|logged out|session expired|authwall|checkpoint/.test(_why);
+
     return {
       email,
       state,
       live,
+      weeklyCap,
+      needsLogin,
       batchDone: turn.done == null ? null : turn.done,
       batchSize: turn.size == null ? null : turn.size,
       sentToday: getCampaignSendCount(pid),

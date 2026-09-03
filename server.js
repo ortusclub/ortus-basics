@@ -7183,6 +7183,12 @@ app.post('/api/campaign/profile/:id/retry', async (req, res) => {
   try {
     const result = retryParkedProfile(profileId);
     if (!result.ok) return res.status(409).json({ error: result.reason || 'retry-failed' });
+    // "I've logged back in" sends open:false — the operator has already got the
+    // browser open, that is where they signed in. Launching it again would fight
+    // them for the window.
+    if (req.body && req.body.open === false) {
+      return res.json({ ok: true, profileName: result.profileName, browser: { action: 'skipped' } });
+    }
     // Same launch + unhide flow as /api/profile/:id/open-browser. We don't
     // delegate so the response can carry both the unpark + launch outcome.
     let launchInfo;

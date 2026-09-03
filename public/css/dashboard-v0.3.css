@@ -1419,7 +1419,7 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
   body[data-dashboard='v3'] .vj-card.is-mini .vj-profiles { display: none; }
   body[data-dashboard='v3'] .vj-prof-row {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto auto auto auto;
+    grid-template-columns: minmax(0, 1fr) auto auto auto auto auto auto;
     align-items: center;
     gap: 14px;
     padding: 6px 0;
@@ -1455,6 +1455,19 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
     border-radius: 9999px; padding: 3px 10px; cursor: pointer; white-space: nowrap;
   }
   body[data-dashboard='v3'] .prof-open-btn:hover { border-color: var(--ink); }
+  /* "I'm logged back in" — only ever drawn on a signed-out account, so it is
+     deliberately quieter than Open: no border until you reach for it. */
+  body[data-dashboard='v3'] .prof-relogin-btn,
+  .stg-relogin-btn {
+    font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--gray, #6b7280); background: transparent; border: 1px solid transparent;
+    border-radius: 9999px; padding: 3px 10px; cursor: pointer; white-space: nowrap;
+    text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--hairline);
+  }
+  body[data-dashboard='v3'] .prof-relogin-btn:hover,
+  .stg-relogin-btn:hover { color: var(--ink); border-color: var(--hairline); text-decoration-color: transparent; }
+  body[data-dashboard='v3'] .prof-relogin-btn:disabled,
+  .stg-relogin-btn:disabled { opacity: 0.6; cursor: default; text-decoration: none; }
   body[data-dashboard='v3'] .prof-skip-toggle { position: relative; display: inline-block; width: 28px; height: 16px; flex-shrink: 0; }
   body[data-dashboard='v3'] .prof-skip-toggle input { opacity: 0; width: 0; height: 0; }
   body[data-dashboard='v3'] .prof-skip-slider {

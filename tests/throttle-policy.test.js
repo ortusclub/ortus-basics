@@ -96,3 +96,22 @@ test('Action values are exactly one of cooldown or park', () => {
   const r2 = decide429({ cooldownsSoFar: 2 });
   assert.ok(['cooldown', 'park'].includes(r2.action));
 });
+
+// reachedThisRun — the weekly cap's signature. A throttle interrupts an account
+// that was sending; the cap refuses its very first invite.
+test('Nothing reached this run → park on the first episode, no cooldown', () => {
+  const result = decide429({ consecutive429s: 2, cooldownsSoFar: 0, reachedThisRun: 0 });
+  assert.equal(result.action, 'park');
+  assert.equal(result.waitMs, 0);
+});
+
+test('Something got through → the cooldown ladder is unchanged', () => {
+  assert.deepEqual(decide429({ cooldownsSoFar: 0, reachedThisRun: 3 }), { action: 'cooldown', waitMs: 1800000 });
+  assert.deepEqual(decide429({ cooldownsSoFar: 1, reachedThisRun: 3 }), { action: 'cooldown', waitMs: 3600000 });
+  assert.deepEqual(decide429({ cooldownsSoFar: 2, reachedThisRun: 3 }), { action: 'park', waitMs: 0 });
+});
+
+test('An absent reachedThisRun parks nothing on its own', () => {
+  assert.equal(decide429({ cooldownsSoFar: 0 }).action, 'cooldown');
+  assert.equal(decide429({ cooldownsSoFar: 0, reachedThisRun: null }).action, 'cooldown');
+});
