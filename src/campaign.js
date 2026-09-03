@@ -71,7 +71,7 @@ import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree } from './disk-check.js';
 import { plainLine } from './log-voice.js';
 import { readRuntimeInterruption, writeRuntimeInterruption, clearRuntimeInterruption, interruptionCopy, isInterruption, interruptionMatches } from './runtime-interruption.js';
-import { writeJsonAtomic, updateJsonAtomic } from './atomic-json-store.js';
+import { readJson, writeJsonAtomic, updateJsonAtomic } from './atomic-json-store.js';
 import {
   sample as rmSample,
   decideThrottle,
@@ -1318,11 +1318,28 @@ configureSheetWriteTracker({
  * manually retry it (dashboard warning + /api/campaign/sheet-write-failures).
  * Never throws — a failed write must not stop the campaign loop.
  */
+// Writes still in flight. The campaign no longer waits for a sheet write before
+// moving to the next lead — see trackedSheetWrite — so something has to hold the
+// promises until the end of the run.
+const _pendingSheetWrites = new Set();
+
+// Ortus Basics 1.0: the campaign used to AWAIT every sheet write inline. With
+// Apps Script slow or failing, that cost minutes per lead: WEBAPP_TIMEOUT_MS is
+// 60s and applies to both legs of the redirect, and writeSheetWithRetry does
+// attempt → 30s sleep → attempt. A single failing row could stall the loop for
+// ~4.5 minutes while the browser sat idle.
+//
+// The write is now fired and left to run. The result still lands in the sheet
+// and a failure still reaches the ledger; the loop simply stops waiting on it.
+// Ordering is safe: sheets-writer coalesces by sheet+column and merges rows
+// written inside the same window, so concurrent writes for different leads
+// batch rather than race.
 async function trackedSheetWrite(sheetUrl, url, leadName, sheetData, linkedinColumn) {
   // updateSheetRow returns a boolean (true=ok, false=failed) — never throws.
   // When no webapp is configured, false is a no-op (nothing to track or retry).
   if (!SHEETS_WEBAPP_URL) return;
-  await writeSheetWithRetry(
+
+  const p = writeSheetWithRetry(
     () => updateSheetRow(sheetUrl, url, sheetData, linkedinColumn)
         .then((ok) => (ok ? {} : { error: 'sheet write failed (updateSheetRow returned false)' })),
     {
@@ -1331,8 +1348,30 @@ async function trackedSheetWrite(sheetUrl, url, leadName, sheetData, linkedinCol
       column: linkedinColumn || '',
       payload: JSON.stringify(sheetData),
     },
-  );
-  campaign.sheetWriteFailures = getFailures().length;
+  ).catch((err) => {
+    // writeSheetWithRetry records its own failures; this only stops an unhandled
+    // rejection now that nobody is awaiting the promise.
+    console.warn(`[sheets-writer] write for ${leadName || url} threw: ${err?.message || err}`);
+  }).finally(() => {
+    _pendingSheetWrites.delete(p);
+    campaign.sheetWriteFailures = getFailures().length;
+  });
+
+  _pendingSheetWrites.add(p);
+
+  // A hard ceiling so a stalled Apps Script cannot accumulate hundreds of
+  // in-flight writes. Well above a turn's BATCH_SIZE, so it never bites during
+  // normal running.
+  if (_pendingSheetWrites.size >= 40) {
+    await Promise.race([..._pendingSheetWrites]).catch(() => {});
+  }
+}
+
+/** Let every outstanding write finish. Called before a run reports itself done. */
+async function drainSheetWrites() {
+  while (_pendingSheetWrites.size) {
+    await Promise.allSettled([..._pendingSheetWrites]);
+  }
 }
 
 function pushError(err) {
@@ -2028,7 +2067,7 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 30, delayMax = 60, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [] }) {
+export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 10, delayMax = 20, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [] }) {
   clearRuntimeInterruption();
   if (campaign.running) throw new Error('Campaign already running');
   campaign.executionId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -2211,7 +2250,10 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
   // v2.112: operator's launch-time choice for the after-sending auto-checks.
   // shouldAutoFireCheck() in tickMonitoringNow honors this; persisted via the
   // monitoring slice so it survives restart, and adjustable live on the card.
-  campaign.autoChecksEnabled = autoChecksEnabled !== false;
+  // Ortus Basics 1.0: every acceptance check is manual. The periodic watcher
+  // never auto-fires — "⚡ Check now" is the only way a check runs — so the
+  // launch payload's autoChecksEnabled is ignored here.
+  campaign.autoChecksEnabled = false;
   // v2.112.7 (Fix B): operator's pause-on-throttle choice. ON ⇒ a
   // `throttle`-classified connect failure parks that account (jittered backoff)
   // so other accounts keep running; OFF ⇒ the account keeps sending through
@@ -2294,7 +2336,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     log('=== Campaign starting ===');
     log(`Mode: ${mode}`);
     log(`Profiles: ${profileIds.length} selected`);
-    const _NO_LIMIT_MODES = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only', 'open_profile_only']);
+    const _NO_LIMIT_MODES = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only']);
     log(`Campaign limit per account: ${_NO_LIMIT_MODES.has(mode) ? 'unlimited (fast-mode)' : dailyLimit}`);
     if (!_NO_LIMIT_MODES.has(mode)) {
       log(`  (set in launch wizard — adjust under "Campaign limit per account" before next run if this isn't what you expected)`);
@@ -2446,6 +2488,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     }
 
     async function flipSoOInUse(accountName, action) {
+      // Ortus Basics 1.0: the SoO is never written to, and resolving which row an
+      // account maps to costs a full SoO fetch — through the Apps Script that is
+      // timing out. That cost was being paid on every single lead before the
+      // disabled check was ever reached (measured: 53s per send). Nothing about
+      // the SoO should happen at all, so leave immediately.
+      return;
+      /* eslint-disable no-unreachable */
       try {
         const target = resolveSoOTarget(mode, action);
         if (!target) return;
@@ -2525,6 +2574,14 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // per-account naming/ambiguity warnings are left to flipSoOInUse (which runs
     // first) so this doesn't double-log them.
     async function bumpSoOConnCount(accountName, action) {
+      // Ortus Basics 1.0: the SoO is never written to, and resolving which row an
+      // account maps to costs a full SoO fetch — through the Apps Script that is
+      // timing out. That cost was being paid on every single lead before the
+      // disabled check was ever reached (measured: 53s per send). Nothing about
+      // the SoO should happen at all, so leave immediately.
+      return;
+      /* eslint-disable no-unreachable */
+
       try {
         if (!isConnectSend(mode, action)) return;
         const acctNorm = (accountName || '').toString().toLowerCase().trim();
@@ -3447,8 +3504,15 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     //   - open_profile_only: free Open-Profile messages, no connection req
     // Connect campaigns (connect_only) STILL respect the dailyLimit —
     // LinkedIn rate-limits connection requests aggressively.
-    const NO_DAILY_LIMIT = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only', 'open_profile_only']);
+    // Ortus Basics 1.0: the daily cap and the 6-min per-account turn floor used
+    // to be one flag. Message Campaign (open_profile_only) now takes a real
+    // daily message limit, but must NOT inherit the connect-mode turn floor —
+    // messaging existing connections does not carry invite risk. So the two
+    // concerns are separate sets from here on.
+    const NO_DAILY_LIMIT = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only']);
+    const NO_TURN_FLOOR  = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only', 'open_profile_only']);
     const skipsDailyLimit = NO_DAILY_LIMIT.has(mode);
+    const skipsTurnFloor  = NO_TURN_FLOOR.has(mode);
 
     // ═════════════════════════════════════════════════════════════════════
     // 2.9.9 — Rotating-batch worker pool (replaces strict round-robin).
@@ -3497,7 +3561,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // For multi-profile pools the queue rotation is the natural pacer; this
     // floor only kicks in when the pool shrinks.
     const TURN_COOLDOWN_FLOOR_MS = 6 * 60 * 1000;
-    const cooldownMs = skipsDailyLimit ? 0 : TURN_COOLDOWN_FLOOR_MS;
+    const cooldownMs = skipsTurnFloor ? 0 : TURN_COOLDOWN_FLOOR_MS;
     if (concurrency > 1) {
       log(`Concurrency: ${concurrency} workers, browser cap: ${MAX_CONCURRENT_PROFILES}`);
     }
@@ -3608,8 +3672,14 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             const _prev = campaign._primaryConn.get(profileId);
             if (_prev !== 'connected') {
               try {
+                // Ortus Basics 1.0: the automatic sender→primary handshake is
+                // gone. Read the degree only — never send a connect to the
+                // primary. A sender that is not 1st-degree with the primary
+                // lands on 'pending', which _primaryIntroAllowed() reads to hold
+                // the INTRO while the lead's own connection request still goes
+                // out. (was: attemptConnect on the first turn)
                 const _res = await checkAndConnectPrimary(page, _primaryUrl, {
-                  log, pName, attemptConnect: (_prev === undefined || _prev === 'no_url' || _prev === 'unverified'),
+                  log, pName, attemptConnect: false,
                 });
                 // v2.102: tri-state. connected → 'connected'; CONFIRMED
                 // not-connected → 'pending' (connect sent, intros held); degree
@@ -3633,7 +3703,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 // v2.91: if we just sent a connect to the primary AND auto-accept
                 // is enabled, capture this account's own identity and queue the
                 // local browser to accept its invitation in the next idle gap.
-                if (_shouldQueueAutoAccept({ autoAcceptPrimary: tpl && tpl.autoAcceptPrimary, connectAttempted: _res.connectAttempted, connectResult: _res.connectResult })) {
+                // Ortus Basics 1.0: never queue an accept task — nothing connects
+                // to the primary any more, so there is no invitation to accept.
+                if (false) {
                   try {
                     const _self = await readSelfIdentity(page);
                     // Don't enqueue a dead task: an empty identity (slow/cold
@@ -4419,11 +4491,15 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             // process' contribution; resetting the headline to it made the UI
             // briefly claim e.g. "1 of 200" after 20 leads were already done.
             campaign.totalProcessed = _resumeTotal + campaign.processedToday;
+            const _tSave = Date.now();
             await saveState(state);
+            if (Date.now() - _tSave > 3000) log(`  ⏱ saveState took ${((Date.now() - _tSave) / 1000).toFixed(0)}s`);
             // v2.95: SoO write-back — on the account's first credit-consuming
             // send (connection_sent / inmail_sent per mode), flip its SoO credit
             // cell to In Use + stamp the operator. No-op for every other action.
+            const _tSoo = Date.now();
             await flipSoOInUse(pName, result.action);
+            if (Date.now() - _tSoo > 3000) log(`  ⏱ SoO flip took ${((Date.now() - _tSoo) / 1000).toFixed(0)}s`);
             // v2.124: tick the per-account weekly connection tally in the SoO
             // (col AX). Fires on EVERY connect send, not just the first.
             await bumpSoOConnCount(pName, result.action);
@@ -4467,19 +4543,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             if (countsAsMonitorableInvite(result.action, mode)) {
               profilesThatSentAtLeastOne.add(profileId);
             }
+            // Ortus Basics 1.0: connection notes are disabled, so every invite is
+            // sent bare by design. The old check read LinkedIn's free-invite state
+            // off the page after each send and logged "invite sent WITHOUT the
+            // note", which now reports a non-event as if something had failed —
+            // and cost a page read per lead to do it. The branch itself stays:
+            // the URN capture below belongs to it.
             if (result.action === 'connection_sent') {
-              // Did the invite carry its note? Read off the browser session —
-              // performOutreach's return shape lives in an off-limits file, and
-              // before 2026-08-11 a noteless invite looked identical to a noted
-              // one here, so twelve bare sends were logged as clean successes.
-              try {
-                const _note = getNoteState(page);
-                if (_note.lastNoteIncluded === false) {
-                  log(`  ✉ ${pName}: invite sent WITHOUT the note — this account has used LinkedIn's free personalised invites${_note.used ? ` (${_note.used} this run)` : ''}. Invites keep going out; the note doesn't.`);
-                  campaign.noteExhaustedProfiles = campaign.noteExhaustedProfiles || {};
-                  if (_note.exhausted) campaign.noteExhaustedProfiles[profileId] = true;
-                }
-              } catch { /* reporting only — never fail a good send over it */ }
               try {
                 // Start with the metadata captured on the VERIFIED pre-send
                 // page, then enrich it from the post-send page. Never replace a
@@ -5345,6 +5415,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // Best-effort — NEVER blocks the campaign: any error or straggler falls back
     // to the existing idle-runner queue via enqueuePrimaryTask().
     async function runPreflightHandshake() {
+      // Ortus Basics 1.0: automatic acceptance at campaign start is removed —
+      // no sender→primary connects, no primary-inbox accept sweep. The primary
+      // is now just "who the lead gets introduced to"; if a sender is not
+      // 1st-degree with them, the intro is skipped and the lead is still
+      // connected. Kept as a no-op so its call sites stay untouched.
+      return;
+      /* eslint-disable no-unreachable */
       const primaryUrl = (tpl && tpl.primaryUrl || '').trim();
       if (mode !== 'connect_and_introduce' || !tpl?.autoAcceptPrimary || !primaryUrl) return;
       // NOTE: campaign.participatingProfileIds is empty here (only filled at
@@ -5550,13 +5627,16 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // mid-run acceptances while the 6h post-campaign scheduler catches
     // the rest.
     if (!campaign._skipCleanup && (mode === 'connect_and_introduce' || mode === 'connect_and_message') && profilesThatSentAtLeastOne.size > 0) {
-      const updated = transitionToMonitoring(campaign, {
-        now: new Date(),
-        participatingProfileIds: Array.from(profilesThatSentAtLeastOne),
-      });
-      Object.assign(campaign, updated);
-      _ops('INFO', 'Monitoring started', {
-        details: `${profilesThatSentAtLeastOne.size} account(s) · cadence: ${campaign.checkIntervalMinutes || 60}min · ends: ${campaign.monitoringUntil || ''}`,
+      // Ortus Basics 1.0: the campaign does NOT enter monitoring — it simply
+      // ends. Nothing watches, nothing is scheduled, no 7-day window is armed.
+      // The accounts that sent are still recorded, because that is what
+      // ⚡ Check now sweeps when the operator asks for a check.
+      // (was: Object.assign(campaign, transitionToMonitoring(campaign, …)))
+      campaign.participatingProfileIds = Array.from(profilesThatSentAtLeastOne);
+      campaign.monitoringUntil = null;
+      campaign.nextCheckAt = null;
+      _ops('INFO', 'Campaign finished', {
+        details: `${profilesThatSentAtLeastOne.size} account(s) sent · checks are manual (⚡ Check now)`,
       });
 
       try {
@@ -5590,6 +5670,13 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // Sheet writes are coalesced, so the last few can still be sitting in the
     // buffer when the loop ends. Land them before anything reports the run
     // finished — otherwise the final leads of every campaign go unwritten.
+    // Writes are fired without waiting during the run, so drain them here before
+    // the campaign reports itself finished — otherwise the last few leads' rows
+    // would still be in flight when the summary is written.
+    if (_pendingSheetWrites.size) {
+      log(`  ⏳ Finishing ${_pendingSheetWrites.size} sheet write(s)…`);
+      await drainSheetWrites();
+    }
     await flushSheetWrites().catch((e) => log(`  ⚠ Final sheet flush failed: ${e.message}`));
 
     // v2.72: build a one-shot "why did it stop" notice the dashboard turns into
@@ -6212,8 +6299,8 @@ export async function restoreCampaign() {
             dailyLimit: s.dailyLimit ?? 50,
             mode: last.mode,
             messageOpenProfiles: !!s.messageOpenProfiles,
-            delayMin: s.delayMin ?? 30,
-            delayMax: s.delayMax ?? 60,
+            delayMin: s.delayMin ?? 10,
+            delayMax: s.delayMax ?? 20,
             linkedinColumn: s.linkedinColumn || '',
             concurrency: s.concurrency ?? 1,
             name: last.name ? `${last.name} (restored)` : '',
@@ -6924,6 +7011,10 @@ export async function tickMonitoringNow({ _testStub = null } = {}) {
 }
 
 export function startMonitoringWatcher() {
+  // Ortus Basics 1.0: no monitoring watcher at all — nothing polls on a 60s
+  // timer looking for a due check. Manual "Check now" is the only trigger.
+  return;
+  /* eslint-disable no-unreachable */
   if (_monitoringWatcherTimer) return;
   _monitoringWatcherTimer = setInterval(() => {
     tickMonitoringNow().catch((err) => console.warn('[monitoring-watcher] tick threw:', err.message));
@@ -7073,7 +7164,8 @@ export function _setTestState(patch) {
  * resumes it. Persisted so it survives an app restart.
  */
 export async function setMonitoringAutoChecks(enabled) {
-  campaign.autoChecksEnabled = !!enabled;
+  // Ortus Basics 1.0: checks are manual-only, so this cannot switch them back on.
+  campaign.autoChecksEnabled = false;
   try { await writeMonitoringState(campaign); } catch { /* persistence is best-effort */ }
   return campaign.autoChecksEnabled;
 }

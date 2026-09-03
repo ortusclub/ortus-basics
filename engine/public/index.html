@@ -1,0 +1,1041 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sales Nav Cloud Scraper</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0c0e13;
+      --surface: #151820;
+      --surface-2: #1c2029;
+      --surface-3: #242833;
+      --border: #2a2e3a;
+      --border-light: #363b4a;
+      --text: #e4e6ed;
+      --text-dim: #8b90a0;
+      --text-muted: #5c6178;
+      --accent: #5b8af5;
+      --accent-glow: rgba(91, 138, 245, 0.15);
+      --green: #34d399;
+      --green-glow: rgba(52, 211, 153, 0.12);
+      --amber: #f59e0b;
+      --red: #f87171;
+      --radius: 10px;
+      --radius-sm: 6px;
+      --font: 'DM Sans', -apple-system, sans-serif;
+      --mono: 'JetBrains Mono', monospace;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ─── Login Screen ─────────────────────────────────────────── */
+    .login-screen {
+      display: flex; align-items: center; justify-content: center;
+      min-height: 100vh; padding: 24px;
+    }
+    .login-box {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 40px 32px;
+      width: 100%; max-width: 380px; text-align: center;
+    }
+    .login-box .logo {
+      width: 56px; height: 56px; margin: 0 auto 20px;
+      background: linear-gradient(135deg, var(--accent), #8b6cf5);
+      border-radius: 14px; display: grid; place-items: center;
+      font-size: 24px; font-weight: 700; color: #fff;
+    }
+    .login-box h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+    .login-box p { font-size: 13px; color: var(--text-dim); margin-bottom: 24px; }
+    .login-box input {
+      width: 100%; padding: 12px 16px; font-size: 14px; font-family: var(--font);
+      color: var(--text); background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); outline: none; margin-bottom: 12px;
+      transition: border-color 0.2s;
+    }
+    .login-box input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    .login-error { color: var(--red); font-size: 13px; margin-bottom: 12px; display: none; }
+
+    /* ─── App Layout ───────────────────────────────────────────── */
+    .app { max-width: 900px; margin: 0 auto; padding: 32px 24px 80px; display: none; }
+
+    .header {
+      display: flex; align-items: center; gap: 14px; margin-bottom: 28px;
+    }
+    .header-icon {
+      width: 40px; height: 40px;
+      background: linear-gradient(135deg, var(--accent), #8b6cf5);
+      border-radius: var(--radius); display: grid; place-items: center;
+      font-size: 18px; font-weight: 700; color: #fff; flex-shrink: 0;
+    }
+    .header h1 { font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+    .header p { font-size: 13px; color: var(--text-dim); margin-top: 2px; }
+
+    /* ─── LinkedIn Account Bar ─────────────────────────────────── */
+    .linkedin-bar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 14px 18px; margin-bottom: 24px;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .linkedin-bar .li-icon {
+      width: 32px; height: 32px; border-radius: 8px;
+      background: #0a66c2; display: grid; place-items: center;
+      font-weight: 700; font-size: 16px; color: #fff; flex-shrink: 0;
+    }
+    .linkedin-bar .li-info { flex: 1; }
+    .linkedin-bar .li-info .li-name { font-size: 14px; font-weight: 600; }
+    .linkedin-bar .li-info .li-status { font-size: 12px; color: var(--text-dim); }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 12px; font-weight: 500; padding: 5px 12px;
+      border-radius: 20px; background: var(--surface-2); border: 1px solid var(--border);
+    }
+    .badge .dot { width: 7px; height: 7px; border-radius: 50%; }
+    .badge.connected .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .badge.disconnected .dot { background: var(--red); }
+
+    /* ─── Tabs ─────────────────────────────────────────────────── */
+    .tabs {
+      display: flex; gap: 4px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 4px; margin-bottom: 24px;
+    }
+    .tab {
+      flex: 1; padding: 10px 0; text-align: center;
+      font-size: 13px; font-weight: 600; color: var(--text-dim);
+      border-radius: var(--radius-sm); cursor: pointer;
+      transition: all 0.2s; border: none; background: none;
+    }
+    .tab:hover { color: var(--text); background: var(--surface-2); }
+    .tab.active { color: #fff; background: var(--accent); box-shadow: 0 2px 8px rgba(91,138,245,0.25); }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* Type URLs / From a Sheet input toggle (Batch tab) */
+    .batch-seg {
+      display: inline-flex; gap: 4px; padding: 3px; margin-bottom: 12px;
+      background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: 999px;
+    }
+    .batch-seg-btn {
+      padding: 7px 18px; font-size: 13px; font-weight: 600;
+      color: var(--text-dim); background: none; border: none;
+      border-radius: 999px; cursor: pointer; transition: all 0.2s;
+    }
+    .batch-seg-btn:hover { color: var(--text); }
+    .batch-seg-btn.is-active { color: #fff; background: var(--accent); }
+
+    /* ─── Cards / Forms ────────────────────────────────────────── */
+    .card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 20px; margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 14px; font-weight: 600; margin-bottom: 16px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .card-title .icon { font-size: 16px; }
+
+    label {
+      display: block; font-size: 12px; font-weight: 500; color: var(--text-dim);
+      margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em;
+    }
+    input[type="text"], input[type="url"], textarea {
+      width: 100%; padding: 10px 14px; font-size: 13px; font-family: var(--mono);
+      color: var(--text); background: var(--surface-2); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); outline: none; transition: border-color 0.2s;
+    }
+    input:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    textarea { resize: vertical; min-height: 100px; line-height: 1.6; }
+
+    .field { margin-bottom: 14px; }
+    .row { display: flex; gap: 12px; }
+    .row .field { flex: 1; }
+
+    /* ─── Buttons ──────────────────────────────────────────────── */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+      padding: 10px 20px; font-size: 13px; font-weight: 600; font-family: var(--font);
+      border-radius: var(--radius-sm); border: none; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; box-shadow: 0 2px 8px rgba(91,138,245,0.3); }
+    .btn-primary:hover { background: #4a7ae8; transform: translateY(-1px); }
+    .btn-primary:disabled { opacity: 0.4; pointer-events: none; }
+    .btn-danger { background: var(--red); color: #fff; }
+    .btn-danger:hover { background: #e85c5c; }
+    .btn-ghost { background: var(--surface-2); color: var(--text-dim); border: 1px solid var(--border); }
+    .btn-ghost:hover { color: var(--text); border-color: var(--border-light); }
+    .btn-group { display: flex; gap: 8px; margin-top: 16px; }
+    .btn-sm { padding: 6px 14px; font-size: 12px; }
+
+    /* ─── Remote Browser ───────────────────────────────────────── */
+    .remote-browser {
+      background: #000; border-radius: var(--radius);
+      overflow: hidden; margin-bottom: 16px; position: relative;
+    }
+    .remote-browser img {
+      width: 100%; display: block; cursor: pointer;
+    }
+    .remote-browser .browser-bar {
+      background: var(--surface-2); padding: 8px 14px;
+      font-size: 12px; color: var(--text-dim); font-family: var(--mono);
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 8px;
+    }
+    .remote-browser .browser-bar .url { flex: 1; }
+    .remote-input-row {
+      display: flex; gap: 8px; margin-bottom: 12px;
+    }
+    .remote-input-row input {
+      flex: 1; font-family: var(--font); font-size: 13px;
+    }
+
+    /* ─── Job List ─────────────────────────────────────────────── */
+    .job-list { display: flex; flex-direction: column; gap: 8px; }
+    .job-card {
+      display: flex; align-items: center; gap: 14px;
+      padding: 14px 16px; background: var(--surface);
+      border: 1px solid var(--border); border-radius: var(--radius);
+    }
+    .job-status { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .job-status.queued { background: var(--text-muted); }
+    .job-status.running { background: var(--accent); box-shadow: 0 0 8px var(--accent); animation: pulse 1.5s infinite; }
+    .job-status.done { background: var(--green); }
+    .job-status.error, .job-status.throttled { background: var(--red); }
+    .job-status.stopped, .job-status.cancelled { background: var(--amber); }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+    .job-info { flex: 1; min-width: 0; }
+    .job-url { font-size: 13px; font-family: var(--mono); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .job-meta { font-size: 12px; color: var(--text-dim); margin-top: 3px; display: flex; gap: 14px; }
+    .job-stats { display: flex; gap: 16px; flex-shrink: 0; font-size: 13px; font-weight: 600; }
+    .stat-pages { color: var(--accent); }
+    .stat-profiles { color: var(--green); }
+
+    .empty-state { text-align: center; padding: 48px 20px; color: var(--text-muted); font-size: 14px; }
+    .empty-state .empty-icon { font-size: 32px; margin-bottom: 12px; opacity: 0.5; }
+
+    /* ─── Log Panel ────────────────────────────────────────────── */
+    .log-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    .log-header { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 600; }
+    .log-body { height: 280px; overflow-y: auto; padding: 12px 16px; font-family: var(--mono); font-size: 12px; line-height: 1.8; color: var(--text-dim); }
+    .log-body::-webkit-scrollbar { width: 6px; }
+    .log-body::-webkit-scrollbar-track { background: transparent; }
+    .log-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    .log-entry { white-space: pre-wrap; word-break: break-all; }
+    .log-entry .time { color: var(--text-muted); margin-right: 8px; }
+    .log-entry.error { color: var(--red); }
+    .log-entry.success { color: var(--green); }
+
+    /* ─── Settings ─────────────────────────────────────────────── */
+    .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--border); }
+    .toggle-row:last-child { border-bottom: none; }
+    .toggle-label { font-size: 14px; font-weight: 500; }
+    .toggle-desc { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
+    .toggle { position: relative; width: 44px; height: 24px; background: var(--surface-3); border-radius: 12px; cursor: pointer; transition: background 0.2s; flex-shrink: 0; }
+    .toggle.on { background: var(--accent); }
+    .toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; background: #fff; border-radius: 50%; transition: transform 0.2s; }
+    .toggle.on::after { transform: translateX(20px); }
+
+    @media (max-width: 640px) {
+      .app { padding: 20px 16px 60px; }
+      .row { flex-direction: column; gap: 0; }
+      .job-stats { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ═══════ LOGIN SCREEN ═══════ -->
+  <div class="login-screen" id="loginScreen">
+    <div class="login-box">
+      <div class="logo">S</div>
+      <h1>Sales Nav Scraper</h1>
+      <p>Enter the app password to continue</p>
+      <div class="login-error" id="loginError">Wrong password. Try again.</div>
+      <input type="password" id="loginPassword" placeholder="Password" autocomplete="off" />
+      <button class="btn btn-primary" style="width:100%" id="btnLogin">Sign In</button>
+    </div>
+  </div>
+
+  <!-- ═══════ MAIN APP ═══════ -->
+  <div class="app" id="mainApp">
+    <div class="header">
+      <div class="header-icon">S</div>
+      <div>
+        <h1>Sales Nav Cloud Scraper</h1>
+        <p>LinkedIn Sales Navigator → Google Sheets</p>
+      </div>
+    </div>
+
+    <!-- LinkedIn Account Bar -->
+
+    <style>
+      .profile-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(210px,1fr)); gap:10px; max-height:340px; overflow-y:auto; padding:2px; }
+      .profile-card { display:flex; align-items:flex-start; gap:10px; padding:11px 13px; background:var(--surface-2); border:1px solid var(--border); border-radius:var(--radius-sm); cursor:pointer; }
+      .profile-card:hover { border-color:var(--border-light); }
+      .profile-card.selected { border-color:var(--accent); background:var(--accent-glow); }
+      .profile-card input { margin-top:2px; accent-color:var(--accent); width:15px; height:15px; flex-shrink:0; }
+      .profile-card .pc-name { font-size:13px; color:var(--text); word-break:break-word; line-height:1.3; }
+      .profile-card .pc-id { font-size:11px; color:var(--text-muted); margin-top:3px; font-family:var(--mono); }
+      .profile-empty { color:var(--text-dim); font-size:13px; padding:14px 4px; }
+    </style>
+    <div class="card" id="profilePicker">
+      <div class="card-title" style="display:flex;align-items:center;gap:8px"><span class="icon">👥</span> GoLogin Accounts <span id="profileSelectedCount" style="color:var(--text-dim);font-weight:400;font-size:13px">· none selected</span></div>
+      <p style="font-size:13px;color:var(--text-dim);margin-bottom:14px">Pick the account(s) to scrape with — each needs a Sales Navigator seat. In Batch, each URL is scraped by one selected account (round-robin).</p>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:14px;flex-wrap:wrap">
+        <input type="text" id="profileSearch" placeholder="Search by name or email…" style="flex:1;min-width:220px;padding:9px 12px;border-radius:8px;background:var(--surface-2);color:var(--text);border:1px solid var(--border)" oninput="renderProfileGrid()" />
+        <button class="btn btn-ghost btn-sm" onclick="selectAllVisibleProfiles()">Select all visible</button>
+        <button class="btn btn-ghost btn-sm" onclick="deselectAllProfiles()">Deselect all</button>
+      </div>
+      <div id="profileGrid" class="profile-grid"><div class="profile-empty">Loading profiles…</div></div>
+    </div>
+
+    <!-- Tabs -->
+    <div class="tabs" id="mainTabs">
+      <button class="tab active" data-tab="single">Single Scrape</button>
+      <button class="tab" data-tab="batch">Batch Scrape</button>
+      <button class="tab" data-tab="jobs">Jobs</button>
+      <button class="tab" data-tab="logs">Logs</button>
+      <button class="tab" data-tab="settings">Settings</button>
+    </div>
+
+    <!-- Single Scrape -->
+    <div class="tab-panel active" id="panel-single">
+      <div class="card">
+        <div class="card-title"><span class="icon">🔍</span> Single Search Scrape</div>
+        <div class="field">
+          <label>Sales Navigator Search URL</label>
+          <input type="url" id="singleUrl" placeholder="https://www.linkedin.com/sales/search/people?query=…" />
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Google Sheet URL</label>
+            <input type="url" id="singleSheet" placeholder="https://docs.google.com/spreadsheets/d/…" />
+          </div>
+          <div class="field">
+            <label>Tab Name</label>
+            <input type="text" id="singleTab" placeholder="Sheet1" value="Sheet1" />
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" id="btnStartSingle">▶ Start Scraping</button>
+          <button class="btn btn-ghost" id="btnPauseSingle">⏸ Pause</button>
+          <button class="btn btn-danger" id="btnStopSingle">■ Stop</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Batch Scrape -->
+    <div class="tab-panel" id="panel-batch">
+      <div class="card">
+        <div class="card-title"><span class="icon">📋</span> Batch Scrape</div>
+        <div class="field">
+          <label>Input · Sales Navigator searches</label>
+          <div class="batch-seg">
+            <button type="button" id="batch-seg-type" class="batch-seg-btn is-active" onclick="setBatchInputMode('type')">Type URLs</button>
+            <button type="button" id="batch-seg-sheet" class="batch-seg-btn" onclick="setBatchInputMode('sheet')">From a Sheet</button>
+          </div>
+          <div id="batch-input-type">
+            <textarea id="batchUrls" placeholder="https://www.linkedin.com/sales/search/people?query=...&#10;https://www.linkedin.com/sales/search/people?query=..."></textarea>
+          </div>
+          <div id="batch-input-sheet" style="display:none">
+            <p class="profile-empty" style="margin:0 0 8px">Paste a Google Sheet whose cells hold the search URLs — we read it and pull out every Sales Nav search.</p>
+            <div style="display:flex; gap:10px; align-items:stretch">
+              <input type="url" id="batch-src-sheet" placeholder="https://docs.google.com/spreadsheets/d/… (sheet that HOLDS the search URLs)" style="flex:1" />
+              <button type="button" class="btn btn-secondary" onclick="loadBatchUrlsFromSheet()">Load URLs</button>
+            </div>
+            <div id="batch-src-status" class="profile-empty" style="margin-top:8px"></div>
+            <div id="batch-row-pick" style="display:none; margin-top:12px">
+              <label>Which rows to scrape? <span style="opacity:.7;font-weight:400">(e.g. <code>2-10</code>, or <code>2,5,7</code> — blank = all)</span></label>
+              <input type="text" id="batch-rows" placeholder="2-10" oninput="onBatchRowSpecChange()" />
+              <div id="batch-row-summary" class="profile-empty" style="margin-top:6px"></div>
+            </div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="field">
+            <label>Destination Google Sheet URL</label>
+            <input type="url" id="batchSheet" placeholder="https://docs.google.com/spreadsheets/d/…" />
+          </div>
+          <div class="field">
+            <label>Tab Name Prefix</label>
+            <input type="text" id="batchTab" placeholder="Results" value="Results" />
+          </div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" id="btnStartBatch">▶ Start Batch</button>
+          <button class="btn btn-danger" id="btnStopBatch">■ Stop All</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Jobs -->
+    <div class="tab-panel" id="panel-jobs">
+      <div class="job-list" id="jobList">
+        <div class="empty-state"><div class="empty-icon">📭</div><div>No jobs yet.</div></div>
+      </div>
+    </div>
+
+    <!-- Logs -->
+    <div class="tab-panel" id="panel-logs">
+      <div class="log-panel">
+        <div class="log-header">
+          <span>Activity Log</span>
+          <button class="btn btn-ghost" style="padding:5px 12px;font-size:12px" id="btnClearLogs">Clear</button>
+        </div>
+        <div class="log-body" id="logBody">
+          <div class="log-entry"><span class="time">[--:--:--]</span> Waiting for activity…</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Settings -->
+    <div class="tab-panel" id="panel-settings">
+      <div class="card">
+        <div class="card-title"><span class="icon">⚙️</span> Settings</div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Google Sheets API</div>
+            <div class="toggle-desc" id="sheetsStatus">Checking…</div>
+          </div>
+          <div class="badge" id="sheetsBadge">
+            <span class="dot"></span>
+            <span id="sheetsStatusText">…</span>
+          </div>
+        </div>
+        <div class="toggle-row">
+          <div>
+            <div class="toggle-label">Slow Mode</div>
+            <div class="toggle-desc">Longer delays between pages (6–10s). Reduces rate-limit risk.</div>
+          </div>
+          <div class="toggle" id="toggleSlow"></div>
+        </div>
+        <div class="btn-group">
+          <button class="btn btn-primary" id="btnSaveSettings">Save Settings</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────
+let authToken = localStorage.getItem('authToken') || '';
+// Per-operator identity. Each browser session gets its OWN stable id (persisted
+// in localStorage), so the WebSocket feed + job/log broadcasts — which the
+// server scopes by userId — only ever show THIS operator's work. Without a
+// unique id every tab shared "default" and saw everyone else's jobs/logs.
+let currentUserId = (function () {
+  const mk = () => 'op_' + ((window.crypto && crypto.randomUUID)
+    ? crypto.randomUUID()
+    : Math.random().toString(36).slice(2) + Date.now().toString(36));
+  try {
+    let id = localStorage.getItem('currentUserId');
+    if (!id || id === 'default') { id = mk(); localStorage.setItem('currentUserId', id); }
+    return id;
+  } catch (_) { return mk(); }
+})();
+let ws = null;
+let jobs = {};
+let logs = [];
+let queuePos = {};   // jobId -> { position, jobsAhead, accountsAhead, etaMs }
+let queueStats = {}; // { waiting, running, activeAccounts, avgJobMs }
+
+// ─── API Helper ───────────────────────────────────────────────────
+async function api(method, path, body) {
+  const opts = {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Auth-Token': authToken,
+    },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch('/api' + path, opts);
+  if (res.status === 401) {
+    // Token expired — show login
+    authToken = '';
+    localStorage.removeItem('authToken');
+    showLogin();
+    throw new Error('Unauthorized');
+  }
+  return res.json();
+}
+
+// ─── App Login ────────────────────────────────────────────────────
+function showLogin() {
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('mainApp').style.display = 'none';
+}
+
+function showApp() {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('mainApp').style.display = 'block';
+  initApp();
+}
+
+document.getElementById('btnLogin').addEventListener('click', doLogin);
+document.getElementById('loginPassword').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') doLogin();
+});
+
+async function doLogin() {
+  const pw = document.getElementById('loginPassword').value;
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password: pw }),
+    });
+    const data = await res.json();
+    if (data.token) {
+      authToken = data.token;
+      localStorage.setItem('authToken', authToken);
+      document.getElementById('loginError').style.display = 'none';
+      showApp();
+    } else {
+      document.getElementById('loginError').style.display = 'block';
+    }
+  } catch (e) {
+    document.getElementById('loginError').style.display = 'block';
+  }
+}
+
+// ─── Check if already logged in ──────────────────────────────────
+(async function boot() {
+  if (!authToken) return showLogin();
+  try {
+    await api('GET', '/health');
+    showApp();
+  } catch (e) {
+    showLogin();
+  }
+})();
+
+// ─── Init App ─────────────────────────────────────────────────────
+function initApp() {
+  connectWS();
+  loadSettings();
+  loadProfiles();
+}
+
+// ─── Per-job live viewer ──────────────────────────────────────────
+// Points an <img> straight at GET /api/scrape/view/:jobId — an MJPEG
+// (multipart/x-mixed-replace) CDP screencast the engine streams for THAT job's
+// page. The browser renders it as live video natively; no polling. The token
+// rides as ?token= because <img> can't set the X-Auth-Token header. Closing the
+// viewer clears src, aborting the stream so the engine stops the screencast.
+// One viewer at a time.
+function viewJob(jobId, label) {
+  closeJobViewer();
+  const overlay = document.createElement('div');
+  overlay.id = 'jobViewer';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.85);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px';
+  overlay.innerHTML =
+    '<div style="display:flex;align-items:center;gap:12px;width:100%;max-width:1280px;margin-bottom:10px">' +
+      '<span style="color:#fff;font-size:14px">👁 Live · ' + (label || jobId).replace(/</g, '&lt;') + '</span>' +
+      '<span id="jvStatus" style="color:#9aa;font-size:12px">connecting…</span>' +
+      '<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="closeJobViewer()">✕ Close</button>' +
+    '</div>' +
+    '<div style="flex:0 0 auto;max-width:1280px;width:100%;background:#000;border:1px solid #333;border-radius:8px;overflow:hidden;min-height:200px;display:flex;align-items:center;justify-content:center">' +
+      '<img id="jvImg" alt="live page" style="max-width:100%;max-height:78vh;display:block" />' +
+    '</div>';
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeJobViewer(); });
+  document.body.appendChild(overlay);
+
+  const img = document.getElementById('jvImg');
+  const status = document.getElementById('jvStatus');
+  img.onload = () => { if (status) status.textContent = ''; };
+  img.onerror = () => { if (status) status.textContent = 'stream ended — the job may have finished.'; };
+  img.src = `${window.location.origin}/api/scrape/view/${encodeURIComponent(jobId)}?token=${encodeURIComponent(authToken)}`;
+}
+function closeJobViewer() {
+  const img = document.getElementById('jvImg');
+  if (img) img.src = ''; // aborts the MJPEG connection → engine stops the screencast
+  const el = document.getElementById('jobViewer');
+  if (el) el.remove();
+}
+
+// ─── GoLogin profiles — multi-select card grid ────────────────────
+let allProfiles = [];
+const selectedProfileIds = new Set();
+
+function getSelectedProfileIds() { return [...selectedProfileIds]; }
+
+async function loadProfiles() {
+  try {
+    const data = await api('GET', '/profiles');
+    allProfiles = (data && data.profiles) || [];
+  } catch (e) {
+    allProfiles = [];
+  }
+  renderProfileGrid();
+}
+
+function _filteredProfiles() {
+  const q = (document.getElementById('profileSearch')?.value || '').trim().toLowerCase();
+  if (!q) return allProfiles;
+  return allProfiles.filter((p) =>
+    (p.name || '').toLowerCase().includes(q) || (p.id || '').toLowerCase().includes(q));
+}
+
+function renderProfileGrid() {
+  const grid = document.getElementById('profileGrid');
+  if (!grid) return;
+  if (!allProfiles.length) {
+    grid.innerHTML = '<div class="profile-empty">No GoLogin profiles found.</div>';
+    updateProfileCount();
+    return;
+  }
+  const rows = _filteredProfiles();
+  if (!rows.length) {
+    grid.innerHTML = '<div class="profile-empty">No matching profiles.</div>';
+    updateProfileCount();
+    return;
+  }
+  grid.innerHTML = rows.map((p) => {
+    const sel = selectedProfileIds.has(p.id);
+    const safeName = String(p.name || p.id).replace(/</g, '&lt;');
+    return `<label class="profile-card${sel ? ' selected' : ''}" data-pid="${p.id}">
+      <input type="checkbox" ${sel ? 'checked' : ''} onchange="toggleProfile('${p.id}', this.checked)" />
+      <div><div class="pc-name">${safeName}</div><div class="pc-id">${String(p.id).substring(0, 14)}…</div></div>
+    </label>`;
+  }).join('');
+  updateProfileCount();
+}
+
+function toggleProfile(id, checked) {
+  if (checked) selectedProfileIds.add(id); else selectedProfileIds.delete(id);
+  const card = document.querySelector(`.profile-card[data-pid="${id}"]`);
+  if (card) card.classList.toggle('selected', checked);
+  updateProfileCount();
+}
+
+function selectAllVisibleProfiles() {
+  _filteredProfiles().forEach((p) => selectedProfileIds.add(p.id));
+  renderProfileGrid();
+}
+
+function deselectAllProfiles() {
+  selectedProfileIds.clear();
+  renderProfileGrid();
+}
+
+function updateProfileCount() {
+  const el = document.getElementById('profileSelectedCount');
+  if (el) el.textContent = selectedProfileIds.size ? `· ${selectedProfileIds.size} selected` : '· none selected';
+}
+
+// ─── Tab Navigation ───────────────────────────────────────────────
+document.querySelectorAll('.tab').forEach((tab) => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach((t) => t.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach((p) => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+document.getElementById('toggleSlow').addEventListener('click', function () { this.classList.toggle('on'); });
+
+
+// (Legacy noVNC LinkedIn-login flow removed — the engine drives existing
+// GoLogin profiles, which are already authenticated, so there's nothing to log
+// into. `currentUserId` stays 'default' and is only used to scope the WS feed.)
+
+// ─── WebSocket ────────────────────────────────────────────────────
+function connectWS() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}?token=${authToken}&userId=${currentUserId || ''}`);
+  ws.onopen = () => addLog('Connected to server', 'success');
+  ws.onmessage = (event) => {
+    try { handleMessage(JSON.parse(event.data)); } catch (e) {}
+  };
+  ws.onclose = () => {
+    addLog('Disconnected. Reconnecting…', 'error');
+    setTimeout(connectWS, 3000);
+  };
+}
+
+function handleMessage(msg) {
+  switch (msg.type) {
+    case 'init':
+      (msg.jobs || []).forEach((j) => { jobs[j.id] = j; });
+      renderJobs();
+      fetchQueue(); // backfill queue positions/ETAs on (re)connect
+      break;
+    case 'job:created':
+      jobs[msg.job.id] = msg.job;
+      renderJobs();
+      addLog(`Job created: ${truncUrl(msg.job.searchUrl)}`);
+      break;
+    case 'batch:created':
+      (msg.jobs || []).forEach((j) => { jobs[j.id] = j; });
+      renderJobs();
+      addLog(`Batch created: ${msg.jobs.length} jobs`);
+      break;
+    case 'job:update':
+      jobs[msg.job.id] = msg.job;
+      if (msg.job.state !== 'queued') delete queuePos[msg.job.id]; // left the queue
+      renderJobs();
+      break;
+    case 'queue:position':
+      queuePos[msg.jobId] = msg;
+      renderJobs();
+      break;
+    case 'queue:stats':
+      queueStats = msg;
+      renderJobs();
+      break;
+    case 'log':
+      addLog(msg.message);
+      break;
+    case 'sheet:permission-error':
+      showSheetPermissionModal(msg);
+      break;
+  }
+}
+
+// ─── Sheet permission modal ──────────────────────────────────────
+// Shown when Google Sheets returns 403 / "caller does not have permission".
+// Stops the scrape and tells the user EXACTLY which email to share their
+// sheet with, plus a one-click copy button so they can paste it into Drive.
+function showSheetPermissionModal(info) {
+  // Reuse the modal if already open — just refresh the contents.
+  let modal = document.getElementById('sheetPermModal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'sheetPermModal';
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;';
+    modal.addEventListener('click', (e) => { if (e.target === modal) modal.remove(); });
+    document.body.appendChild(modal);
+  }
+
+  const email = (info.serviceAccountEmail || '').trim();
+  const sheetUrl = info.sheetUrl || '';
+
+  modal.innerHTML = `
+    <div style="background:var(--card,#1f2330);color:var(--text,#e6e9f0);border-radius:12px;max-width:520px;width:100%;padding:28px 28px 22px;box-shadow:0 20px 60px rgba(0,0,0,0.5);font-family:inherit">
+      <div style="font-size:32px;line-height:1;margin-bottom:8px">🚫</div>
+      <h2 style="margin:0 0 8px;font-size:20px;font-weight:600">Google Sheet not shared</h2>
+      <p style="margin:0 0 16px;font-size:14px;color:var(--text-dim,#9ca0ab);line-height:1.5">
+        The scrape was stopped because the destination sheet hasn't been
+        shared with the service account. No rows were written.
+      </p>
+
+      <div style="background:rgba(255,255,255,0.04);border-radius:8px;padding:12px 14px;margin-bottom:16px;border:1px solid rgba(255,255,255,0.08)">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.6px;color:var(--text-dim,#9ca0ab);margin-bottom:6px">Share your sheet with:</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <code id="sheetPermEmail" style="flex:1;font-size:13px;background:transparent;padding:4px 0;word-break:break-all">${escapeHtml(email || 'service account email unavailable')}</code>
+          <button id="sheetPermCopy" class="btn btn-sm" style="background:var(--accent,#4f46e5);color:#fff;border:none;border-radius:6px;padding:6px 12px;font-size:12px;cursor:pointer;flex-shrink:0">Copy</button>
+        </div>
+      </div>
+
+      <ol style="margin:0 0 18px 18px;padding:0;font-size:13px;color:var(--text-dim,#9ca0ab);line-height:1.7">
+        <li>Open your Google Sheet</li>
+        <li>Click <strong>Share</strong> in the top right</li>
+        <li>Paste the email above, set role to <strong>Editor</strong>, click <strong>Send</strong></li>
+        <li>Come back here and restart the scrape</li>
+      </ol>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        ${sheetUrl ? `<a href="${escapeHtml(sheetUrl)}" target="_blank" rel="noopener" class="btn btn-ghost" style="text-decoration:none;padding:9px 16px;border-radius:8px;border:1px solid rgba(255,255,255,0.12);color:inherit;font-size:13px">Open sheet ↗</a>` : ''}
+        <button id="sheetPermClose" class="btn btn-primary" style="background:var(--accent,#4f46e5);color:#fff;border:none;border-radius:8px;padding:9px 20px;font-size:13px;cursor:pointer;font-weight:500">Got it</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('sheetPermClose').addEventListener('click', () => modal.remove());
+  document.getElementById('sheetPermCopy').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(email);
+      const btn = document.getElementById('sheetPermCopy');
+      const original = btn.textContent;
+      btn.textContent = '✓ Copied';
+      setTimeout(() => { btn.textContent = original; }, 1500);
+    } catch (_) {
+      // Clipboard API can fail on http:// — fall back to select-on-click.
+      const range = document.createRange();
+      range.selectNodeContents(document.getElementById('sheetPermEmail'));
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  });
+
+  addLog('🚫 Scrape stopped — sheet not shared. See popup for instructions.', 'error');
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[c]));
+}
+
+// ─── Batch input: Type URLs / From a Sheet (mirrors the app) ──────
+// Sheet mode loads search URLs from an INPUT Google Sheet and lets the operator
+// pick which sheet ROWS to scrape (e.g. "2-10"). Each row keeps its true
+// 1-based sheet row number so the picker matches what's on screen.
+let batchInputMode = 'type';
+let batchSheetItems = []; // [{ row, url }]
+let batchRowSpec = '';
+
+function setBatchInputMode(mode) {
+  batchInputMode = (mode === 'sheet') ? 'sheet' : 'type';
+  document.getElementById('batch-input-type').style.display = batchInputMode === 'type' ? '' : 'none';
+  document.getElementById('batch-input-sheet').style.display = batchInputMode === 'sheet' ? '' : 'none';
+  document.getElementById('batch-seg-type').classList.toggle('is-active', batchInputMode === 'type');
+  document.getElementById('batch-seg-sheet').classList.toggle('is-active', batchInputMode === 'sheet');
+}
+
+// Parse "2-10, 13, 15-17" → ordered, de-duped row numbers, intersected with the
+// rows we actually found. Blank → all available rows.
+function parseBatchRowSpec(spec, availableRows) {
+  const available = new Set(availableRows);
+  const s = (spec || '').trim();
+  if (!s) return availableRows.slice();
+  const picked = new Set();
+  for (const tokenRaw of s.split(',')) {
+    const token = tokenRaw.trim();
+    if (!token) continue;
+    const m = token.match(/^(\d+)\s*-\s*(\d+)$/);
+    if (m) {
+      let a = parseInt(m[1], 10), b = parseInt(m[2], 10);
+      if (a > b) { const t = a; a = b; b = t; }
+      for (let r = a; r <= b; r++) if (available.has(r)) picked.add(r);
+    } else if (/^\d+$/.test(token)) {
+      const r = parseInt(token, 10);
+      if (available.has(r)) picked.add(r);
+    }
+  }
+  return availableRows.filter((r) => picked.has(r));
+}
+
+function selectedBatchRows() {
+  return parseBatchRowSpec(batchRowSpec, batchSheetItems.map((i) => i.row));
+}
+
+function getBatchInputUrls() {
+  if (batchInputMode === 'sheet') {
+    const rows = new Set(selectedBatchRows());
+    return batchSheetItems.filter((i) => rows.has(i.row)).map((i) => i.url);
+  }
+  return (document.getElementById('batchUrls').value || '')
+    .split('\n').map((s) => s.trim()).filter(Boolean);
+}
+
+async function loadBatchUrlsFromSheet() {
+  const sheetUrl = (document.getElementById('batch-src-sheet').value || '').trim();
+  const status = document.getElementById('batch-src-status');
+  const pick = document.getElementById('batch-row-pick');
+  const rowsInput = document.getElementById('batch-rows');
+  const setS = (m) => { if (status) status.textContent = m; };
+  const hide = () => { if (pick) pick.style.display = 'none'; };
+  if (!sheetUrl) { setS('Paste a Google Sheet URL above, then click Load URLs.'); hide(); return; }
+  setS('Reading sheet…');
+  try {
+    const res = await api('GET', '/scrape/extract-urls?sheetUrl=' + encodeURIComponent(sheetUrl));
+    if (res && res.error) { batchSheetItems = []; setS('Could not read sheet — ' + res.error); hide(); }
+    else {
+      batchSheetItems = Array.isArray(res.items) ? res.items.filter((i) => i && i.row && i.url) : [];
+      if (!batchSheetItems.length) {
+        setS('No Sales Nav search URLs found (looking for linkedin.com/sales/search/… in any cell).');
+        hide();
+      } else {
+        const rowNums = batchSheetItems.map((i) => i.row);
+        const lo = Math.min(...rowNums), hi = Math.max(...rowNums);
+        setS(`✓ Found ${batchSheetItems.length} Sales Nav search${batchSheetItems.length === 1 ? '' : 'es'} in ${lo === hi ? 'row ' + lo : 'rows ' + lo + '–' + hi}.`);
+        batchRowSpec = lo === hi ? String(lo) : `${lo}-${hi}`;
+        if (rowsInput) rowsInput.value = batchRowSpec;
+        if (pick) pick.style.display = '';
+        onBatchRowSpecChange();
+      }
+    }
+  } catch (e) {
+    batchSheetItems = [];
+    setS('Could not read sheet — ' + e.message);
+    hide();
+  }
+}
+
+function onBatchRowSpecChange() {
+  batchRowSpec = (document.getElementById('batch-rows').value || '').trim();
+  const summary = document.getElementById('batch-row-summary');
+  if (summary) {
+    const sel = selectedBatchRows().length;
+    const total = batchSheetItems.length;
+    summary.textContent = total
+      ? `Scraping ${sel} of ${total} search${total === 1 ? '' : 'es'}${sel === 0 ? ' — no rows match; nothing will run.' : ''}`
+      : '';
+  }
+}
+
+// ─── Start Scrapes ────────────────────────────────────────────────
+document.getElementById('btnStartSingle').addEventListener('click', async () => {
+  const ids = getSelectedProfileIds();
+  if (!ids.length) return alert('Select at least one GoLogin account (it must have a Sales Navigator seat).');
+  const searchUrl = document.getElementById('singleUrl').value.trim();
+  const sheetUrl = document.getElementById('singleSheet').value.trim();
+  const tabName = document.getElementById('singleTab').value.trim();
+  const slowMode = document.getElementById('toggleSlow').classList.contains('on');
+  if (!searchUrl) return alert('Enter a Sales Navigator search URL');
+  if (!sheetUrl) return alert('Enter a Google Sheet URL');
+  // Single URL → first selected account.
+  const result = await api('POST', '/scrape/single', { searchUrl, sheetUrl, tabName, slowMode, profileId: ids[0], userId: currentUserId });
+  if (result.job) { jobs[result.job.id] = result.job; renderJobs(); }
+  document.querySelector('.tab[data-tab="jobs"]').click();
+});
+
+document.getElementById('btnStartBatch').addEventListener('click', async () => {
+  const ids = getSelectedProfileIds();
+  if (!ids.length) return alert('Select at least one GoLogin account (each must have a Sales Navigator seat).');
+  const sheetUrl = document.getElementById('batchSheet').value.trim();
+  const baseTab = document.getElementById('batchTab').value.trim() || 'Results';
+  const slowMode = document.getElementById('toggleSlow').classList.contains('on');
+  // Input URLs come from the typed textarea OR the selected sheet rows.
+  const urls = getBatchInputUrls();
+  if (!urls.length) return alert(batchInputMode === 'sheet'
+    ? 'No rows selected — load a sheet and pick at least one row.'
+    : 'Enter at least one URL');
+  if (!sheetUrl) return alert('Enter a destination Google Sheet URL');
+  // Pair each URL with a selected account (round-robin); each pair is its own
+  // single-URL job so different accounts scrape concurrently (one per profile).
+  for (let i = 0; i < urls.length; i++) {
+    const profileId = ids[i % ids.length];
+    const tabName = urls.length > 1 ? `${baseTab} ${i + 1}` : baseTab;
+    const result = await api('POST', '/scrape/single', { searchUrl: urls[i], sheetUrl, tabName, slowMode, profileId, userId: currentUserId });
+    if (result && result.job) jobs[result.job.id] = result.job;
+  }
+  renderJobs();
+  document.querySelector('.tab[data-tab="jobs"]').click();
+});
+
+// ─── Pause / Stop (act on every selected account) ─────────────────
+let isPaused = false;
+document.getElementById('btnPauseSingle').addEventListener('click', async () => {
+  const ids = getSelectedProfileIds();
+  const path = isPaused ? '/scrape/resume' : '/scrape/pause';
+  for (const profileId of ids) await api('POST', path, { profileId });
+  document.getElementById('btnPauseSingle').textContent = isPaused ? '⏸ Pause' : '▶ Resume';
+  isPaused = !isPaused;
+});
+async function stopAllSelected() {
+  for (const profileId of getSelectedProfileIds()) await api('POST', '/scrape/stop', { profileId });
+}
+document.getElementById('btnStopSingle').addEventListener('click', stopAllSelected);
+document.getElementById('btnStopBatch').addEventListener('click', stopAllSelected);
+
+// ─── Settings ─────────────────────────────────────────────────────
+document.getElementById('btnSaveSettings').addEventListener('click', async () => {
+  const slowMode = document.getElementById('toggleSlow').classList.contains('on');
+  await api('POST', '/settings', { slowMode });
+  addLog('Settings saved', 'success');
+});
+
+async function loadSettings() {
+  try {
+    const data = await api('GET', '/settings');
+    if (data.slowMode) document.getElementById('toggleSlow').classList.add('on');
+    const badge = document.getElementById('sheetsBadge');
+    const text = document.getElementById('sheetsStatusText');
+    const desc = document.getElementById('sheetsStatus');
+    if (data.sheetsConnected) {
+      badge.className = 'badge connected'; text.textContent = 'Connected';
+      desc.textContent = 'Service account detected. Sheets API ready.';
+    } else {
+      badge.className = 'badge disconnected'; text.textContent = 'Not connected';
+      desc.textContent = 'No service account found.';
+    }
+  } catch (e) {}
+}
+
+// ─── Job List ─────────────────────────────────────────────────────
+// Backfill queue positions/ETAs from REST (on load/reconnect; live updates come over WS).
+async function fetchQueue() {
+  try {
+    const snap = await api('GET', '/scrape/queue?userId=' + encodeURIComponent(currentUserId || ''));
+    queuePos = {};
+    for (const [id, p] of Object.entries((snap && snap.jobs) || {})) queuePos[id] = { jobId: id, ...p };
+    queueStats = (snap && snap.stats) || {};
+    renderJobs();
+  } catch (e) {}
+}
+function fmtEta(ms) {
+  if (!ms || ms < 0) return '';
+  if (ms < 60000) return '<1 min';
+  return '~' + Math.round(ms / 60000) + ' min';
+}
+// The "you're #N in line" line shown under each QUEUED job.
+function renderQueueLine(p) {
+  if (!p) return '';
+  if (p.position <= 1) {
+    return '<div style="font-size:12px;color:var(--green,#3fb950);margin-top:4px">🟢 Next up — starts when an account slot frees</div>';
+  }
+  const eta = fmtEta(p.etaMs);
+  const ahead = p.accountsAhead === 1 ? '1 account ahead' : (p.accountsAhead || 0) + ' accounts ahead';
+  return '<div style="font-size:12px;color:var(--text-muted);margin-top:4px">⏳ #' + p.position +
+    ' in queue · ' + ahead + (eta ? ' · ' + eta + ' (est.)' : '') + '</div>';
+}
+
+function renderJobs() {
+  const c = document.getElementById('jobList');
+  const sorted = Object.values(jobs).sort((a, b) => b.createdAt - a.createdAt);
+  if (!sorted.length) { c.innerHTML = '<div class="empty-state"><div class="empty-icon">📭</div><div>No jobs yet. Start a scrape to see them here.</div></div>'; return; }
+  c.innerHTML = sorted.map((j) => `
+    <div class="job-card">
+      <div class="job-status ${j.state}"></div>
+      <div class="job-info">
+        <div class="job-url">${esc(truncUrl(j.searchUrl))}</div>
+        <div class="job-meta">
+          <span>${j.state.toUpperCase()}</span>
+          ${j.tabName ? '<span>→ ' + esc(j.tabName) + '</span>' : ''}
+          ${j.profiles > 0 ? '<span>' + j.profiles + ' profiles</span>' : ''}
+          ${j.error ? '<span style="color:var(--red)">' + esc(j.error).substring(0, 50) + '</span>' : ''}
+        </div>
+        ${j.state === 'queued' ? renderQueueLine(queuePos[j.id]) : ''}
+      </div>
+      <div class="job-stats">
+        <span class="stat-pages">${j.pages} pg</span>
+        <span class="stat-profiles">${j.profiles} profiles</span>
+        ${j.state === 'running' ? `<button class="btn btn-ghost btn-sm" style="margin-top:6px" onclick="viewJob('${j.id}', '${esc(j.tabName || truncUrl(j.searchUrl)).replace(/'/g, '&#39;')}')" title="Watch this account's browser live">👁 View</button>` : ''}
+      </div>
+    </div>`).join('');
+}
+
+// ─── Logging ──────────────────────────────────────────────────────
+function addLog(message, type = '') {
+  const time = new Date().toLocaleTimeString('en-US', { hour12: false });
+  logs.push({ time, message, type });
+  if (logs.length > 500) logs = logs.slice(-300);
+  renderLogs();
+}
+function renderLogs() {
+  const body = document.getElementById('logBody');
+  body.innerHTML = logs.map((l) => `<div class="log-entry ${l.type}"><span class="time">[${l.time}]</span> ${esc(l.message)}</div>`).join('');
+  body.scrollTop = body.scrollHeight;
+}
+document.getElementById('btnClearLogs').addEventListener('click', () => { logs = []; renderLogs(); });
+
+// ─── Helpers ──────────────────────────────────────────────────────
+function truncUrl(url) {
+  if (!url) return '(no url)';
+  try { const u = new URL(url); const p = u.pathname + u.search; return p.length > 70 ? p.slice(0, 67) + '…' : p; }
+  catch (e) { return url.length > 70 ? url.slice(0, 67) + '…' : url; }
+}
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+</script>
+</body>
+</html>

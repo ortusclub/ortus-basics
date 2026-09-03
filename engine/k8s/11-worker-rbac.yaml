@@ -1,0 +1,38 @@
+# RBAC for the worker's pod-deletion-cost self-protection.
+#
+# Each worker stamps `controller.kubernetes.io/pod-deletion-cost` on its OWN pod
+# while it's running scrapes, so KEDA scale-down evicts IDLE pods first and never
+# cuts a long scrape mid-run (see pod-deletion-cost.js). To write that annotation
+# the worker calls the K8s API, which needs a ServiceAccount allowed to GET/PATCH
+# pods in this namespace.
+#
+# Scope is minimal: namespaced Role (not ClusterRole), pods only, get/patch only.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: salesnav-worker
+  namespace: salesnav-scraper
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: salesnav-worker-pod-deletion-cost
+  namespace: salesnav-scraper
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: salesnav-worker-pod-deletion-cost
+  namespace: salesnav-scraper
+subjects:
+  - kind: ServiceAccount
+    name: salesnav-worker
+    namespace: salesnav-scraper
+roleRef:
+  kind: Role
+  name: salesnav-worker-pod-deletion-cost
+  apiGroup: rbac.authorization.k8s.io

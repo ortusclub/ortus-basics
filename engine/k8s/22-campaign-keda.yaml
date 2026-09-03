@@ -1,0 +1,45 @@
+# KEDA autoscaling for the campaign workers — scale 0→10 on ACTIVE CAMPAIGNS.
+#
+# Signal (Plan A): a REDIS list `cmp:scaleactive` whose length == the number of
+# campaigns that still need a runtime (queued/running send phases + monitoring
+# windows firing their 7-day timers). The always-on FRONTEND rebuilds this list
+# from Postgres every ~15s (server.js scale-bridge → campaign-store.refreshScaleMetric),
+# so KEDA scales WITHOUT a Postgres connection of its own. That removed the last
+# cross-namespace dependency on the standalone cloudsql-proxy, which is now a
+# per-pod sidecar (see 03-deployment.yaml / 21-campaign-worker.yaml).
+#
+# Behaviour is unchanged from the old postgresql trigger: same statuses counted,
+# same ceil(active / 2) pods, wake-from-zero on any active campaign.
+#
+# When the list is empty (length 0), KEDA scales campaign-worker to ZERO — no
+# idle cost. Separate from the scraper's ScaledObject (max 5): the two engines
+# autoscale independently — campaigns can climb to 10 while the scraper is at 5.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: campaign-worker
+  namespace: salesnav-scraper
+spec:
+  scaleTargetRef:
+    name: campaign-worker
+  minReplicaCount: 0
+  maxReplicaCount: 6   # lowered 10→6: keeps a full scraper+campaign burst (4+6=10 pods) under the denied CPU(100)/SSD(2TB) quotas. ×2 campaigns/pod = up to 12 concurrent campaigns. Raise once quota clears.
+  # Keep a woken pod alive a few minutes so short gaps between monitoring sweeps
+  # don't thrash it down and back up.
+  cooldownPeriod: 300
+  pollingInterval: 30
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 300
+  triggers:
+    - type: redis
+      metadata:
+        # Same Memorystore Basic instance the scraper scales on (10.9.147.163),
+        # reachable cluster-wide by IP — no proxy, no cross-namespace DB access.
+        address: 10.9.147.163:6379
+        enableTLS: "false"
+        listName: "cmp:scaleactive"
+        listLength: "2"              # ceil(activeCampaigns / 2) pods
+        activationListLength: "0"    # wake from zero as soon as ANY campaign is active

@@ -1,0 +1,20 @@
+# ClusterIP service: exposes the pod inside the cluster on port 80 -> 3000.
+# Ingress in 05-ingress.yaml handles external HTTPS termination.
+# The cloud.google.com/backend-config annotation tells GKE to use the
+# longer-timeout BackendConfig (08-backendconfig.yaml) so WebSocket
+# connections for the in-app noVNC popup don't get killed after 30s.
+apiVersion: v1
+kind: Service
+metadata:
+  name: salesnav-scraper
+  namespace: salesnav-scraper
+  annotations:
+    cloud.google.com/backend-config: '{"default": "salesnav-bc"}'
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: salesnav-scraper
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

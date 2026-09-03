@@ -3,11 +3,17 @@ import 'dotenv/config';
 // ── Startup env validation (D-06) ──────────────────────────────────
 // v2.52.0: SHEETS_WEBAPP_URL removed from REQUIRED_ENV. The URL is now
 // hard-coded in src/sheets-webapp-url.js and the .env value is ignored.
-const REQUIRED_ENV = ['GOLOGIN_API_TOKEN'];
-const missing = REQUIRED_ENV.filter(k => !process.env[k]);
-if (missing.length) {
-  console.error(`\n  FATAL: Missing required environment variables:\n${missing.map(k => '    - ' + k).join('\n')}\n\n  Copy .env.example to .env and fill in all values.\n`);
-  process.exit(1);
+// Ortus Basics 1.0: a missing GoLogin token is no longer fatal. The packaged app
+// ships with no secrets, so a first launch legitimately has none — the operator
+// pastes what they have into Settings and the app applies it live. Exiting here
+// would mean a downloaded app could never reach the screen that fixes it.
+const { applyCredentials } = await import('./src/gologin-credentials.js');
+const _appliedCreds = applyCredentials();
+if (_appliedCreds.length) {
+  console.log(`  ✦ GoLogin workspaces from Settings: ${_appliedCreds.join(', ')}`);
+}
+if (!process.env.GOLOGIN_API_TOKEN) {
+  console.warn('\n  ⚠ No GoLogin token yet — open Settings in the app and paste one.\n    Which accounts you can use follows from which tokens you add.\n');
 }
 
 import express from 'express';
@@ -533,12 +539,12 @@ app.get('/api/update-progress', (_req, res) => res.json(_downloadState));
 // opening the DMG.
 function _packagedAppBundlePath() {
   // process.execPath in a packaged build:
-  //   /Applications/The Ortus Outreach.app/Contents/MacOS/The Ortus Outreach
+  //   /Applications/<productName>.app/Contents/MacOS/<productName>
   const m = String(process.execPath || '').match(/^(.*\.app)\/Contents\/MacOS\//);
   if (!m) return null;
   // In dev (`electron .`) execPath points at node_modules/.../Electron.app —
   // never swap that. Only the real installed bundle qualifies.
-  if (!m[1].endsWith('/The Ortus Outreach.app')) return null;
+  if (!m[1].endsWith(`/${pkg.productName}.app`)) return null;
   return m[1];
 }
 
@@ -573,11 +579,11 @@ if ! hdiutil attach "$DMG" -nobrowse -noautoopen -mountpoint "$MNT" >/dev/null 2
   echo "[updater] mount failed — opening DMG for manual install"; open "$DMG"; exit 1
 fi
 # Pick the REAL app by explicit name — the DMG also contains
-# "Ortus Outreach Setup.app", which sorts BEFORE "The Ortus Outreach.app".
+# "Ortus Outreach Setup.app", which sorts BEFORE the real bundle.
 # The old "ls *.app | head -1" grabbed that helper and clobbered the real app,
 # so the update installed the Setup helper instead (install-mac.sh always
 # copied by explicit name, which is why the terminal installer was immune).
-SRC="$MNT/The Ortus Outreach.app"
+SRC="$MNT/${pkg.productName}.app"
 if [ ! -d "$SRC" ]; then
   SRC="$(/bin/ls -d "$MNT/"*.app 2>/dev/null | grep -vi 'Setup' | head -1)"
 fi
@@ -1256,6 +1262,20 @@ function launchCampaign(config, owner) {
   campaign.runsOn = 'local';
   campaign.handoverAt = null;
   preventSleep('campaign');
+  // Ortus Basics 1.0: snapshot the wizard config for LOCAL runs too. This was
+  // only ever written on the cloud dispatch path (saveCloudLaunchConfig at the
+  // /api/campaign/cloud/start route), so opening a finished local campaign had
+  // nothing to restore and came back with an empty sheet URL and no accounts.
+  // Best-effort: a failed snapshot must never stop a campaign starting.
+  try {
+    const _lcId = campaign.id || SINGLETON_CAMPAIGN_ID;
+    if (_lcId) {
+      saveCloudLaunchConfig(_lcId, (config && config.name) || '', config)
+        .catch((e) => console.warn(`[launch-config] local snapshot failed: ${e.message}`));
+    }
+  } catch (e) {
+    console.warn(`[launch-config] local snapshot skipped: ${e.message}`);
+  }
   startCampaign({ ...config, createdBy: owner }).then(async () => {
     const status = getCampaignStatus();
     if (status.dailyResetNeeded && status.resumeAt && !status.stoppedManually) {
@@ -5209,9 +5229,13 @@ app.post('/api/queue/run-next', async (_req, res) => {
 app.post('/api/monitoring/check-now', async (req, res) => {
   try {
     const { runMonitoringCheckAll, getCampaignState, setBulkCheckInProgress } = await import('./src/campaign.js');
+    // Ortus Basics 1.0: check-now is the ONLY way a check runs, so it must not
+    // require the campaign to be sitting in monitoring — the operator may want a
+    // check after a run has finished and settled.
     const state = getCampaignState();
-    if (state.state !== 'monitoring') {
-      return res.status(400).json({ error: 'Campaign is not in monitoring state' });
+    const _checkable = (state?.participatingProfileIds || state?.profileIds || []).length;
+    if (!_checkable) {
+      return res.status(400).json({ error: 'No campaign accounts to check yet — run a campaign first.' });
     }
     // Fire and forget — the operator wants the button to feel responsive,
     // but the actual bulk-check pass takes 30-120s.
@@ -5269,9 +5293,13 @@ app.post('/api/monitoring/auto-checks', async (req, res) => {
       return res.status(400).json({ error: 'enabled (boolean) required' });
     }
     const { getCampaignState, setMonitoringAutoChecks } = await import('./src/campaign.js');
+    // Ortus Basics 1.0: check-now is the ONLY way a check runs, so it must not
+    // require the campaign to be sitting in monitoring — the operator may want a
+    // check after a run has finished and settled.
     const state = getCampaignState();
-    if (state.state !== 'monitoring') {
-      return res.status(400).json({ error: 'Campaign is not in monitoring state' });
+    const _checkable = (state?.participatingProfileIds || state?.profileIds || []).length;
+    if (!_checkable) {
+      return res.status(400).json({ error: 'No campaign accounts to check yet — run a campaign first.' });
     }
     const value = await setMonitoringAutoChecks(enabled);
     res.json({ ok: true, autoChecksEnabled: value });
@@ -8297,11 +8325,89 @@ app.get('/api/export/csv', async (_req, res) => {
   }
 });
 
+// ── Campaign settings, kept by name (Ortus Basics 1.0) ─────────────────────
+// Saved on Save and on Start; restored when a campaign of that name is opened.
+// Keyed by name because an engine campaign id never survived a restart, which
+// is why reopening a campaign kept coming back empty.
+app.get('/api/campaign-configs', async (_req, res) => {
+  try {
+    const { listConfigs } = await import('./src/campaign-configs.js');
+    res.json({ ok: true, configs: listConfigs() });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+app.get('/api/campaign-configs/:name', async (req, res) => {
+  try {
+    const { getConfig } = await import('./src/campaign-configs.js');
+    const entry = getConfig(req.params.name);
+    if (!entry) return res.status(404).json({ ok: false, error: 'No saved settings for that campaign name.' });
+    res.json({ ok: true, ...entry });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+app.post('/api/campaign-configs', async (req, res) => {
+  try {
+    const { saveConfig } = await import('./src/campaign-configs.js');
+    const { name, config } = req.body || {};
+    if (!String(name || '').trim()) {
+      return res.status(400).json({ ok: false, error: 'A campaign needs a name before its settings can be saved.' });
+    }
+    res.json({ ok: true, saved: saveConfig(name, config) });
+  } catch (err) {
+    console.error('[campaign-configs] save failed:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── GoLogin workspace tokens (Ortus Basics 1.0) ────────────────────────────
+// The app ships with no secrets. These two routes are the Settings stage: the
+// operator pastes the tokens they hold, and the workspaces those tokens unlock
+// become selectable. Nothing here ever echoes a token back.
+app.get('/api/credentials', async (_req, res) => {
+  try {
+    const { credentialStatus, readOthers } = await import('./src/gologin-credentials.js');
+    res.json({ ok: true, credentials: credentialStatus(), others: readOthers() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+app.post('/api/credentials', async (req, res) => {
+  try {
+    const { saveCredentials, credentialStatus } = await import('./src/gologin-credentials.js');
+    const body = req.body || {};
+    // Only the known token names are accepted — an arbitrary key would end up
+    // in process.env, which is not somewhere untrusted input belongs.
+    const { credentialFields } = await import('./src/gologin-credentials.js');
+    const allowed = new Set(credentialFields().map((f) => f.env));
+    const input = {};
+    for (const [k, v] of Object.entries(body)) if (allowed.has(k)) input[k] = v;
+    // `others` is the operator's own workspace list — replaced wholesale.
+    if (Array.isArray(body.others)) {
+      const { saveOthers } = await import('./src/gologin-credentials.js');
+      saveOthers(body.others);
+    }
+    if (!Object.keys(input).length && !Array.isArray(body.others)) {
+      return res.status(400).json({ ok: false, error: 'No known token fields in the request.' });
+    }
+    if (!Object.keys(input).length) {
+      const { readOthers } = await import('./src/gologin-credentials.js');
+      return res.json({ ok: true, credentials: credentialStatus(), others: readOthers() });
+    }
+    saveCredentials(input);
+    res.json({ ok: true, credentials: credentialStatus() });
+  } catch (err) {
+    console.error('[credentials] save failed:', err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
 app.listen(PORT, '127.0.0.1', async () => {
-  console.log(`\n  ✦ Ortus Outreach v${APP_VERSION}`);
+  console.log(`\n  ✦ Ortus Basics — Version ${APP_VERSION}`);
+  console.log(`  ✦ build: v${APP_VERSION}`);
   console.log(`  ✦ Dashboard: http://localhost:${PORT}`);
   startAmbientSampling(getActiveBrowserPids);
   console.log(`  ✦ GoLogin token: ${process.env.GOLOGIN_API_TOKEN ? '✓ loaded' : '✗ MISSING'}`);
@@ -8351,7 +8457,10 @@ app.listen(PORT, '127.0.0.1', async () => {
   // cooldown + 7-day expiry; runAutoIntros only fires for entries that
   // carry primaryName/primaryIntroBody, so Check Status-only entries are
   // bulk-checked but never DM'd.
-  startPostCampaignScheduler();
+  // Ortus Basics 1.0: no automatic acceptance sweeps. This 30-min scheduler was
+  // the last automatic checker left — the monitoring watcher is already a no-op
+  // and shouldAutoFireCheck() returns false. Every check is now operator-driven
+  // via ⚡ Check now. (was: startPostCampaignScheduler();)
   // v2.72: hourly reply tracking for message-sending campaigns (never in the
   // first hour, ≤1×/hour per account). Writes replies to the sheet + the
   // in-app replies panel; desktop/email alerts are opt-in.
@@ -8394,7 +8503,8 @@ app.listen(PORT, '127.0.0.1', async () => {
   // Pull a cloud campaign's PERSONAL-primary follow-ups down to this machine and
   // enqueue them into the same local runner (the VM can't safely send as a
   // personal account). GoLogin primaries send on the VM, untouched.
-  if (!UI_PREVIEW) startCloudFollowupPoller();
+  // Ortus Basics 1.0: cloud campaigns are discontinued — no follow-up poller.
+  // (was: if (!UI_PREVIEW) startCloudFollowupPoller();)
 
   // Drain the campaign queue at startup. If the server crashed/restarted
   // while items were queued, this auto-promotes the next one to active so

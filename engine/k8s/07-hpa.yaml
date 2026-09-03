@@ -1,0 +1,51 @@
+# Horizontal Pod Autoscaler.
+#
+# IMPORTANT: enabling this AS-IS will not actually distribute load usefully.
+# The app stores LinkedIn sessions on a local PVC mounted ReadWriteOnce, so
+# only ONE pod can hold the volume at a time. Setting replicas > 1 would
+# fail to mount or fight over the lockfile.
+#
+# To make horizontal scaling useful you need to do TWO things first:
+#   1. Move LinkedIn sessions to shared storage (Redis / S3 / Firestore).
+#   2. Change PVC to ReadWriteMany OR remove the PVC entirely.
+#   3. Add sticky routing in the app via the Ingress (e.g.
+#      nginx.ingress.kubernetes.io/upstream-hash-by: "$cookie_userId").
+#
+# Once you've done that work, set `replicas` in the Deployment to a higher
+# starting number AND uncomment the spec below. Until then, leave this off.
+#
+# apiVersion: autoscaling/v2
+# kind: HorizontalPodAutoscaler
+# metadata:
+#   name: salesnav-scraper
+#   namespace: salesnav-scraper
+# spec:
+#   scaleTargetRef:
+#     apiVersion: apps/v1
+#     kind: Deployment
+#     name: salesnav-scraper
+#   minReplicas: 1
+#   maxReplicas: 5
+#   metrics:
+#     - type: Resource
+#       resource:
+#         name: cpu
+#         target:
+#           type: Utilization
+#           averageUtilization: 70
+#     - type: Resource
+#       resource:
+#         name: memory
+#         target:
+#           type: Utilization
+#           averageUtilization: 75
+---
+# Placeholder so `kubectl apply -f` doesn't error on this file while HPA
+# stays disabled. Delete this once you uncomment the HPA above.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: salesnav-hpa-disabled
+  namespace: salesnav-scraper
+data:
+  note: "HPA intentionally not enabled — see comments in this file."

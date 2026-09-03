@@ -12,7 +12,9 @@
  * server.js so the helpers below stay unit-testable.
  */
 
-export const UPDATE_REPO = 'ortusclub/ortus-outreach-installer';
+// Ortus Basics 1.0: this app has its own release line — ortus-outreach-installer
+// is a different product and comparing against it made every build look stale.
+export const UPDATE_REPO = 'ortusclub/ortus-basics';
 export const LATEST_RELEASE_API = `https://api.github.com/repos/${UPDATE_REPO}/releases/latest`;
 
 /** Strip a leading "v" and surrounding whitespace from a tag/version string. */
@@ -51,12 +53,14 @@ export function isBehind(current, latest) {
  * scripts/rename-dmgs.js renames the x64 build to "intel"; arm64 stays "arm64".
  */
 export function archLabel(processArch) {
-  return processArch === 'arm64' ? 'arm64' : 'intel';
+  // Ortus Basics ships the Intel build as "x64" (electron-builder's own label),
+  // not the "intel" the old rename script produced.
+  return processArch === 'arm64' ? 'arm64' : 'x64';
 }
 
-/** Release asset filename for a given arch label, e.g. "Ortus-Outreach-arm64.dmg". */
+/** Release asset filename for a given arch label, e.g. "Ortus-Basics-arm64.dmg". */
 export function dmgAssetName(archLbl) {
-  return `Ortus-Outreach-${archLbl}.dmg`;
+  return `Ortus-Basics-${archLbl}.dmg`;
 }
 
 /**

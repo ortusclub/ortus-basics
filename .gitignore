@@ -62,3 +62,8 @@ data/magellan-hubspot-ids.json
 # state it is already designed for.
 data/monitoring-campaign.json
 data/monitoring-campaign.local-backup.json
+
+# Vendored local dev engine — source is tracked, its dependencies are not.
+engine/node_modules/
+engine/data/
+engine/.env

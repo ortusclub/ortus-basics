@@ -1,0 +1,72 @@
+# KEDA ScaledObject — horizontal autoscaling for the scraper.
+#
+# Scaling policy (decided with Steven, Jun 2026):
+#   • Warm Mon–Fri 09:00–24:00 Asia/Manila → at least 1 pod ready (instant scrapes)
+#   • Overnight (00:00–09:00) + all weekend → scale to ZERO when idle
+#   • Any queued job AT ANY TIME wakes a pod on demand (~2 min cold start),
+#     then scales back to zero after it finishes — so nights/weekends still work.
+#
+# Two triggers, combined by MAX desired replicas:
+#   1. cron   — keeps 1 warm during business hours
+#   2. redis  — scales 0→N on actual work (waiting + running jobs)
+#
+# PREREQUISITES (not yet in place — Phase 2/4):
+#   • KEDA installed in the cluster.
+#   • Redis (Memorystore) reachable at the host below; the engine using
+#     redis-store.js so sn:active reflects live work.
+#   • The Deployment must GRACEFULLY DRAIN on SIGTERM (stop claiming new jobs,
+#     finish in-flight scrapes) with a terminationGracePeriodSeconds long enough
+#     for a scrape to complete — otherwise scale-down could kill a running scrape.
+#     See note in 03-deployment.yaml.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: salesnav-worker
+  namespace: salesnav-scraper
+spec:
+  scaleTargetRef:
+    name: salesnav-worker           # scale the WORKER deployment (not the frontend)
+  pollingInterval: 15               # check triggers every 15s
+  cooldownPeriod: 300               # wait 5 min idle before scaling to 0
+  minReplicaCount: 0                # scale-to-zero allowed
+  maxReplicaCount: 4                # CEILING: 4 pods × 3 = up to 12 concurrent scrapes (lowered 5→4 to keep a full scraper+campaign burst under the CPU/SSD quota)
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          # Be conservative scaling down so we don't thrash pods mid-burst.
+          stabilizationWindowSeconds: 300
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 120    # remove at most 1 pod every 2 min
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Pods
+              value: 5
+              periodSeconds: 30     # can add up to 5 pods fast on a burst
+  triggers:
+    # PURE SCALE-TO-ZERO: workers scale only on real work. No cron warm-window —
+    # the always-on FRONTEND (03-deployment.yaml) keeps the URL reachable 24/7
+    # and accepts jobs, so a worker cold-start (~2 min) only costs the first
+    # scrape after an idle gap; back-to-back scrapes stay warm via the cooldown.
+    # (To bring back a business-hours warm worker later — e.g. for campaign
+    # monitoring — re-add a `cron` trigger here.)
+    #
+    # On-demand scaling on DISTINCT ACTIVE ACCOUNTS (not raw job count). One
+    #    GoLogin account runs only one scrape at a time, so N jobs on one account
+    #    need 1 worker — scaling on jobs would over-provision idle pods. A pod
+    #    now handles 3 accounts (MAX_CONCURRENT_SCRAPES=3), so listLength=3 →
+    #    ceil(accounts/3) pods. Kept in lock-step with the per-pod concurrency:
+    #    if you change one, change the other so KEDA never starves or overshoots.
+    #    activationListLength 0 = wake from zero as soon as ANY account has work.
+    - type: redis
+      metadata:
+        # Memorystore Basic (salesnav-redis-basic). Reachable cluster-wide by IP.
+        address: 10.9.147.163:6379
+        enableTLS: "false"
+        listName: "sn:scaleaccounts"
+        listLength: "3"
+        activationListLength: "0"
+        # If using AUTH later, set passwordFromEnv: REDIS_PASSWORD

@@ -1,4 +1,4 @@
-// The Ortus Outreach — Electron main process.
+// Ortus Basics — Electron main process.
 //
 // Wraps the existing Express server inside Electron. No campaign/outreach
 // logic is touched. The server is loaded as a module after we've set up:
@@ -85,8 +85,88 @@ let tray = null;
 let serverProcess = null;
 let shuttingDown = false;
 
+// ── Bundled scraper engine (Ortus Basics 1.0) ──────────────────────────────
+// The dev launcher used to start ./engine and point the app at it; a packaged
+// build never runs that shell script, so it fell back to the production engine
+// at scraper.ortusclub.com. The engine is now inside the bundle and started
+// here instead, so the app is self-contained and talks to nothing remote.
+//
+// Spawned with process.execPath + ELECTRON_RUN_AS_NODE — a packaged app has no
+// `node` on PATH, and Electron's own binary is the node it can rely on.
+let engineProcess = null;
+let enginePort = null;
+
+async function startBundledEngine() {
+  // Packaged: extraResources puts the engine at Contents/Resources/engine — it
+  // has to live OUTSIDE the app dir, because electron-builder strips any nested
+  // node_modules it cannot resolve from the root package.json, which would ship
+  // the engine's source without its dependencies. Dev: the worktree copy.
+  const engineEntry = app.isPackaged
+    ? resolve(process.resourcesPath, 'engine', 'server.js')
+    : resolve(__dirname, '..', 'engine', 'server.js');
+  if (!existsSync(engineEntry)) {
+    console.warn('[main] No bundled engine found — falling back to the configured engine URL.');
+    return null;
+  }
+  // NOT pickFreePort(): that prefers the pinned 7847 and does not hold the port,
+  // so calling it for the engine and the backend returned 7847 twice — they
+  // collided and the app failed to start. The engine always takes a random free
+  // port, and never the one the backend has.
+  enginePort = await _tryPort(0);
+  for (let i = 0; i < 5 && enginePort === serverPort; i += 1) enginePort = await _tryPort(0);
+  if (enginePort === serverPort) {
+    console.warn('[main] Could not find a separate port for the bundled engine.');
+    return null;
+  }
+  const token = process.env.SCRAPER_ENGINE_TOKEN || 'ortus2026scraper';
+  engineProcess = spawn(process.execPath, [engineEntry], {
+    cwd: dirname(engineEntry),
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: '1',
+      PORT: String(enginePort),
+      ENGINE_SHARED_TOKEN: token,
+      APP_PASSWORD: token,
+      // No PG_URL and no USE_REDIS: the engine falls back to its in-memory
+      // queue, which is what a single-user local engine wants.
+    },
+    stdio: ['ignore', 'inherit', 'inherit'],
+  });
+  engineProcess.once('exit', (code, signal) => {
+    engineProcess = null;
+    if (!shuttingDown) console.warn(`[main] Bundled engine exited (code=${code}, signal=${signal || 'none'}).`);
+  });
+
+  // Return the URL immediately and let the engine finish booting on its own.
+  // Waiting for /api/health here (up to 10s) pushed the backend past the app's
+  // own "server did not start within 10 seconds" watchdog, so the app failed to
+  // start at all. Nothing needs the engine during boot — the first call to it
+  // happens much later, by which point it is listening. Health is logged in the
+  // background purely so a genuinely broken engine is visible in the log.
+  const base = `http://127.0.0.1:${enginePort}`;
+  (async () => {
+    for (let i = 0; i < 20; i += 1) {
+      if (!engineProcess) { console.warn('[main] Bundled engine exited before it was ready.'); return; }
+      try {
+        const r = await fetch(`${base}/api/health`, { headers: { Authorization: `Bearer ${token}` } });
+        if (r.ok) { console.log(`[main] Bundled engine ready on ${base}`); return; }
+      } catch { /* not up yet */ }
+      await new Promise((r) => setTimeout(r, 500));
+    }
+    console.warn(`[main] Bundled engine did not answer on ${base}.`);
+  })();
+  console.log(`[main] Bundled engine starting on ${base}`);
+  return base;
+}
+
 async function startServer() {
   if (!serverPort) serverPort = await pickFreePort();
+  // Point the backend at the bundled engine. Started once; a restart of the
+  // backend reuses the engine that is already running.
+  if (!process.env.SCRAPER_ENGINE_URL && !engineProcess) {
+    const base = await startBundledEngine();
+    if (base) process.env.SCRAPER_ENGINE_URL = base;
+  }
 
   // Resolve the bundled server.js. In dev, ../server.js. In packaged builds,
   // electron-builder includes the source under app.asar so the same relative
@@ -140,7 +220,8 @@ function getOrCreateWindow() {
     height: 900,
     minWidth: 1100,
     minHeight: 700,
-    title: 'The Ortus Outreach',
+    // Derived, not written: a literal here drifted from the released version.
+    title: `Ortus Basics — Version ${app.getVersion()}`,
     backgroundColor: '#0d1117',
     webPreferences: {
       preload: resolve(__dirname, 'preload.js'),
@@ -193,7 +274,7 @@ function buildTrayMenu() {
     },
     { type: 'separator' },
     {
-      label: 'Quit The Ortus Outreach',
+      label: 'Quit Ortus Basics',
       accelerator: 'CmdOrCtrl+Q',
       click: () => { app.isQuitting = true; app.quit(); },
     },
@@ -220,7 +301,7 @@ if (!gotLock) {
       // Tray icon is kept as a convenience (Show Browsers, quick campaign jump).
       // Dock icon remains visible; closing the window quits the app normally.
       tray = new Tray(trayIconPath());
-      tray.setToolTip('The Ortus Outreach');
+      tray.setToolTip(`Ortus Basics — Version ${app.getVersion()}`);
       tray.setContextMenu(buildTrayMenu());
 
       // v2.14.x: macOS sleep-resume hook. When the lid opens (or the system
@@ -255,7 +336,7 @@ if (!gotLock) {
       });
     } catch (err) {
       dialog.showErrorBox(
-        'The Ortus Outreach',
+        'Ortus Basics',
         `Failed to start.\n\n${err.message}\n\nMake sure GoLogin desktop is running, then quit and reopen the app.`,
       );
       app.quit();
@@ -281,6 +362,8 @@ app.on('before-quit', async (e) => {
   e.preventDefault();
   _flushedOnQuit = true;
   shuttingDown = true;
+  // The bundled engine is our child; it must not outlive the app.
+  try { if (engineProcess) { engineProcess.kill(); engineProcess = null; } } catch { /* */ }
   try {
     if (serverPort) await Promise.race([
       fetch(`http://127.0.0.1:${serverPort}/api/runtime/interruption`, {

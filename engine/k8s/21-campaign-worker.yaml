@@ -1,0 +1,170 @@
+# CAMPAIGN-WORKER deployment — the single runtime for ALL campaign modes
+# (Phase H). ROLE=campaign-worker → the entrypoint runs campaign-main.js:
+# scheduler (monitor / follow_up / accept tasks) + the campaign poll (per-lead
+# sends + Follower-Growth batches). Same image as the scraper; ROLE decides.
+#
+# State: Postgres (durable record, via cloudsql-proxy) + Redis (coordination,
+# shared with the scraper — cmp:* keys + the sn:proflock account lock so a
+# campaign and a scrape never drive the same LinkedIn account at once).
+#
+# KEDA (22-campaign-keda.yaml) scales this 0→10 on active campaigns, so it
+# costs nothing when no campaigns are running. Browsers render headed to Xvfb,
+# exactly like the scraper (LinkedIn sees a normal desktop browser).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: campaign-worker
+  namespace: salesnav-scraper
+  labels:
+    app.kubernetes.io/name: campaign-worker
+spec:
+  replicas: 0 # KEDA owns this; starting value
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: campaign-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: campaign-worker
+    spec:
+      nodeSelector:
+        cloud.google.com/machine-family: "n2"
+      terminationGracePeriodSeconds: 600 # drain in-flight campaign turns
+      # Reach the (now sidecar) Cloud SQL proxy at localhost without editing the
+      # PG_URL secret: map the old Service name to 127.0.0.1 in /etc/hosts.
+      hostAliases:
+        - ip: "127.0.0.1"
+          hostnames:
+            - "cloudsql-proxy"
+            - "cloudsql-proxy.salesnav-scraper"
+            - "cloudsql-proxy.salesnav-scraper.svc.cluster.local"
+      # Cloud SQL Auth Proxy as a NATIVE SIDECAR (initContainer + restartPolicy:
+      # Always): comes up before the app, stays for the pod's life, drains last —
+      # so an in-flight campaign turn keeps its DB connection during shutdown.
+      # Replaces the standalone cloudsql-proxy Deployment (removed in Plan A).
+      initContainers:
+        - name: cloud-sql-proxy
+          restartPolicy: Always
+          image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.11.4
+          args:
+            - "--address=127.0.0.1"
+            - "--port=5432"
+            - "--credentials-file=/secrets/sa.json"
+            - "--health-check"
+            - "--http-address=0.0.0.0"
+            - "--http-port=9801"
+            - "salesnav-scraper-prod:asia-southeast1:salesnav-campaigns-db"
+          startupProbe:
+            httpGet:
+              path: /startup
+              port: 9801
+            periodSeconds: 3
+            failureThreshold: 20
+          volumeMounts:
+            - name: sa-key
+              mountPath: /secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+      containers:
+        - name: app
+          image: asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/scraper:v64
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000 # /healthz
+          env:
+            - name: PORT
+              value: "3000"
+            - name: HEADLESS
+              value: "false" # headed browser rendered to Xvfb (anti-detection)
+            - name: ROLE
+              value: "campaign-worker"
+            # Redis — same instance/keys space as the scraper (cmp:* + shared lock)
+            - name: REDIS_ADDRESS
+              value: "10.9.147.163:6379"
+            # Postgres — via the in-cluster Cloud SQL Auth Proxy
+            - name: PG_URL
+              valueFrom:
+                secretKeyRef:
+                  name: campaign-secrets
+                  key: PG_URL
+            - name: CAMPAIGN_POLL_MS
+              value: "15000"
+            - name: SCHEDULER_TICK_MS
+              value: "5000"
+            # Parallel cloud campaigns: how many campaigns this pod drives at once
+            # (total parallelism = pods × this). Keep ~in step with the KEDA
+            # listLength (campaigns-per-pod) in 22-campaign-keda.yaml. 2 fits this
+            # 4 vCPU / 8 GiB pod; raise only with bigger pods.
+            - name: CAMPAIGN_CONCURRENCY
+              value: "2"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: GOOGLE_SERVICE_ACCOUNT_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: salesnav-secrets
+                  key: GOOGLE_SERVICE_ACCOUNT_JSON
+            - name: GOLOGIN_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: salesnav-secrets
+                  key: GOLOGIN_API_TOKEN
+            - name: GOLOGIN_HOME
+              value: /app/.gologin
+          resources:
+            requests:
+              cpu: "4"
+              memory: "8Gi"
+              ephemeral-storage: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "8Gi"
+              ephemeral-storage: "2Gi"
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 1Gi
+        - name: sa-key
+          secret:
+            secretName: cloudsql-sa
+            items:
+              - key: sa.json
+                path: sa.json

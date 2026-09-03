@@ -76,6 +76,15 @@ function authHeaders() {
 // status so withWriteRetry's transient detection retries them; 4xx are returned
 // as-is (retrying won't help — it's a bad request).
 async function requestOnce(method, path, body) {
+  // Ortus Basics 1.0: cloud campaigns are discontinued, so nothing in this
+  // module should touch the network. Short-circuiting here (rather than at each
+  // caller) stops the followup poller, the board refresh and every control
+  // round-trip from retrying an engine this build never uses — the source of
+  // the "engine did not answer" spam and the "Can't reach the cloud engine"
+  // banner. Sales Nav scrapes are unaffected: they go through
+  // src/scraper-client.js, a different module against the same engine.
+  return { error: 'Cloud campaigns are discontinued in this version' };
+  /* eslint-disable no-unreachable */
   const base = engineUrl();
   if (!base) return { error: 'Campaign engine not configured (set SCRAPER_ENGINE_URL)' };
   try {

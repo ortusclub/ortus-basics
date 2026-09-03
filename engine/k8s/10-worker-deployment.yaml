@@ -1,0 +1,149 @@
+# WORKER deployment — the heavy pods that actually run scrapes (and, later,
+# campaigns). ROLE=worker → the claim loop runs: each worker atomically claims a
+# job, locks its GoLogin account, launches the browser, scrapes, writes the
+# Sheet, releases. KEDA (09-keda-scaledobject.yaml) scales this 0→N on demand
+# (distinct active accounts), so workers cost nothing when idle.
+#
+# No Service/Ingress: workers are reached only by pod IP — the frontend records
+# each job's worker podIP/podPort in Redis and proxies the live "View" to it.
+#
+# GUARANTEED 4 vCPU / 8 GiB so each worker's 2 scrapes get uncontended CPU (the
+# fix for truncation). Long grace so a scale-down/rollout DRAINS in-flight
+# scrapes (server.js SIGTERM handler) instead of killing them.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: salesnav-worker
+  namespace: salesnav-scraper
+  labels:
+    app.kubernetes.io/name: salesnav-worker
+spec:
+  # KEDA owns this replica count (min 0). This is just a starting value.
+  replicas: 0
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: salesnav-worker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: salesnav-worker
+    spec:
+      # Run workers on the N2 machine series instead of Autopilot's default E2.
+      # Why: the per-family E2 CPU quota (24) is stuck behind a new-account hold
+      # and caps us at ~3 worker nodes. N2 has 200 vCPUs of quota in this region,
+      # so KEDA can scale freely (5 scraper + future 10 campaign workers). GKE
+      # 1.34.1+ supports selecting a machine series directly — no ComputeClass
+      # needed. N2 is x86 (same as E2), so the image is unchanged; it just costs
+      # ~20-25% more per running hour (and still scales to zero when idle).
+      # Pinned to n2 (not the generic "Balanced" class) so it never lands on N2D,
+      # whose quota is only 16. Switch back to E2 by removing this nodeSelector
+      # once the E2 quota increase is approved.
+      nodeSelector:
+        cloud.google.com/machine-family: "n2"
+      # Dedicated SA so the worker can PATCH its own pod's pod-deletion-cost
+      # annotation (busy pods survive scale-down). See 11-worker-rbac.yaml.
+      serviceAccountName: salesnav-worker
+      terminationGracePeriodSeconds: 600 # drain in-flight scrapes (Autopilot max)
+      containers:
+        - name: app
+          image: asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/scraper:v53
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000 # serves the View internal-hop + health probes
+          env:
+            - name: PORT
+              value: "3000"
+            - name: HEADLESS
+              value: "false" # MUST be false so Orbita renders to the Xvfb display
+            - name: USE_REDIS
+              value: "true"
+            # Heavy worker — claims + runs jobs.
+            - name: ROLE
+              value: "worker"
+            - name: REDIS_ADDRESS
+              value: "10.9.147.163:6379"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: salesnav-secrets
+                  key: APP_PASSWORD
+            - name: GOOGLE_SERVICE_ACCOUNT_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: salesnav-secrets
+                  key: GOOGLE_SERVICE_ACCOUNT_JSON
+            - name: GOLOGIN_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: salesnav-secrets
+                  key: GOLOGIN_API_TOKEN
+            - name: GOLOGIN_HOME
+              value: /app/.gologin
+            # 3 headed browsers/pod. Measured peak at 2 was ~3.2GB; 3 projects
+            # to ~4.8GB (worst-case ~6.6GB) — safe under the 8Gi limit, and ~1/3
+            # fewer pod-hours for the same scraping volume. The pod size is
+            # UNCHANGED (8Gi), so this is a $0 density gain.
+            - name: MAX_CONCURRENT_SCRAPES
+              value: "3"
+          # Right-sized from 4 vCPU / 8 GiB (Jul 2026). Cloud Monitoring over 7d
+          # showed this pod (3 concurrent scrapes) peaks at ~1.2 vCPU (29%) and
+          # ~3.5 GiB (44%) — scraping is I/O-bound. BURSTABLE: reserve 2 vCPU
+          # (what we're node-billed/packed on → ~2× more pods per n2 node, ~halves
+          # scrape-time cost) but keep the CPU LIMIT at 4 so a render spike still
+          # gets the same ceiling it had before (spike safety unchanged). Memory is
+          # guaranteed (request=limit) since it can't be safely over-committed.
+          resources:
+            requests:
+              cpu: "2"
+              memory: "6Gi"
+              ephemeral-storage: "2Gi"
+            limits:
+              cpu: "4"
+              memory: "6Gi"
+              ephemeral-storage: "2Gi"
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            # Chromium renders via /dev/shm; 3 browsers/pod need more shared
+            # memory than 2. 1Gi is carved from the pod's existing 8Gi (NOT
+            # extra RAM), so no cost change — it just prevents "tab crashed"
+            # (SHM-exhaustion) failures at higher browser density.
+            sizeLimit: 1Gi

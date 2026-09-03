@@ -1,0 +1,177 @@
+# FRONTEND deployment — the always-on "front door".
+#
+# Serves the UI/API + WebSocket, accepts job submissions (writes them to Redis),
+# relays live events to WS clients (Redis pub/sub fan-out), and proxies the live
+# "View" to whichever WORKER pod is running a job. It NEVER claims or runs a
+# scrape (ROLE=frontend → the claim loop is disabled).
+#
+# Why always-on (replicas: 1, NOT KEDA-managed):
+#   • Keeps scraper.ortusclub.com reachable 24/7 (no more 502s when workers are
+#     scaled to zero).
+#   • Solves the cold-start chicken-and-egg: a job can always be submitted, which
+#     then triggers KEDA to scale a worker up.
+#   • Will host the campaign scheduler later.
+# It's small/cheap because it does no browser work — the heavy 4-vCPU pods are
+# the WORKERS (10-worker-deployment.yaml), which scale to zero on demand.
+#
+# Keeps the name `salesnav-scraper` so the existing Service + Ingress (which
+# point here) need no change — the front door is what users hit.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: salesnav-scraper
+  namespace: salesnav-scraper
+  labels:
+    app.kubernetes.io/name: salesnav-scraper
+spec:
+  replicas: 1 # always-on front door; not KEDA-managed
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: salesnav-scraper
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: salesnav-scraper
+    spec:
+      # Frontend runs no scrapes → fast shutdown is fine.
+      terminationGracePeriodSeconds: 30
+      # Reach the (now sidecar) Cloud SQL proxy at localhost without editing the
+      # PG_URL secret: map the old Service name to 127.0.0.1 in /etc/hosts.
+      hostAliases:
+        - ip: "127.0.0.1"
+          hostnames:
+            - "cloudsql-proxy"
+            - "cloudsql-proxy.salesnav-scraper"
+            - "cloudsql-proxy.salesnav-scraper.svc.cluster.local"
+      # Cloud SQL Auth Proxy as a NATIVE SIDECAR (initContainer + restartPolicy:
+      # Always): the always-on frontend writes campaigns to Postgres and runs the
+      # KEDA scale bridge, so it needs a live DB connection at all times. Replaces
+      # the standalone cloudsql-proxy Deployment (removed in Plan A).
+      initContainers:
+        - name: cloud-sql-proxy
+          restartPolicy: Always
+          image: gcr.io/cloud-sql-connectors/cloud-sql-proxy:2.11.4
+          args:
+            - "--address=127.0.0.1"
+            - "--port=5432"
+            - "--credentials-file=/secrets/sa.json"
+            - "--health-check"
+            - "--http-address=0.0.0.0"
+            - "--http-port=9801"
+            - "salesnav-scraper-prod:asia-southeast1:salesnav-campaigns-db"
+          startupProbe:
+            httpGet:
+              path: /startup
+              port: 9801
+            periodSeconds: 3
+            failureThreshold: 20
+          volumeMounts:
+            - name: sa-key
+              mountPath: /secrets
+              readOnly: true
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+      containers:
+        - name: app
+          image: asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/scraper:v64
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 3000
+          env:
+            - name: PORT
+              value: "3000"
+            - name: HEADLESS
+              value: "false"
+            - name: USE_REDIS
+              value: "true"
+            # Front door — accept/serve only, never claim jobs.
+            - name: ROLE
+              value: "frontend"
+            - name: REDIS_ADDRESS
+              value: "10.9.147.163:6379"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: APP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: salesnav-secrets
+                  key: APP_PASSWORD
+            - name: GOOGLE_SERVICE_ACCOUNT_JSON
+              valueFrom:
+                secretKeyRef:
+                  name: salesnav-secrets
+                  key: GOOGLE_SERVICE_ACCOUNT_JSON
+            - name: GOLOGIN_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: salesnav-secrets
+                  key: GOLOGIN_API_TOKEN
+            - name: GOLOGIN_HOME
+              value: /app/.gologin
+            # Activates the campaign submission API (/api/campaign/*) — the
+            # frontend writes campaigns to Postgres (via cloudsql-proxy); the
+            # KEDA campaign-worker pods execute them. Without this the routes
+            # 503 (scraper-only frontend).
+            - name: PG_URL
+              valueFrom:
+                secretKeyRef:
+                  name: campaign-secrets
+                  key: PG_URL
+          # Small + burstable: cheap to run 24/7; can burst for the occasional
+          # heavier request. No browser work happens here.
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "512Mi"
+              ephemeral-storage: "1Gi"
+            limits:
+              cpu: "2"
+              memory: "2Gi"
+              ephemeral-storage: "1Gi"
+          volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 6
+      volumes:
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 256Mi
+        - name: sa-key
+          secret:
+            secretName: cloudsql-sa
+            items:
+              - key: sa.json
+                path: sa.json

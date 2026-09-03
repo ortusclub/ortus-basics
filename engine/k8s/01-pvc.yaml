@@ -1,0 +1,20 @@
+# PersistentVolumeClaim for LinkedIn session storage (Chromium profiles +
+# cookies). Survives pod restarts so users don't have to log into LinkedIn
+# again every time the pod is rescheduled (e.g. when VPA grows the pod).
+#
+# Sizing: ~15 MB per user session, comfortably handles 200+ users at 5 GiB.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: salesnav-sessions
+  namespace: salesnav-scraper
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # Most managed clusters provide a default StorageClass — uncomment to pin:
+  # storageClassName: standard-rwo   # GKE
+  # storageClassName: gp3            # EKS
+  # storageClassName: managed-csi    # AKS

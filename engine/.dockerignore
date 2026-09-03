@@ -1,0 +1,12 @@
+node_modules
+sessions
+service-account.json
+.env
+.env.local
+*.log
+.git
+.gitignore
+.DS_Store
+README.md
+k8s/README.md
+k8s/*.example

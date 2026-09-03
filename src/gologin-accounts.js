@@ -80,8 +80,39 @@ export const GL_ACCOUNTS = Object.freeze([
 // wrong workspace instead of the one it has always had.
 export const DEFAULT_ACCOUNT_ID = 'ortus';
 
+// ── Extra workspaces the operator adds themselves (Ortus Basics 1.0) ────────
+// The three built-ins above are the ones this codebase knows by name. An
+// operator may hold a token for some OTHER GoLogin workspace, and the rule for
+// this build is simply "a token you paste is a workspace you can drive". Those
+// arrive here at runtime from src/gologin-credentials.js.
+//
+// They are deliberately `openToAll: true` with no domains: a custom workspace
+// is nobody's home workspace (accountForEmail must never resolve INTO one), and
+// there is no domain that could gate it. `modes: null` — no mode restriction.
+let _customAccounts = [];
+
+export function setCustomAccounts(list) {
+  _customAccounts = (Array.isArray(list) ? list : [])
+    .filter((a) => a && a.id && a.env)
+    .map((a) => Object.freeze({
+      id: String(a.id),
+      label: String(a.label || a.id),
+      env: String(a.env),
+      domains: Object.freeze([]),
+      modes: null,
+      openToAll: true,
+      custom: true,
+    }));
+  return _customAccounts.length;
+}
+
+/** Built-ins plus the operator's own. Every enumerator goes through this. */
+export function allAccounts() {
+  return [...GL_ACCOUNTS, ..._customAccounts];
+}
+
 export function accountById(id) {
-  return GL_ACCOUNTS.find((a) => a.id === id) || null;
+  return allAccounts().find((a) => a.id === id) || null;
 }
 
 export function accountLabel(id) {
@@ -107,7 +138,7 @@ export function tokenForAccount(id) {
  * one skipped iteration rather than a failed API call per refresh.
  */
 export function configuredAccounts() {
-  return GL_ACCOUNTS.filter((a) => !!tokenForAccount(a.id));
+  return allAccounts().filter((a) => !!tokenForAccount(a.id));
 }
 
 /**
@@ -118,6 +149,7 @@ export function configuredAccounts() {
 export function accountForEmail(email) {
   const domain = String(email || '').trim().toLowerCase().split('@')[1] || '';
   if (!domain) return DEFAULT_ACCOUNT_ID;
+  // Custom workspaces carry no domains, so they can never be resolved into here.
   const hit = GL_ACCOUNTS.find((a) => a.domains.includes(domain));
   return hit ? hit.id : DEFAULT_ACCOUNT_ID;
 }

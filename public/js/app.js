@@ -2501,7 +2501,12 @@ function renderProfiles(profiles) {
     // precisely to keep Ortus operators off them, which must not be enforced
     // against the team they were handed to.
     const _nonOrtusRoster = !_foreign && ((!!p.account && p.account !== 'ortus') || p.guest === true);
-    const _showBreakdown = _breakdown && !!_soo;
+    // Ortus Basics 1.0: the per-channel breakdown tile (SN OP / LN OP / INMAIL
+    // with their SoO statuses, the availability accent and the assignee lock
+    // pill) is never used — the picker shows account names only and the operator
+    // decides what is usable. Forcing false here routes every tile through the
+    // plain name-only branch below. (was: _breakdown && !!_soo)
+    const _showBreakdown = false;
     // Before the first successful snapshot, absence is UNKNOWN rather than
     // proof that this account is missing from SoO. Keep Ortus accounts locked
     // until their credits/restrictions can actually be checked. A stale snapshot
@@ -2513,10 +2518,9 @@ function renderProfiles(profiles) {
     const _locked = _foreign || _wrongMode || _sooLock;
     // Defensive: a restored preset/schedule must not keep a now-unusable account
     // selected — drop it (before building the tile so `checked` reflects reality).
-    if (_locked && selectedProfileIds.includes(p.id)) {
-      selectedProfileIds = selectedProfileIds.filter(id => id !== p.id);
-      delete selectedProfileNames[p.id];
-    }
+    // Ortus Basics 1.0: nothing is locked in this build, so a re-render (a new
+    // search, a roster refresh) must not silently drop an already-picked account.
+    // (was: _locked → prune from selectedProfileIds)
     if (selectedProfileIds.includes(p.id)) selectedProfileNames[p.id] = p.name;
     const _checked = selectedProfileIds.includes(p.id) ? 'checked' : '';
     const _disabled = _locked ? 'disabled' : '';
@@ -2638,11 +2642,8 @@ function renderProfiles(profiles) {
         <span class="jt-dot"></span>
         <span class="jt-word">${_word}</span>
       </div>`;
-      _classes = 'profile-item jt ' + _state.state
-        + (_noSoo ? ' is-nosoo' : '')
-        + (_checked ? ' selected' : '')
-        + (_state.state === 'in-use' ? ' muted-soft' : '')
-        + (_locked ? ' muted is-restricted' : '');
+      // Name-only tiles: no status-derived tinting or locking either.
+      _classes = 'profile-item jt' + (_checked ? ' selected' : '');
       // No name resolves for this account (no SoO row, or a row with a blank
       // First Name) — offer to type one, because the send-time fallback is the
       // account's email and it goes out in the message body. Only on tiles the
@@ -2654,13 +2655,16 @@ function renderProfiles(profiles) {
           <input type="text" class="jt-name-input" placeholder="First name for {sender first name}"
             value="${escHtml(_nameOverride)}" />
         </div>` : '';
-      _inner = `${_statZone}
+      // Ortus Basics 1.0 (operator ask): the picker shows the GoLogin account name
+      // and nothing else — no SoO verdict, no availability word, no sub-line. The
+      // status is still computed above (the log and classifyAccountState use it),
+      // it is simply not rendered here, and no tile is locked on the strength of it.
+      _inner = `
       <div class="jt-det">
         <div class="jt-top">
-          <input type="checkbox" value="${p.id}" ${_checked} ${_disabled} />
-          <span class="jt-email">${escHtml(p.name)}${_dup}${_wsPill}</span>
+          <input type="checkbox" value="${p.id}" ${_checked} />
+          <span class="jt-email">${escHtml(p.name)}</span>
         </div>
-        <div class="jt-sub">${_sub}</div>${_nameRow}
       </div>`;
     }
 
@@ -2684,7 +2688,8 @@ function renderProfiles(profiles) {
       });
     }
     cb.addEventListener('change', () => {
-      if (_locked) { cb.checked = false; return; } // blocked / NA — never selectable
+      // Ortus Basics 1.0: tiles show the account name only, so nothing is locked
+      // on a SoO verdict the operator can no longer see. (was: _locked → refuse)
       try { if (_acctAdd) _acctAddTouched = true; } catch (_) { /* */ }
       if (cb.checked) {
         if (!selectedProfileIds.includes(p.id)) {
@@ -2774,6 +2779,11 @@ function renderGuardrailAlert() {
   });
   const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
   const s = summarizeSelection(selected, getMyIdentifier(), mode, getPassoverStatus());
+  // Ortus Basics 1.0: no availability warnings — the operator judges what is
+  // usable, so "N of your selected accounts are assigned to / in use" and the
+  // passover-cycle notice are not surfaced.
+  el.classList.add('hidden'); el.innerHTML = ''; return;
+  /* eslint-disable no-unreachable */
   if (!s.hasWarnings) { el.classList.add('hidden'); el.innerHTML = ''; return; }
   const bits = [];
   if (s.flagged.length) bits.push(`<b>${s.flagged.length} of your selected accounts are assigned to / in use</b>`);
@@ -3367,6 +3377,18 @@ function applyFgRunTargetDefault() {
 // Run-target tab click entry point. Records a deliberate "This machine" pin while
 // in FG mode (so the default logic won't fight it), then applies the choice.
 function pickRunTarget(t) {
+  // Ortus Basics 1.0: cloud runs are discontinued for ALL campaign types. Say so
+  // and stay on local rather than silently ignoring the click.
+  if (t === 'cloud') {
+    const note = document.getElementById('rt-discontinued');
+    if (note) note.hidden = false;
+    if (typeof setRunTarget === 'function') setRunTarget('local');
+    return;
+  }
+  try {
+    const n = document.getElementById('rt-discontinued');
+    if (n) n.hidden = true;
+  } catch (_) { /* */ }
   try {
     const m = document.getElementById('campaign-mode');
     if (m && m.value === 'follower_growth') _fgRunTargetPinnedLocal = (t === 'local');
@@ -3506,16 +3528,6 @@ function onModeChange() {
     if (introModeBlock) introModeBlock.style.display = 'none';
   } catch (_) {}
 
-  // Entry C — "Build from warm connections" offered only for the two modes that
-  // run on a sheet of already-connected leads: Message Campaign (open_profile_only)
-  // and Introduction Campaign (introduce_back).
-  try {
-    const connSourceBlock = document.getElementById('conn-source-block');
-    if (connSourceBlock) {
-      connSourceBlock.style.display = (mode === 'open_profile_only' || mode === 'introduce_back') ? '' : 'none';
-    }
-  } catch (_) {}
-
   // Template bar (Select/Load/Delete/Save As…) — visibility is mode-driven plus
   // the connect_only Yes/No toggle. See applyTemplateUIVisibility.
   applyTemplateUIVisibility(mode, localStorage.getItem('ortus-add-note') === '1');
@@ -3623,8 +3635,32 @@ function onModeChange() {
   // Campaign-limit-per-account knob applies ONLY to Connect campaigns (LinkedIn
   // caps invitations per account per day). DM/IC/OP/InMail are unlimited.
   const isConnectMode = (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message');
+  // Ortus Basics 1.0: Message Campaign gets its own daily cap too — how many
+  // messages an account may send in 24h — so the knob shows for it as well.
+  // The label and default differ (invites vs messages), so relabel here rather
+  // than adding a second control.
+  const isMessageCap = (mode === 'open_profile_only');
   const dailyKnob = document.getElementById('daily-limit-knob');
-  if (dailyKnob) dailyKnob.style.display = isConnectMode ? '' : 'none';
+  if (dailyKnob) dailyKnob.style.display = (isConnectMode || isMessageCap) ? '' : 'none';
+  if (isMessageCap) {
+    const _lbl = dailyKnob?.querySelector('.alpha-knob-label');
+    if (_lbl) _lbl.innerHTML = 'Messages per day <span class="alpha-knob-sublabel">· per account per day</span>';
+    const _in = document.getElementById('daily-limit-input');
+    // Only seed the default — never stamp over a number the operator typed or
+    // a value restored from a draft/preset.
+    if (_in && !_in.dataset.msgSeeded) {
+      _in.dataset.msgSeeded = '1';
+      if (!_in.value || _in.value === '50') _in.value = '75';
+      if (typeof alphaSyncDailyLimit === 'function') alphaSyncDailyLimit();
+    }
+  } else {
+    const _lbl = dailyKnob?.querySelector('.alpha-knob-label');
+    if (_lbl && /Messages per day/.test(_lbl.textContent || '')) {
+      _lbl.innerHTML = 'Daily limit <span class="alpha-knob-sublabel">· per account per day</span>';
+    }
+    const _in = document.getElementById('daily-limit-input');
+    if (_in) delete _in.dataset.msgSeeded;
+  }
   if (isCheckStatus) {
     refreshCheckStatusPreview();
   } else if (isMessageOnly || isIntroduceBack) {
@@ -5356,17 +5392,6 @@ function fgPasswordPrompt(title) {
 
 const MODE_LIST = [
   {
-    value: 'connect_only',
-    name: 'Connect Only',
-    // v2.102.0: un-parked — the pre-send identity gate now makes a wrong-person
-    // connect structurally impossible, so this mode is safe to run again.
-    bullets: [
-      'Send connection requests to new profiles',
-      'Optional personalised note',
-      'Safest, highest-volume top-of-funnel mode',
-    ],
-  },
-  {
     value: 'introduce_back',
     name: 'Introduction Campaign',
     bullets: [
@@ -5385,28 +5410,6 @@ const MODE_LIST = [
     ],
   },
   {
-    value: 'connect_and_message',
-    name: 'Connect + DM',
-    // v2.102.0: un-parked — gated by the pre-send identity check (force_connect
-    // hint), so wrong-person sends are prevented; safe to run again.
-    bullets: [
-      'Send connection requests to new profiles',
-      'Once accepted, auto-DM the lead directly (no intro person)',
-      'End-to-end cold-lead → direct outreach pipeline',
-    ],
-  },
-  // 'check_status' (Check Status) retired 2026-08-06 as a standalone campaign
-  // type. The sweep is NOT gone: CC+IC / CC+DM still run it on their cadence,
-  // "Run check now" still fires it, and the cloud monitor still sweeps. What is
-  // gone is launching a whole campaign whose only job is that sweep.
-  //
-  // 'message_only' (Direct Messages) and 'inmail_only' (InMail Only) were
-  // RETIRED on 2026-08-06 — see RETIRED_MODES in /js/campaign-modes.mjs for why.
-  // They had been greyed "Unavailable" here since v2.85; now they're gone from
-  // the picker entirely, and both launch paths reject them server-side. Their
-  // display labels stay in the history/board label maps so old rows still read
-  // as "Direct Messages" rather than a raw mode string.
-  {
     value: 'open_profile_only',
     name: 'Message Campaign',
     // v2.85 parked this per operator request; v2.86.1 (port) re-enables it for
@@ -5417,36 +5420,7 @@ const MODE_LIST = [
       'Free for Open Profile members — optional InMail fallback',
       'Resolves plain profile links automatically',
     ],
-  },
-  {
-    value: 'check_dms',
-    name: 'Check DMs',
-    bullets: [
-      'Scan LinkedIn inboxes for new replies',
-      'Append new messages to the Replies tab',
-      'Bump lead Stage to "Replied" on inbound',
-    ],
-  },
-  {
-    value: 'follower_growth',
-    name: 'Follower Growth',
-    lock: true, // password-gated — see MODE_PASSWORDS / modeIsLocked
-    bullets: [
-      'Invite your 1st-degree connections to follow the Ortus Club page',
-      'Targets from the Connections DB — function-filtered, DNC-safe, budget-capped',
-      'Phase 1: app builds the list, you send the invites manually',
-    ],
-  },
-  {
-    value: 'post_amplification',
-    name: 'Post Amplification',
-    lock: true, // unlocked 2026-08-07 — password-gated, see MODE_PASSWORDS
-    bullets: [
-      'Paste a LinkedIn post URL',
-      'Per-account: Like + optional Comment',
-      '80% Like · 20% mixed reactions',
-    ],
-  },
+  }
 ];
 
 // ── Campaign-type lock (v2.160.42) ──────────────────────────────────────────
@@ -5486,7 +5460,7 @@ function unlockCampaignType() {
 // place), else "Save as draft" for a brand-new campaign.
 function _updateSaveButtonLabel() {
   const btn = document.getElementById('btn-save-draft');
-  if (btn) btn.textContent = _editingExistingCampaign ? 'Save changes' : 'Save as draft';
+  if (btn) btn.textContent = 'Save'; // Ortus Basics 1.0 — one label for both new and edit
 }
 window.lockCampaignType = lockCampaignType;
 window.unlockCampaignType = unlockCampaignType;
@@ -6187,9 +6161,9 @@ function alphaSyncConcurrency() {
 
 // Task 4 (2026-06-19): B1 delay-danger disclaimer — show when #within-batch-min < 30.
 function checkDelayDanger() {
-  const min = parseInt(document.getElementById('within-batch-min')?.value || '30', 10);
+  const min = parseInt(document.getElementById('within-batch-min')?.value || '10', 10);
   const block = document.getElementById('delay-danger-block');
-  if (block) block.classList.toggle('show', min < 30);
+  if (block) block.classList.toggle('show', min < 10);
 }
 
 // Task 4 (2026-06-19): B2 pause-on-throttle help text update.
@@ -6959,8 +6933,8 @@ async function startCampaign(opts = {}) {
     delayMin = Math.max(5, Math.round(gap * 0.8));
     delayMax = Math.max(delayMin + 5, Math.round(gap * 1.3));
   } else {
-    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 30;
-    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 60;
+    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 10;
+    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 20;
     if (delayMax < delayMin) [delayMin, delayMax] = [delayMin, delayMin + 5];
   }
 
@@ -7289,7 +7263,7 @@ function getRunTarget() {
 function setRunTarget(t) {
   const root = document.getElementById('run-target');
   if (!root) return;
-  if (t === 'cloud' && !_engineConfigured) t = 'local'; // engine unconfigured → cloud unavailable
+  if (t === 'cloud') t = 'local'; // Ortus Basics 1.0 — cloud runs discontinued (was: engine-unconfigured fallback)
   root.dataset.target = t;
   root.querySelectorAll('.rt-tab').forEach((b) => b.classList.toggle('on', b.dataset.rt === t));
   const cb = document.getElementById('cloud-run-checkbox');
@@ -9677,7 +9651,7 @@ function _configFromSettings(mode, s) {
   const gid = s.sheetGid ? String(s.sheetGid) : ((s.sheetUrl || '').match(/[#&?]gid=(\d+)/) || [])[1] || '';
   return {
     mode, sheetUrl: s.sheetUrl || '', sheetGid: gid,
-    dailyLimit: s.dailyLimit ?? 50, delayMin: s.delayMin ?? 30, delayMax: s.delayMax ?? 60,
+    dailyLimit: s.dailyLimit ?? 50, delayMin: s.delayMin ?? 10, delayMax: s.delayMax ?? 20,
     linkedinColumn: s.linkedinColumn || '', messageOpenProfiles: !!s.messageOpenProfiles,
     addNote: !!(s.templates && s.templates.connectionNote), templates: s.templates || {},
     profileIds: Array.isArray(s.profileIds) ? s.profileIds : [],
@@ -11508,8 +11482,18 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
   const clearBtn = (fn, n) => n
     ? `<button type="button" class="sn-clear-cat" onclick="event.stopPropagation(); ${fn}">Delete all</button>` : '';
 
+  // Ortus Basics 1.0: Drafts collapses like Done and Stopped. It used to be a
+  // plain rail with no caret; the operator wants the same open/close affordance
+  // on all three. Same toggleBoardGroup key shape as subGroup, but defaulting
+  // to OPEN — a draft you are coming back to should be visible.
+  const _draftsKey = `sub:${key}:drafts`;
+  const _draftsCollapsed = _cbIsCollapsed(_draftsKey, false);
   const draftsRail = opts.draftsHtml
-    ? `<div class="sn-railhead">Drafts <span class="sn-railcount">${opts.draftsCount || ''}</span>${clearBtn('clearAllDrafts()', opts.draftsCount || 0)}</div>` + opts.draftsHtml
+    ? `<div class="sn-railhead cb-subhead" onclick="toggleBoardGroup('${_draftsKey}', true)">`
+      + `<span class="cb-caret">${_cbCaretSvg(_draftsCollapsed, false)}</span> Drafts `
+      + `<span class="sn-railcount">${opts.draftsCount || ''}</span>`
+      + `${clearBtn('clearAllDrafts()', opts.draftsCount || 0)}</div>`
+      + (_draftsCollapsed ? '' : opts.draftsHtml)
     : '';
 
   // Non-collapsible rails carry NO caret glyph — only genuinely collapsible
@@ -11772,6 +11756,12 @@ async function _forceCloudItemsAfterAction(id) {
 function _renderCloudOfflineBanner() {
   const el = document.getElementById('cloud-offline-banner');
   if (!el) return;
+  // Ortus Basics 1.0: this build never reaches the cloud engine on purpose
+  // (campaigns-client short-circuits every request), so "can't reach it" is not
+  // a fault worth reporting — it is the intended state. Always keep it hidden.
+  el.hidden = true; el.textContent = '';
+  return;
+  /* eslint-disable no-unreachable */
   if (!_cloudOfflineSince) { el.hidden = true; el.textContent = ''; return; }
   const since = new Date(_cloudOfflineSince)
     .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -13355,6 +13345,13 @@ function _incSeq(s) {
 // "MESSAGE" → "MESSAGE_a"; an existing "…_d" bumps to "…_e".
 function _uniqueCampaignName(desired, taken) {
   const raw = String(desired || '').trim();
+  // Ortus Basics 1.0: the name IS the campaign. Starting a run means "save these
+  // settings under this name and go", so re-running must keep the name and
+  // overwrite — auto-suffixing produced PoopPa → PoopPa_a → PoopPa_b and split
+  // one campaign's settings across three names. (Was: bump a _<letters> suffix
+  // until unique.)
+  return raw;
+  /* eslint-disable no-unreachable */
   if (!raw) return raw; // empty name is allowed (row shows "Add name")
   const set = new Set((taken || []).map((n) => String(n).trim().toLowerCase()));
   if (!set.has(raw.toLowerCase())) return raw;
@@ -13409,8 +13406,8 @@ async function restartLocalFromItem(id, fromStart) {
     dailyLimit: s.dailyLimit ?? 50,
     mode: it.mode,
     messageOpenProfiles: !!s.messageOpenProfiles,
-    delayMin: s.delayMin ?? 30,
-    delayMax: s.delayMax ?? 60,
+    delayMin: s.delayMin ?? 10,
+    delayMax: s.delayMax ?? 20,
     linkedinColumn: s.linkedinColumn || '',
     concurrency: s.concurrency ?? 1,
     name: it.name || '',
@@ -13786,7 +13783,8 @@ window.onCloudSectionToggle = function onCloudSectionToggle() {
   const section = document.getElementById('cloud-campaigns-section');
   const open = section && !section.classList.contains('collapsed');
   if (_cloudPollTimer) { clearInterval(_cloudPollTimer); _cloudPollTimer = null; }
-  if (open) { renderCloudCampaigns(); _cloudPollTimer = setInterval(renderCloudCampaigns, 8000); }
+  // Ortus Basics 1.0: no cloud board refresh — cloud campaigns are discontinued.
+  // (was: if (open) { renderCloudCampaigns(); _cloudPollTimer = setInterval(renderCloudCampaigns, 8000); })
 };
 
 async function _runIcPreflight(sheetUrl, senderColumn) {
@@ -14986,8 +14984,8 @@ function _ptmContextFromBody(body) {
   const tpl = body?.templates || {};
   return {
     dailyLimit: body?.dailyLimit ?? 50,
-    delayMin: body?.delayMin ?? 30,
-    delayMax: body?.delayMax ?? 60,
+    delayMin: body?.delayMin ?? 10,
+    delayMax: body?.delayMax ?? 20,
     checkIntervalMinutes: body?.checkIntervalMinutes ?? 60,
     primaryName: tpl.primaryName || tpl.introName || '',
   };
@@ -14999,8 +14997,8 @@ function _ptmContextFromCockpit() {
   const cadenceFromWizard = parseInt(document.getElementById('check-cadence-select')?.value, 10);
   return {
     dailyLimit: 50, // server status doesn't surface dailyLimit; default fits CC tip
-    delayMin: 30,
-    delayMax: 60,
+    delayMin: 10,
+    delayMax: 20,
     checkIntervalMinutes: (__cockpit && __cockpit.checkIntervalMinutes)
       || (Number.isFinite(cadenceFromWizard) ? cadenceFromWizard : 60),
     primaryName: tpl.primaryName || document.getElementById('primary-person-name')?.value || '',
@@ -17425,8 +17423,8 @@ async function saveQuickSchedule() {
     delayMin = Math.max(5, Math.round(gap * 0.8));
     delayMax = Math.max(delayMin + 5, Math.round(gap * 1.3));
   } else {
-    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 30;
-    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 60;
+    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 10;
+    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 20;
     if (delayMax < delayMin) [delayMin, delayMax] = [delayMin, delayMin + 5];
   }
 
@@ -18477,6 +18475,9 @@ function collectCurrentConfig() {
     mode: getV('campaign-mode') || 'connect_only',
     sheetUrl: getV('sheet-url').trim(),
     profileIds: [...selectedProfileIds],
+    // Saved alongside the ids so a restore can label the tiles before the
+    // GoLogin roster has loaded.
+    profileNames: { ...selectedProfileNames },
     // v2.11.0: ratePerHour / batchesPerHour removed from saved presets. Old
     // presets that still carry these fields are silently ignored on load.
     dailyLimit: getN('daily-limit', 50),
@@ -18545,6 +18546,19 @@ function applyPresetConfig(config) {
     if (typeof onModeChange === 'function') onModeChange();
   }
   setV('sheet-url', config.sheetUrl || '');
+  // Ortus Basics 1.0: restore the picked GoLogin accounts. collectCurrentConfig()
+  // has always SAVED profileIds, but nothing here read them back, so reopening a
+  // campaign / draft / preset came back with an empty account list and the
+  // operator had to re-pick every time.
+  if (Array.isArray(config.profileIds)) {
+    selectedProfileIds = config.profileIds.filter(Boolean);
+    if (config.profileNames && typeof config.profileNames === 'object') {
+      selectedProfileNames = { ...config.profileNames };
+    }
+    try { if (typeof renderProfiles === 'function') renderProfiles(); } catch (_) { /* grid may not be built yet */ }
+    try { if (typeof renderSelectedPanel === 'function') renderSelectedPanel(); } catch (_) { /* */ }
+    try { if (typeof updateCampaignSummary === 'function') updateCampaignSummary(); } catch (_) { /* */ }
+  }
   // v2.113: setV sets .value programmatically, which does NOT fire the
   // input/blur listeners that drive the multi-tab picker. The one-shot
   // auto-trigger in _wireTabPicker only runs at page load, so re-opening a
@@ -19793,29 +19807,6 @@ function renderManifest() {
   if (notice) { notice.hidden = !r.cloudNotice; if (r.cloudNotice) notice.innerHTML = `☁︎ <span>${r.cloudNotice}</span>`; }
 }
 if (typeof window !== 'undefined') window.renderManifest = renderManifest;
-
-// Customize toggle — mirrors the sketch's dEditLabel (public/sketches/
-// 2026-07-10-primary-config-overhaul-DE.html): flips #manifest-drawer's
-// `hidden` and swaps the button's icon+label between "Customize" and
-// "✕ Done" (icon hides while open, same as the sketch). #manifest-customize-btn
-// ships inert (no onclick — Task 1.2 left it for this file to wire), so it's
-// bound via addEventListener, same pattern as snm-cancel/snm-ok above.
-{
-  const _manifestCustomizeBtn = document.getElementById('manifest-customize-btn');
-  const _manifestDrawer = document.getElementById('manifest-drawer');
-  if (_manifestCustomizeBtn && _manifestDrawer) {
-    _manifestCustomizeBtn.setAttribute('aria-expanded', 'false');
-    _manifestCustomizeBtn.addEventListener('click', () => {
-      _manifestDrawer.hidden = !_manifestDrawer.hidden;
-      const open = !_manifestDrawer.hidden;
-      _manifestCustomizeBtn.setAttribute('aria-expanded', open ? 'true' : 'false');
-      const label = _manifestCustomizeBtn.querySelector('span');
-      if (label) label.textContent = open ? '✕ Done' : 'Customize';
-      const icon = _manifestCustomizeBtn.querySelector('svg');
-      if (icon) icon.style.display = open ? 'none' : '';
-    });
-  }
-}
 
 // Manifest readback also depends on these controls, which don't route through
 // the 6 render-wired functions — re-render on their change so it never goes stale.
@@ -21882,8 +21873,8 @@ function rerunPastCampaign() {
     sheetUrl: s.sheetUrl || '',
     sheetGid: _rerunSavedGid,
     dailyLimit: s.dailyLimit ?? 50,
-    delayMin: s.delayMin ?? 30,
-    delayMax: s.delayMax ?? 60,
+    delayMin: s.delayMin ?? 10,
+    delayMax: s.delayMax ?? 20,
     linkedinColumn: s.linkedinColumn || '',
     messageOpenProfiles: !!s.messageOpenProfiles,
     addNote: !!(s.templates && s.templates.connectionNote),
@@ -22726,8 +22717,8 @@ async function resumeWithSameSettings() {
     dailyLimit: s.dailyLimit ?? 50,
     mode: c.mode,
     messageOpenProfiles: !!s.messageOpenProfiles,
-    delayMin: s.delayMin ?? 30,
-    delayMax: s.delayMax ?? 60,
+    delayMin: s.delayMin ?? 10,
+    delayMax: s.delayMax ?? 20,
     linkedinColumn: s.linkedinColumn || '',
     concurrency: s.concurrency ?? 1,
     // v2.60.x: don't suffix "(resumed)" — keeps the name clean across
@@ -27124,8 +27115,8 @@ window.launchScheduleIt = async function () {
     delayMin = Math.max(5, Math.round(gap * 0.8));
     delayMax = Math.max(delayMin + 5, Math.round(gap * 1.3));
   } else {
-    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 30;
-    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 60;
+    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 10;
+    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 20;
     if (delayMax < delayMin) [delayMin, delayMax] = [delayMin, delayMin + 5];
   }
 
@@ -27175,9 +27166,11 @@ window.launchScheduleIt = async function () {
 // list and the resume pill will surface it from the dashboard header.
 window.launchSaveAsDraft = function() {
   _closeLaunchMenu();
-  // No backend call — autosave has the data. Just navigate back.
-  window.location.hash = '#/';
-  if (typeof showCampaignToast === 'function') showCampaignToast('Saved as draft');
+  // Ortus Basics 1.0: Save stays put. It used to jump back to the dashboard,
+  // which threw away the operator's place in the wizard; the toast is the
+  // confirmation that the selected settings were stored. Autosave already holds
+  // the data, so there is still no backend call to make here.
+  if (typeof showCampaignToast === 'function') showCampaignToast('Saved');
 };
 
 // v2.160.44: "Save changes" — shown in place of "Save as draft" when editing an
@@ -28365,10 +28358,12 @@ function _stageOverview(status, ca, la, phase) {
   let metricValues = [accepted == null ? '—' : accepted, introduced == null ? '—' : introduced, accountRemaining];
 
   if (phase === 'monitoring') {
-    const check = _stageNextCheckView(status && status.nextCheckAt);
-    side = ['Until next automatic check', check.countdown,
-      check.clock ? `scheduled for ${check.clock} · no browser remains open between checks` : 'The engine is scheduling the next check'];
-    next = ['What happens next', 'Monitoring continues automatically', 'The selected machine opens each eligible sender only when the next check begins.'];
+    // Ortus Basics 1.0: checks are manual, so there is no next-check countdown
+    // to show and nothing continues on its own. Say what is actually true.
+    side = ['Acceptance checks', 'manual',
+      'Nothing runs on a timer — use ⚡ Check now when you want one'];
+    next = ['What happens next', 'Nothing until you run a check',
+      'No browser stays open. ⚡ Check now opens each eligible sender and fires any due intros and follow-ups.'];
     metricValues = [accepted == null ? 0 : accepted, introduced == null ? 0 : introduced, accountTotal];
   } else if (phase === 'checking') {
     side = ['Check progress', accountTotal ? `${Math.min(accountDone + 1, accountTotal)} of ${accountTotal} accounts` : 'Selecting account', 'Sending remains stopped during this acceptance check'];
@@ -29222,6 +29217,13 @@ function _whConfirmHtml(id, to, status) {
 // nothing changed (a 2s poll that re-wrote it would eat the operator's click).
 // Returns '' when the control does not belong on this card at all.
 function whereBlockHtml(status) {
+  // Ortus Basics 1.0: campaigns only ever run on this Mac — the Cloud VM is
+  // discontinued — so the RUNNING ON segmented control and its "move it to the
+  // VM" confirmation have nothing to offer. Returning '' makes
+  // renderWhereControl() drop the slot from the card AND from every board-strip
+  // clone, which is the single place both surfaces go through.
+  return '';
+  /* eslint-disable no-unreachable */
   if (!status) return '';
   const id = String(status.id || status.rawId || '');
   if (!id) return '';
@@ -31079,8 +31081,8 @@ window.dashOpenActive = async function() {
         mode: s.mode,
         sheetUrl: s.sheetUrl || '',
         dailyLimit: s.dailyLimit ?? 50,
-        delayMin: s.delayMin ?? 30,
-        delayMax: s.delayMax ?? 60,
+        delayMin: s.delayMin ?? 10,
+        delayMax: s.delayMax ?? 20,
         linkedinColumn: s.linkedinColumn || '',
         messageOpenProfiles: !!s.messageOpenProfiles,
         addNote: !!(s.templates && s.templates.connectionNote),
@@ -31977,8 +31979,8 @@ window.dashEditResumePast = async function(originalIdx) {
     mode: entry.mode,
     sheetUrl: s.sheetUrl || '',
     dailyLimit: s.dailyLimit ?? 50,
-    delayMin: s.delayMin ?? 30,
-    delayMax: s.delayMax ?? 60,
+    delayMin: s.delayMin ?? 10,
+    delayMax: s.delayMax ?? 20,
     linkedinColumn: s.linkedinColumn || '',
     messageOpenProfiles: !!s.messageOpenProfiles,
     addNote: !!(s.templates && s.templates.connectionNote),
@@ -32862,7 +32864,7 @@ async function mgFetch(url, opts) {
     });
   const body = await res.text();
   if (body.trim().startsWith('<')) {
-    throw new Error('This needs a restart — quit The Ortus Outreach and open it again to finish updating.');
+    throw new Error('This needs a restart — quit Ortus Basics and open it again to finish updating.');
   }
   let json;
   try {
@@ -33719,3 +33721,482 @@ window.previewMagellan = previewMagellan;
 window.importMagellan = importMagellan;
 window.toggleMagellanLog = toggleMagellanLog;
 window.stopMagellanCollect = stopMagellanCollect;
+
+// ── Sidebar campaign name (Ortus Basics 1.0) ────────────────────────────────
+// The sidebar no longer navigates; it names the campaign being looked at.
+// #campaign-name-input is written from several paths (launch, preset load,
+// duplicate, restore) and a programmatic .value assignment fires no input
+// event, so mirror on an interval as well as on typing. Reading one input is
+// far cheaper than trying to patch every writer.
+function syncSidebarCampaignName() {
+  const out = document.getElementById('sidebar-campaign-name');
+  if (!out) return;
+  const raw = (document.getElementById('campaign-name-input')?.value || '').trim();
+  const text = raw || 'Untitled campaign';
+  if (out.textContent !== text) out.textContent = text;
+  out.classList.toggle('is-empty', !raw);
+}
+if (typeof window !== 'undefined') {
+  window.syncSidebarCampaignName = syncSidebarCampaignName;
+  document.getElementById('campaign-name-input')?.addEventListener('input', syncSidebarCampaignName);
+  syncSidebarCampaignName();
+  setInterval(syncSidebarCampaignName, 700);
+}
+
+// ── Wizard state persistence (Ortus Basics 1.0) ─────────────────────────────
+// The sheet URL and the picked GoLogin accounts were the two things the wizard
+// never remembered: nothing wrote a value back into #sheet-url, and
+// startNewCampaign() clears selectedProfileIds outright. Local campaigns also
+// never got a launch-config snapshot — saveCloudLaunchConfig() is only called
+// from the cloud dispatch path — so "open a campaign" had nothing to restore
+// from either. Keep our own copy, written on Save and on Start.
+const _WIZ_KEY = 'ortus-basics-wizard';
+
+function saveWizardState() {
+  try {
+    if (typeof collectCurrentConfig !== 'function') return;
+    localStorage.setItem(_WIZ_KEY, JSON.stringify({ at: Date.now(), config: collectCurrentConfig() }));
+  } catch (_) { /* storage blocked — persistence is best-effort */ }
+}
+
+function restoreWizardState() {
+  try {
+    const raw = localStorage.getItem(_WIZ_KEY);
+    if (!raw) return false;
+    const saved = JSON.parse(raw);
+    if (!saved?.config) return false;
+    // Only fill what the operator has not already typed: a restore must never
+    // overwrite a sheet URL or a selection made in this session.
+    const urlEl = document.getElementById('sheet-url');
+    const hasUrl = !!(urlEl && urlEl.value.trim());
+    const hasAccounts = Array.isArray(selectedProfileIds) && selectedProfileIds.length > 0;
+    if (hasUrl && hasAccounts) return false;
+    const cfg = { ...saved.config };
+    if (hasUrl) delete cfg.sheetUrl;
+    if (hasAccounts) { delete cfg.profileIds; delete cfg.profileNames; }
+    if (typeof applyPresetConfig === 'function') applyPresetConfig(cfg);
+    return true;
+  } catch (_) { return false; }
+}
+
+if (typeof window !== 'undefined') {
+  window.saveWizardState = saveWizardState;
+  window.restoreWizardState = restoreWizardState;
+
+  // Save on the two moments the operator expects to be a commit point.
+  for (const fn of ['launchSaveAsDraft', 'launchSaveChanges', 'launchStartNow', 'launchQueueIt', 'launchScheduleIt']) {
+    const orig = window[fn];
+    if (typeof orig !== 'function') continue;
+    window[fn] = function(...args) {
+      try { saveWizardState(); } catch (_) { /* */ }
+      return orig.apply(this, args);
+    };
+  }
+
+  // Restore once the profile grid exists, so the tiles can paint as selected.
+  setTimeout(() => { try { restoreWizardState(); } catch (_) { /* */ } }, 1500);
+}
+
+// ── Run check now, from the Launch panel (Ortus Basics 1.0) ─────────────────
+// Operator ask: on Connect + Introduce Back the acceptance check had to be
+// reached through a running campaign, so checking meant starting a send you did
+// not want. This drives the same sweep the live card's ⚡ Check now uses
+// (/api/bulk-check-now — opens each selected account, reads who accepted, and
+// fires any due introductions), but takes its inputs from the WIZARD instead of
+// a running campaign's status.
+function refreshLaunchCheckBtn() {
+  const btn = document.getElementById('btn-launch-check');
+  if (!btn) return;
+  const mode = document.getElementById('campaign-mode')?.value || '';
+  btn.hidden = mode !== 'connect_and_introduce';
+}
+if (typeof window !== 'undefined') window.refreshLaunchCheckBtn = refreshLaunchCheckBtn;
+
+// The scope question is the SAME modal the live-card check uses
+// (#solo-check-modal → runSoloCheck('campaign'|'sheet')), driven through the
+// same _soloCheckHandler slot, so the two checks ask identically rather than
+// having a lookalike of their own.
+window.launchCheckNow = function() {
+  const toast = (m) => { if (typeof showCampaignToast === 'function') showCampaignToast(m); };
+  const sheetUrl = (document.getElementById('sheet-url')?.value || '').trim();
+  if (!sheetUrl) return toast('Paste the Google Sheet URL first.');
+  _soloCheckHandler = (scope) => _launchCheckRun(scope);
+  _showSoloCheckModal();
+};
+
+async function _launchCheckRun(scope) {
+  const btn = document.getElementById('btn-launch-check');
+  const toast = (m) => { if (typeof showCampaignToast === 'function') showCampaignToast(m); };
+  const sheetUrl = (document.getElementById('sheet-url')?.value || '').trim();
+  if (!sheetUrl) return toast('Paste the Google Sheet URL first.');
+
+  const body = {
+    sheetUrl,
+    linkedinColumn: document.getElementById('linkedin-col-select')?.value || '',
+    primaryName: (document.getElementById('primary-person-name')?.value || '').trim(),
+    primaryUrl: (document.getElementById('primary-person-url')?.value || '').trim(),
+    primaryIntroBody: document.getElementById('primary-intro-body')?.value || '',
+    introTitle: document.getElementById('intro-title')?.value || '',
+    // Ortus Basics 1.0: automatic acceptance is removed, so a check never asks
+    // the primary to accept anything.
+    autoAcceptPrimary: false,
+  };
+  if (scope === 'sheet') {
+    // Server derives the account set from this tab's Sender column.
+    body.allSenders = true;
+  } else {
+    if (!selectedProfileIds || !selectedProfileIds.length) return toast('Pick at least one account first.');
+    body.profileIds = [...selectedProfileIds];
+  }
+
+  const prev = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  toast(scope === 'sheet'
+    ? 'Checking all senders in this tab…'
+    : `Checking ${body.profileIds.length} account(s)…`);
+  try {
+    const r = await fetch('/api/bulk-check-now', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.status === 409) toast(d.error || 'A check is already running.');
+    else if (d.ok) {
+      const res = d.result || {};
+      toast(`Check done — ${res.matched || 0} newly accepted, ${res.introduced || 0} introduced.`);
+    } else toast('Check failed: ' + (d.error || `HTTP ${r.status}`));
+  } catch (e) {
+    toast('Check failed: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = prev || '⚡ Run check now'; }
+  }
+}
+
+// Keep it in step with the mode picker, and paint the right state on load.
+if (typeof window !== 'undefined') {
+  document.getElementById('campaign-mode')?.addEventListener('change', refreshLaunchCheckBtn);
+  setTimeout(refreshLaunchCheckBtn, 800);
+  // renderModeSelector() sets #campaign-mode.value programmatically, which fires
+  // no change event, so a listener alone goes stale. Re-checking one select is
+  // cheap — same approach as the sidebar campaign name.
+  setInterval(refreshLaunchCheckBtn, 700);
+}
+
+// ── Settings: GoLogin workspace tokens (Ortus Basics 1.0) ──────────────────
+// The app ships with no secrets, so this is where a fresh install becomes
+// usable. Which workspaces an operator can drive follows entirely from which
+// tokens they paste: GL_ACCOUNTS gates each workspace on its env var, so an
+// absent Linked Velocity token means those accounts are simply not offered.
+let _credOthers = [];
+async function renderCredentialsModal() {
+  const wrap = document.getElementById('cred-fields');
+  if (!wrap) return;
+  wrap.innerHTML = '<div class="cred-loading">Loading…</div>';
+  let creds = [];
+  try {
+    const r = await fetch('/api/credentials');
+    const d = await r.json();
+    creds = d.credentials || [];
+    _credOthers = d.others || [];
+  } catch (e) {
+    wrap.innerHTML = `<div class="cred-msg is-bad">Could not read settings: ${escHtml(e.message)}</div>`;
+    return;
+  }
+  wrap.innerHTML = creds.map((c) => {
+    const state = c.set
+      ? `<span class="cred-state is-set">set · ${escHtml(c.hint)}</span>`
+      : `<span class="cred-state is-unset">${c.required ? 'required' : 'not set'}</span>`;
+    const envNote = c.fromEnvironment
+      ? '<div class="cred-note">Currently supplied by the environment (dev launcher). Saving here overrides it.</div>'
+      : '';
+    return `<div class="cred-row">
+      <label class="cred-label" for="cred-${escHtml(c.id)}">${escHtml(c.label)} ${state}</label>
+      <input type="password" class="cred-input" id="cred-${escHtml(c.id)}"
+             data-env="${escHtml(c.env)}" autocomplete="off" spellcheck="false"
+             placeholder="${c.set ? 'Leave blank to keep the saved token' : 'Paste the GoLogin API token'}">
+      ${envNote}
+    </div>`;
+  }).join('');
+
+  // ── Other workspaces ────────────────────────────────────────────────────
+  // Any GoLogin workspace this codebase does not know by name. A token pasted
+  // here becomes a selectable workspace with no domain gate and no mode
+  // restriction — the rule for this build is "a token you hold is a workspace
+  // you can drive". Saved rows show only the last four characters.
+  const rows = _credOthers.map((o) => `<div class="cred-other-row" data-id="${escHtml(o.id)}">
+      <span class="cred-other-name">${escHtml(o.label)}</span>
+      <span class="cred-state is-set">${escHtml(o.hint)}</span>
+      <button type="button" class="cred-other-del" title="Remove this workspace" onclick="removeCredOther('${escHtml(o.id)}')">Remove</button>
+    </div>`).join('');
+  wrap.insertAdjacentHTML('beforeend', `
+    <div class="cred-other">
+      <div class="cred-other-head">Other workspaces</div>
+      <div class="cred-other-sub">Hold a token for a GoLogin workspace not listed above? Add it and its accounts appear in the picker.</div>
+      ${rows || '<div class="cred-other-empty">None added.</div>'}
+      <div class="cred-other-add">
+        <input type="text" id="cred-other-label" class="cred-input" placeholder="Name (e.g. Client X)" autocomplete="off">
+        <input type="password" id="cred-other-token" class="cred-input" placeholder="GoLogin API token" autocomplete="off" spellcheck="false">
+        <button type="button" class="btn btn-secondary" onclick="addCredOther()">Add</button>
+      </div>
+    </div>`);
+}
+
+// The list is replaced wholesale on save, so both add and remove rebuild it
+// from what is on screen plus the change being made. Saved tokens are never
+// echoed to the browser, so an existing row is preserved by id, not by value.
+async function _saveCredOthers(list) {
+  const r = await fetch('/api/credentials', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ others: list }),
+  });
+  const d = await r.json().catch(() => ({}));
+  if (!d.ok) throw new Error(d.error || `HTTP ${r.status}`);
+  return d;
+}
+
+async function addCredOther() {
+  const labelEl = document.getElementById('cred-other-label');
+  const tokEl = document.getElementById('cred-other-token');
+  const label = (labelEl?.value || '').trim();
+  const token = (tokEl?.value || '').trim();
+  const msg = document.getElementById('cred-msg');
+  const show = (t, bad) => { if (msg) { msg.textContent = t; msg.className = 'cred-msg' + (bad ? ' is-bad' : ' is-ok'); msg.hidden = false; } };
+  if (!token) return show('Paste the token for the new workspace.', true);
+  try {
+    // Existing rows must be re-sent with their tokens, which the browser does
+    // not have — so ask the server to keep them by id.
+    await _saveCredOthers([
+      ..._credOthers.map((o) => ({ keep: o.id, label: o.label })),
+      { label: label || 'Other', token },
+    ]);
+    if (labelEl) labelEl.value = ''; if (tokEl) tokEl.value = '';
+    show('Workspace added.', false);
+    await renderCredentialsModal();
+    if (typeof loadProfiles === 'function') { try { await loadProfiles(); } catch (_) { /* */ } }
+  } catch (e) { show('Could not add: ' + e.message, true); }
+}
+
+async function removeCredOther(id) {
+  const msg = document.getElementById('cred-msg');
+  try {
+    await _saveCredOthers(_credOthers.filter((o) => o.id !== id).map((o) => ({ keep: o.id, label: o.label })));
+    if (msg) { msg.textContent = 'Workspace removed.'; msg.className = 'cred-msg is-ok'; msg.hidden = false; }
+    await renderCredentialsModal();
+    if (typeof loadProfiles === 'function') { try { await loadProfiles(); } catch (_) { /* */ } }
+  } catch (e) {
+    if (msg) { msg.textContent = 'Could not remove: ' + e.message; msg.className = 'cred-msg is-bad'; msg.hidden = false; }
+  }
+}
+
+function openCredentialsModal() {
+  const m = document.getElementById('credentials-modal');
+  if (!m) return;
+  const msg = document.getElementById('cred-msg');
+  if (msg) { msg.hidden = true; msg.textContent = ''; }
+  m.classList.remove('hidden');
+  renderCredentialsModal();
+}
+function closeCredentialsModal() {
+  document.getElementById('credentials-modal')?.classList.add('hidden');
+}
+
+async function saveCredentialsFromModal() {
+  const btn = document.getElementById('cred-save');
+  const msg = document.getElementById('cred-msg');
+  const show = (text, bad) => {
+    if (!msg) return;
+    msg.textContent = text;
+    msg.className = 'cred-msg' + (bad ? ' is-bad' : ' is-ok');
+    msg.hidden = false;
+  };
+  // Blank means "leave the saved token alone", so only send what was typed.
+  const body = {};
+  document.querySelectorAll('#cred-fields .cred-input').forEach((el) => {
+    const v = (el.value || '').trim();
+    if (v) body[el.dataset.env] = v;
+  });
+  if (!Object.keys(body).length) return show('Nothing to save — paste a token first.', true);
+
+  const prev = btn ? btn.textContent : '';
+  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+  try {
+    const r = await fetch('/api/credentials', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    show('Saved. Reloading the account list…', false);
+    await renderCredentialsModal();
+    // Tokens are read per call server-side, so the roster only needs re-reading.
+    if (typeof loadProfiles === 'function') { try { await loadProfiles(); } catch (_) { /* */ } }
+    if (typeof showCampaignToast === 'function') showCampaignToast('GoLogin tokens saved');
+  } catch (e) {
+    show('Could not save: ' + e.message, true);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = prev || 'Save tokens'; }
+  }
+}
+
+if (typeof window !== 'undefined') {
+  window.openCredentialsModal = openCredentialsModal;
+  window.closeCredentialsModal = closeCredentialsModal;
+  window.saveCredentialsFromModal = saveCredentialsFromModal;
+  window.renderCredentialsModal = renderCredentialsModal;
+  window.addCredOther = addCredOther;
+  window.removeCredOther = removeCredOther;
+
+  // A fresh install has no tokens and an empty picker explains nothing — open
+  // Settings once, unprompted, so the first thing seen is the thing to do.
+  setTimeout(async () => {
+    try {
+      const r = await fetch('/api/credentials');
+      const d = await r.json();
+      const ortus = (d.credentials || []).find((c) => c.id === 'ortus');
+      if (ortus && !ortus.set) openCredentialsModal();
+    } catch (_) { /* offline / early boot — Settings is still in the sidebar */ }
+  }, 2000);
+}
+
+// ── Campaign settings by name (Ortus Basics 1.0) ───────────────────────────
+// Two problems, one cause. Settings were stored against an engine campaign id,
+// which local runs never had and which did not survive a restart — so reopening
+// a campaign lost everything. They are now stored against the campaign's NAME,
+// which is the operator's own key for it. That only works if names are unique,
+// so a clash is refused outright rather than silently overwriting.
+let _knownCampaignNames = [];
+
+async function refreshKnownCampaignNames() {
+  try {
+    const r = await fetch('/api/campaign-configs');
+    const d = await r.json();
+    _knownCampaignNames = (d.configs || []).map((c) => String(c.name || '').trim().toLowerCase());
+  } catch (_) { /* offline — uniqueness is re-checked server-side on save anyway */ }
+  return _knownCampaignNames;
+}
+
+function closeDupeNameModal() {
+  document.getElementById('dupe-name-modal')?.classList.add('hidden');
+}
+function _showDupeNameModal(name) {
+  const el = document.getElementById('dupe-name-value');
+  if (el) el.textContent = name;
+  document.getElementById('dupe-name-modal')?.classList.remove('hidden');
+}
+
+/** The name currently being edited, if it is already taken by ANOTHER campaign. */
+async function _nameIsTaken(name) {
+  const key = String(name || '').trim().toLowerCase();
+  if (!key) return false;
+  // Editing an existing campaign keeps its own name — that is not a clash.
+  if (typeof _editingExistingCampaign !== 'undefined' && _editingExistingCampaign
+      && key === String(_openedCampaignName || '').trim().toLowerCase()) return false;
+  await refreshKnownCampaignNames();
+  return _knownCampaignNames.includes(key);
+}
+
+/** Write the wizard's settings against this campaign's name. */
+async function saveCampaignConfigByName(name) {
+  const n = String(name || '').trim();
+  if (!n || typeof collectCurrentConfig !== 'function') return false;
+  try {
+    const r = await fetch('/api/campaign-configs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: n, config: collectCurrentConfig() }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (d.ok) { _openedCampaignName = n; await refreshKnownCampaignNames(); }
+    return !!d.ok;
+  } catch (_) { return false; }
+}
+
+/** Put a saved campaign's settings back into the wizard. */
+let _openedCampaignName = '';
+async function loadCampaignConfigByName(name) {
+  const n = String(name || '').trim();
+  if (!n) return false;
+  try {
+    const r = await fetch(`/api/campaign-configs/${encodeURIComponent(n)}`);
+    if (!r.ok) return false;
+    const d = await r.json();
+    if (!d.ok || !d.config) return false;
+    _openedCampaignName = d.name || n;
+    const nameEl = document.getElementById('campaign-name-input');
+    if (nameEl) nameEl.value = _openedCampaignName;
+    if (typeof applyPresetConfig === 'function') applyPresetConfig(d.config);
+    if (typeof showCampaignToast === 'function') showCampaignToast(`Loaded settings for "${_openedCampaignName}"`);
+    return true;
+  } catch (_) { return false; }
+}
+
+if (typeof window !== 'undefined') {
+  window.closeDupeNameModal = closeDupeNameModal;
+  window.saveCampaignConfigByName = saveCampaignConfigByName;
+  window.loadCampaignConfigByName = loadCampaignConfigByName;
+  window.refreshKnownCampaignNames = refreshKnownCampaignNames;
+
+  // Gate every commit point: refuse a duplicate name, otherwise save the
+  // settings under it. Wrapping rather than editing each handler keeps this in
+  // one place, so a new launch path cannot quietly skip the check.
+  for (const fn of ['launchStartNow', 'launchQueueIt', 'launchScheduleIt', 'launchSaveAsDraft', 'launchSaveChanges', 'launchSaveButton']) {
+    const orig = window[fn];
+    if (typeof orig !== 'function') continue;
+    window[fn] = async function(...args) {
+      const name = (document.getElementById('campaign-name-input')?.value || '').trim();
+      // The name IS the campaign's identity, so saving or starting under an
+      // existing name UPDATES that campaign — which is what Save means. Two
+      // campaigns cannot end up sharing a name because there is only ever one
+      // config per name. (Was: refuse any name already in the store, which made
+      // re-saving your own campaign impossible.)
+      if (name) await saveCampaignConfigByName(name);
+      return orig.apply(this, args);
+    };
+  }
+
+  refreshKnownCampaignNames();
+}
+
+// Every path that opens a campaign — dashboard OPEN, re-run, duplicate, draft,
+// queue entry — ends up in applyPresetConfig. Wrapping it once means none of
+// them can miss the name-keyed fallback. A function declaration's binding is
+// mutable, so this reassignment rebinds all existing callers too.
+{
+  const _origApplyPresetConfig = applyPresetConfig;
+  let _restoring = false;                    // loadCampaignConfigByName calls back in
+  applyPresetConfig = function(config) {
+    const out = _origApplyPresetConfig.call(this, config);
+    if (_restoring) return out;
+    // A snapshot that carries no sheet URL is an empty one — the old id-keyed
+    // store had nothing for local campaigns. Fall back to the settings saved
+    // against this campaign's name.
+    const hasSheet = !!(config && String(config.sheetUrl || '').trim());
+    const name = (document.getElementById('campaign-name-input')?.value || '').trim();
+    if (!hasSheet && name) {
+      _restoring = true;
+      Promise.resolve(loadCampaignConfigByName(name))
+        .catch(() => {})
+        .finally(() => { _restoring = false; });
+    } else if (name) {
+      _openedCampaignName = name;            // opened by its own snapshot
+    }
+    return out;
+  };
+}
+
+// Typing (or restoring) a campaign name that has saved settings should fill the
+// wizard in. Without this the settings existed but nothing ever asked for them:
+// the only trigger was applyPresetConfig, which a fresh wizard never calls.
+if (typeof window !== 'undefined') {
+  const _nameEl = document.getElementById('campaign-name-input');
+  const _maybeLoadByName = async () => {
+    const name = (_nameEl?.value || '').trim();
+    if (!name) return;
+    if (String(_openedCampaignName || '').trim().toLowerCase() === name.toLowerCase()) return;
+    // Never overwrite work in progress — only fill a wizard with no sheet yet.
+    const sheet = (document.getElementById('sheet-url')?.value || '').trim();
+    if (sheet) return;
+    await loadCampaignConfigByName(name);
+  };
+  _nameEl?.addEventListener('change', _maybeLoadByName);
+  _nameEl?.addEventListener('blur', _maybeLoadByName);
+  // And once on load, for a name restored from a draft or the last session.
+  setTimeout(_maybeLoadByName, 2500);
+}

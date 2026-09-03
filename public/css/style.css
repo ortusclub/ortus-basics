@@ -8709,3 +8709,152 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
   line-height: 1.6;
 }
 .hs-wiz-log-line + .hs-wiz-log-line { margin-top: 3px; }
+
+/* Ortus Basics 1.0 — Cloud VM runs are discontinued. The tab reads as
+   unavailable, and picking it explains why instead of switching target. */
+.rt-tab.is-discontinued { opacity: .45; cursor: not-allowed; }
+.rt-tab.is-discontinued:hover { background: transparent; }
+.rt-discontinued {
+  margin: 8px 0 0; padding: 8px 12px;
+  border: 1px solid var(--gold, #d4a24c); border-radius: 8px;
+  background: rgba(212, 162, 76, .08);
+  font-family: var(--mono); font-size: 11px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink);
+}
+
+/* Ortus Basics 1.0 — the live campaign card keeps its headline and the
+   "N leads remain safely queued" pill; the Current account / Live browser step /
+   Current lead / Runtime grid and the 01-05 Profile→Sheet strip are not shown.
+   Done in CSS so it covers the singleton #active-stage AND every strip clone,
+   which renderLiveStage() builds from the same markup. */
+.vj-stage-facts,
+.vj-stage-miles { display: none !important; }
+
+/* Ortus Basics 1.0 — the sidebar's only content is the campaign's name. */
+.nav-campaign-name {
+  padding: 6px 14px 14px; font-weight: 600; font-size: 15px;
+  line-height: 1.3; color: var(--ink); word-break: break-word;
+}
+.nav-campaign-name.is-empty { color: var(--gray); font-weight: 400; font-style: italic; }
+
+/* Ortus Basics 1.0 — engine target, sidebar version. Replaces the full-width
+   page banner: same information, stated quietly under Check for updates. The
+   dot carries the state so the text can stay small and unshouty. */
+.engine-mini {
+  margin: 8px 14px 0; padding: 8px 10px;
+  border: 1px solid var(--border, #e5e2dc); border-radius: 8px;
+  font-family: var(--mono); font-size: 10px; line-height: 1.5;
+  color: var(--gray); background: transparent;
+}
+.engine-mini-row { display: flex; align-items: center; gap: 6px; }
+.engine-mini-row + .engine-mini-row { margin-top: 2px; }
+.engine-mini-k { flex: 1 1 auto; letter-spacing: .06em; text-transform: uppercase; }
+.engine-mini strong { color: var(--ink); font-weight: 600; font-size: 11px; }
+.engine-mini-signal {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--gray); flex: 0 0 auto;
+}
+.engine-mini #engine-version-environment {
+  letter-spacing: .08em; text-transform: uppercase; font-size: 9px;
+}
+.engine-mini-url,
+.engine-mini-note { display: none; }        /* the URL and the paragraph are the noisy half */
+.engine-mini.is-development { border-color: var(--gold, #d4a24c); }
+.engine-mini.is-development .engine-mini-signal { background: var(--gold, #d4a24c); }
+.engine-mini.is-development #engine-version-environment { color: var(--gold, #d4a24c); }
+.engine-mini.is-production .engine-mini-signal { background: #3fb950; }
+.engine-mini.is-error { border-color: var(--red, #f85149); }
+.engine-mini.is-error .engine-mini-signal { background: var(--red, #f85149); }
+.engine-mini.is-error #engine-version-environment { color: var(--red, #f85149); }
+
+/* Ortus Basics 1.0 — Settings: GoLogin workspace tokens.
+   Scoped to #credentials-modal and written at high specificity on purpose: the
+   app's global input styling (borderless, underlined, ~1rem) was winning for
+   input[type=text], which is why the Name field rendered as a big underlined
+   line next to a boxed token field. */
+.settings-chip { margin-bottom: 8px; }
+
+#credentials-modal .modal-card.cred-card { max-width: 520px; text-align: left; }
+#credentials-modal .stop-choice-sub { margin-bottom: 4px; }
+
+#credentials-modal .cred-row { margin-top: 14px; }
+#credentials-modal .cred-label {
+  display: flex; align-items: baseline; gap: 8px; margin: 0 0 6px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--gray);
+}
+#credentials-modal input.cred-input {
+  width: 100%; box-sizing: border-box; height: 34px; padding: 0 10px; margin: 0;
+  border: 1px solid var(--hairline) !important; border-radius: 7px !important;
+  background: var(--surface, #fff) !important; color: var(--ink) !important;
+  font-family: var(--mono) !important; font-size: 12px !important;
+  line-height: 34px !important; letter-spacing: 0 !important;
+  text-transform: none !important; outline: none; box-shadow: none !important;
+}
+#credentials-modal input.cred-input::placeholder {
+  font-family: var(--mono); font-size: 11px; color: var(--gray);
+  letter-spacing: 0; text-transform: none;
+}
+#credentials-modal input.cred-input:focus { border-color: var(--gold, #d4a24c) !important; }
+
+#credentials-modal .cred-state {
+  font-family: var(--mono); font-size: 9px; letter-spacing: .06em; text-transform: uppercase;
+}
+#credentials-modal .cred-state.is-set { color: #3fb950; }
+#credentials-modal .cred-state.is-unset { color: var(--gray); }
+#credentials-modal .cred-note { margin-top: 5px; font-size: 10.5px; color: var(--gray); }
+
+#credentials-modal .cred-msg { margin-top: 14px; font-size: 12px; }
+#credentials-modal .cred-msg.is-ok { color: #3fb950; }
+#credentials-modal .cred-msg.is-bad { color: var(--red, #f85149); }
+
+/* ── Other workspaces ─────────────────────────────────────────────────── */
+#credentials-modal .cred-other {
+  margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--hairline);
+}
+#credentials-modal .cred-other-head {
+  margin: 0 0 4px;
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em;
+  text-transform: uppercase; color: var(--ink);
+}
+#credentials-modal .cred-other-sub {
+  margin: 0 0 10px; font-size: 11.5px; line-height: 1.45; color: var(--gray);
+}
+#credentials-modal .cred-other-empty {
+  margin: 0 0 10px; padding: 9px 10px;
+  border: 1px dashed var(--hairline); border-radius: 7px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--gray);
+}
+#credentials-modal .cred-other-row {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+  padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 7px;
+}
+#credentials-modal .cred-other-name {
+  flex: 1 1 auto; min-width: 0; font-size: 12.5px; color: var(--ink);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+#credentials-modal .cred-other-del {
+  flex: 0 0 auto; border: none; background: transparent; cursor: pointer; padding: 0;
+  font-family: var(--mono); font-size: 9px; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--gray);
+}
+#credentials-modal .cred-other-del:hover { color: var(--red, #f85149); }
+
+/* Name | token | Add on one 34px line — the three used to be different heights. */
+#credentials-modal .cred-other-add {
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) auto;
+  gap: 8px; align-items: center; margin-top: 4px;
+}
+#credentials-modal .cred-other-add button {
+  height: 34px; padding: 0 16px; margin: 0; border-radius: 7px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em;
+  text-transform: uppercase; line-height: 1; white-space: nowrap;
+}
+#credentials-modal .stop-choice-cancel-row {
+  margin-top: 20px; display: flex; gap: 10px; justify-content: flex-end;
+}
+#credentials-modal .stop-choice-cancel-row button {
+  height: 36px; padding: 0 18px; border-radius: 7px;
+  font-family: var(--mono); font-size: 10px; letter-spacing: .1em; text-transform: uppercase;
+}

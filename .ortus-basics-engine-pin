@@ -1,0 +1,15 @@
+# Ortus Basics — pinned development engine.
+#
+# This capsule (03 September 2026, Version 1.0) was built and tested against
+# exactly this engine build. The launcher refuses to start if salesnav-dev is
+# running anything else, so the capsule can never silently test against
+# different engine code.
+#
+# The DIGEST is the real pin. The TAG is only a label: a tag can be repointed
+# at a new image while keeping its name, so tag equality proves nothing.
+#
+# To deliberately re-pin after an intentional engine change, run the launcher
+# once with ORTUS_REPIN_ENGINE=1 and it will rewrite the DIGEST line below.
+# To start anyway without re-pinning, use ORTUS_ALLOW_ENGINE_DRIFT=1.
+TAG=dev-38
+DIGEST=sha256:0921719e6ecb2fb615275bcba3080156ed62708e89bc01de7a47cae667f2d899

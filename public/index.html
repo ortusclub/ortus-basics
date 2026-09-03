@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Ortus LinkedIn Outreach</title>
+  <title>Ortus Basics</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -16,8 +16,8 @@
     <!-- ── Sidebar ── -->
     <aside class="sidebar">
       <div class="sidebar-brand">
-        <div class="sidebar-wordmark">Ortus <em>Outreach</em></div>
-        <div class="sidebar-sub">LinkedIn · <span id="app-version-sidebar"></span></div>
+        <div class="sidebar-wordmark">Ortus <em>Basics</em></div>
+        <div class="sidebar-sub">Version <span id="app-version-sidebar">—</span></div>
         <!-- Shown only when a newer release exists on GitHub (gold pill) or,
              when up to date, as a subtle "Check for updates" button. Wired by
              checkForUpdate() / onUpdateClick() in public/js/app.js. -->
@@ -28,115 +28,54 @@
           <div id="update-status-text" class="update-status-text"></div>
         </div>
         <div id="update-detail" class="update-detail hidden"></div>
+        <!-- Ortus Basics 1.0: engine info moved out of the page header into the
+             sidebar, under Check for updates, and made compact. Same ids, so
+             the /api/health handler that fills it needs no changes. -->
+        <div id="engine-version-banner" class="engine-mini is-loading" aria-live="polite">
+          <div class="engine-mini-row">
+            <span class="engine-mini-signal" aria-hidden="true"></span>
+            <span id="engine-version-environment">Checking engine</span>
+          </div>
+          <div class="engine-mini-row">
+            <span class="engine-mini-k">This app</span>
+            <strong id="engine-version-current">—</strong>
+          </div>
+          <div class="engine-mini-row">
+            <span class="engine-mini-k">Team live</span>
+            <strong id="engine-version-live">—</strong>
+          </div>
+          <span id="engine-version-url" class="engine-mini-url">Connecting…</span>
+          <p id="engine-version-explanation" class="engine-mini-note"></p>
+        </div>
       </div>
 
+      <!-- Ortus Basics 1.0: the sidebar no longer navigates. The wizard steps
+           (I-V + Live Status), Return to dashboard, Open log and Help are gone;
+           what remains is the name of the campaign being looked at, mirrored
+           from #campaign-name-input by syncSidebarCampaignName(). -->
       <nav class="sidebar-nav">
-        <button type="button" class="nav-item nav-item-back" onclick="goDashboard()"><span class="nav-num">←</span>Dashboard</button>
+        <button type="button" class="nav-item nav-item-back" onclick="goDashboard()"><span class="nav-num">←</span>Return to dashboard</button>
         <div class="nav-section-label">Campaign</div>
-        <button type="button" class="nav-item" data-nav="nav-settings" onclick="scrollToSection('nav-settings')"><span class="nav-num">I.</span>Campaign Type<span class="nav-glyph" id="nav-glyph-settings"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-sheet" onclick="scrollToSection('nav-sheet')"><span class="nav-num">II.</span>Data<span class="nav-glyph" id="nav-glyph-sheet"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-accounts" onclick="scrollToSection('nav-accounts')"><span class="nav-num">III.</span>LinkedIn Accounts<span class="nav-glyph" id="nav-glyph-accounts"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-templates" onclick="scrollToSection('nav-templates')"><span class="nav-num">IV.</span>Campaign Settings<span class="nav-glyph" id="nav-glyph-templates"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-launch" onclick="scrollToSection('nav-launch')"><span class="nav-num">V.</span>Launch<span class="nav-glyph" id="nav-glyph-launch"></span></button>
-        <button type="button" class="nav-item" data-nav="nav-status" onclick="scrollToSection('nav-status')">Live Status</button>
-
-        <div class="nav-section-label">Team</div>
-        <button type="button" class="nav-item" onclick="goConnections()"><span class="nav-num">◆</span>Connection DB</button>
-
-        <div class="nav-section-label">Review</div>
-        <button type="button" class="nav-item" id="nav-replies-btn" onclick="goReplies()">Replies</button>
-        <button type="button" class="nav-item" onclick="openUnifiedLog()">Open log</button>
-
-        <div class="nav-section-label">Help</div>
-        <div class="nav-help-wrapper">
-          <button type="button" class="nav-item nav-item-help" id="nav-help-btn" onclick="toggleHelpPopover(event)">
-            <span class="nav-num">?</span>Help
-          </button>
-          <div id="help-popover" class="help-popover hidden">
-            <div class="help-popover-title">HELP</div>
-            <button type="button" class="help-pop-item" onclick="onHelpTakeTour()">
-              <span class="help-pop-icon">📘</span><span>Take the tour</span>
-            </button>
-            <a class="help-pop-item" href="/help.html" target="_blank" rel="noopener">
-              <span class="help-pop-icon">📄</span><span>Open the manual</span>
-            </a>
-            <button type="button" id="help-pop-replay" class="help-pop-item" onclick="onHelpReplayTour()" style="display:none">
-              <span class="help-pop-icon">🔁</span><span>Replay tour</span>
-            </button>
-          </div>
-        </div>
-
-        <div class="nav-section-label">Dev tools</div>
-        <button type="button" class="nav-item" onclick="devPreviewIntroDM()">Preview intro DM</button>
+        <div class="nav-campaign-name" id="sidebar-campaign-name">Untitled campaign</div>
       </nav>
 
-      <div class="theme-toggle-group">
-        <div class="theme-toggle-label">Theme</div>
-        <div class="theme-toggle">
-          <button type="button" id="theme-btn-dark" class="active" onclick="setTheme('dark')">Dark</button>
-          <button type="button" id="theme-btn-light" onclick="setTheme('light')">Light</button>
-        </div>
-      </div>
-
-      <!-- Bug 17: Sidebar tightened (Variant A). Same functions/IDs as before —
-           Change becomes an inline ✎, push/SMTP become compact chips, Send test
-           becomes a "Test" link — just less button-heavy. -->
-      <div class="sb-tight">
-        <div class="sb-line">
-          <span class="sb-line-k">Timestamps</span>
-          <span class="sb-line-v">
-            <span id="op-tz-current" class="notif-row-v">—</span>
-            <button type="button" class="sb-icon-btn" title="Change timezone" aria-label="Change timezone" onclick="openOpTzModal()">✎</button>
-          </span>
-        </div>
-
-        <div class="sb-line">
-          <span class="sb-line-k">Notifications</span>
-          <span class="sb-line-v">
-            <button type="button" id="notif-enable-btn" class="sb-link" onclick="requestNotificationPermission()" style="display:none">Enable</button>
-            <button type="button" class="sb-link" onclick="sendTestNotification()">Test</button>
-          </span>
-        </div>
-        <div class="sb-chips" id="notif-state-rows">
-          <span class="sb-chip"><span class="sb-chip-k">Push</span> <span id="notif-push-state" class="notif-row-v">—</span></span>
-          <span class="sb-chip"><span class="sb-chip-k">Email</span> <span id="notif-smtp-state" class="notif-row-v">—</span></span>
-          <span id="notif-last-test" class="notif-row-v sb-lasttest" hidden>never</span>
-        </div>
-
-        <div class="sb-line">
-          <span class="sb-line-k">Check reminders</span>
-          <label class="notif-pref-toggle">
-            <input type="checkbox" id="notif-pref-conn-check" onchange="onNotifPrefChange('connectionCheckReminders', this.checked)">
-            <span class="notif-pref-slider"></span>
-          </label>
-        </div>
-        <div class="sb-line">
-          <span class="sb-line-k">Reply alerts</span>
-          <label class="notif-pref-toggle">
-            <input type="checkbox" id="notif-pref-reply-alerts" onchange="onNotifPrefChange('replyAlerts', this.checked)">
-            <span class="notif-pref-slider"></span>
-          </label>
-        </div>
-
-        <!-- v2.113 — pre-send identity safeguard. Hairline-separated into its
-             own block so it's not mistaken for a notification toggle. ON
-             (default) = confirm each loaded profile matches the sheet row
-             before connecting (blocks wrong-person sends). OFF = send straight
-             to the sheet URL like pre-v2.97; the dead-profile (404) skip stays
-             on either way. Sticky per-operator (stored via /api/operator-prefs). -->
-        <div class="sb-line sb-safeguard" title="ON: before each connection, confirm the open profile matches the sheet row (blocks wrong-person sends). OFF: connect straight to the sheet URL like older versions. The dead-profile (404) skip stays on either way.">
-          <span class="sb-line-k">Identity safeguard</span>
-          <span class="sb-line-v">
-            <span id="op-identity-gate-state" class="notif-row-v bad">Off</span>
-            <label class="notif-pref-toggle">
-              <input type="checkbox" id="op-identity-gate" onchange="onIdentityGateChange(this.checked)">
-              <span class="notif-pref-slider"></span>
-            </label>
-          </span>
-        </div>
+      <!-- Ortus Basics 1.0: the Theme picker and the Timestamps row are not
+           shown. #op-tz-current stays in the DOM (hidden) because its data-tz is
+           what stamps the operator timezone on sheet writes — dropping it would
+           silently fall back to the detected local zone. The theme itself still
+           comes from initTheme()/localStorage; only the switch is gone. -->
+      <div class="sb-tight" hidden style="display:none">
+        <span id="op-tz-current" class="notif-row-v"></span>
       </div>
 
       <div class="sidebar-footer">
+        <!-- Ortus Basics 1.0: the Settings stage — where the GoLogin workspace
+             tokens are pasted. Sits with the other identity controls, and is
+             always reachable because a fresh install has no tokens at all. -->
+        <button type="button" class="operator-chip settings-chip" onclick="openCredentialsModal()">
+          <span class="operator-chip-label">Settings</span>
+          <strong id="settings-chip-state">GoLogin tokens</strong>
+        </button>
         <!-- v2.106.0 — per-machine operator identity. Stamped as the reserver
              in the SoO 'CC User App' column; click to set/change. Highlighted
              gold until set (it's mandatory before a campaign can start). -->
@@ -155,73 +94,19 @@
     <!-- ── Main ── -->
     <main class="main">
     <div class="container">
-    <div class="page-header">
-      <div class="page-header-title">
-        <div class="greeting-wordmark" id="greeting-wordmark">Welcome</div>
-        <div class="greeting-subtitle"><span id="greeting-subtitle">—</span> <small id="app-version" style="margin-left:12px; color:var(--gray)"></small></div>
-      </div>
+    <!-- Ortus Basics 1.0: the greeting + overview stat row is not shown. The
+         nodes stay in the DOM, hidden, because the dashboard refreshers write
+         into them (hero-ram / hero-cpu / hero-browsers / hero-vm, the sent
+         counters, and greeting-wordmark) on every poll. -->
+    <div class="page-header" hidden style="display:none">
+      <div id="greeting-wordmark"></div><span id="greeting-subtitle"></span>
+      <small id="app-version" hidden></small>
       <div class="header-stats" id="header-stats">
-        <div class="header-stat">
-          <span class="k" data-edit="overview-today">Today (sent)</span>
-          <span class="v" id="hero-today">0</span>
-          <span id="hero-today-sub" hidden>Sent since midnight</span>
-        </div>
-        <div class="header-stat">
-          <span class="k" data-edit="overview-week">7-day total</span>
-          <span class="v" id="hero-week">0</span>
-          <span id="hero-week-sub" hidden>Rolling 7 days</span>
-        </div>
-        <div class="header-stat">
-          <span class="k" data-edit="overview-errors">Errors · 24h</span>
-          <span class="v err" id="hero-errors">0</span>
-          <span id="hero-errors-sub" hidden>No errors</span>
-        </div>
-        <div class="header-stat">
-          <span class="k" data-edit="overview-passover">Passover</span>
-          <span class="v small passover-pills" id="hero-passover">
-            <span class="passover-pill closed" id="hero-passover-op" title="OP · InMail · Sales Nav">OP·IM·SN</span>
-            <span class="passover-pill closed" id="hero-passover-cc" title="CC">CC</span>
-          </span>
-        </div>
-        <div class="header-stat">
-          <span class="k" data-edit="overview-ram">RAM</span>
-          <span class="v" id="hero-ram">—</span>
-        </div>
-        <div class="header-stat">
-          <span class="k" data-edit="overview-cpu">CPU</span>
-          <span class="v" id="hero-cpu">—</span>
-        </div>
-        <div class="header-stat">
-          <span class="k" data-edit="overview-browsers">Browsers</span>
-          <span class="v" id="hero-browsers">—</span>
-        </div>
-        <!-- The three tiles above are THIS Mac. This one is the cloud, hence the
-             label: without it the row reads as six numbers about one machine. -->
-        <div class="header-stat">
-          <span class="k" data-edit="overview-vm">VM workers</span>
-          <span class="v" id="hero-vm" title="No cloud campaign is running, so the VM has scaled to zero.">—</span>
-        </div>
+        <span id="hero-ram"></span><span id="hero-cpu"></span>
+        <span id="hero-browsers"></span><span id="hero-vm"></span>
       </div>
     </div>
 
-    <section id="engine-version-banner" class="engine-version-banner is-loading" aria-live="polite">
-      <div class="engine-version-banner__flag">
-        <span class="engine-version-banner__signal" aria-hidden="true"></span>
-        <span id="engine-version-environment">CHECKING ENGINE</span>
-      </div>
-      <div class="engine-version-banner__current">
-        <span class="engine-version-banner__label">THIS APP IS USING</span>
-        <strong id="engine-version-current">—</strong>
-        <span id="engine-version-url" class="engine-version-banner__url">Connecting…</span>
-      </div>
-      <div class="engine-version-banner__divider" aria-hidden="true"></div>
-      <div class="engine-version-banner__live">
-        <span class="engine-version-banner__label">TEAM LIVE ENGINE</span>
-        <strong id="engine-version-live">—</strong>
-        <span class="engine-version-banner__url">scraper.ortusclub.com</span>
-      </div>
-      <p id="engine-version-explanation" class="engine-version-banner__explanation">Confirming which engine this app controls.</p>
-    </section>
 
     <!-- Phase 2.8.20 (W3-C2): disk-low banner -->
     <div id="disk-warning-banner" class="disk-warning-banner" hidden>
@@ -246,7 +131,6 @@
           <div class="fdrop" id="campaigns-typefilter"></div>
           <!-- v2.131: admin-only Conductor filter (hidden for normal accounts). -->
           <div class="fdrop" id="campaigns-conductorfilter" style="display:none"></div>
-          <button type="button" class="btn btn-secondary dashboard-new-btn" onclick="goConnections()">Connection DB</button>
           <button type="button" class="btn btn-start dashboard-new-btn" onclick="startNewCampaign()">+ New campaign</button>
           <!-- Bug 17b: the gold draft-count badge was removed as a redundant draft
                indicator (drafts remain reachable via the Drafts & Stops section).
@@ -1119,30 +1003,15 @@
         <h2 data-edit="h2-campaign-name">Campaign Name</h2>
         <div class="campaign-name-row">
           <input type="text" id="campaign-name-input" placeholder="e.g. TAG_CITY_I" autocomplete="off" />
-          <!-- Presets — save the whole wizard config under a name / reload one.
-               Lives next to the campaign name per the approved duplicate+presets
-               sketch (duplicate-campaign-A.html); popover opens downward here. -->
-          <div class="preset-pill preset-pill--inline" id="preset-pill">
-            <button type="button" class="btn btn-xs preset-pill-btn" onclick="togglePresetPopover()" title="Save the current wizard config under a name so you can re-load it later (mode, accounts, sheet URL, templates, campaign limit per account).">
-              <span>Presets</span>
-              <span class="preset-pill-count" id="preset-pill-count">0</span>
-              <span class="preset-pill-caret">▾</span>
-            </button>
-            <div class="preset-popover" id="preset-popover" hidden>
-              <div class="preset-pop-label" id="preset-pop-pinned-label">Pinned</div>
-              <div class="preset-pop-item preset-pop-last" id="preset-pop-last" onclick="loadLastUsedPreset(); closePresetPopover()">
-                <span><span class="preset-pop-dot"></span>Last Used</span>
-                <span class="preset-pop-tag" id="preset-pop-last-tag">—</span>
-              </div>
-              <div class="preset-pop-divider"></div>
-              <div class="preset-pop-label">Saved</div>
-              <div id="preset-pop-list">
-                <div class="preset-pop-empty">No saved presets yet</div>
-              </div>
-              <div class="preset-pop-action" onclick="saveCurrentAsPreset(); closePresetPopover()">
-                <span>+ Save current as preset…</span>
-                <span class="preset-pop-caret">→</span>
-              </div>
+          <!-- Ortus Basics 1.0: the Presets pill is removed. Ids kept hidden — the
+               preset code paths (refreshPresetPill, renderPresetList) write into
+               them on load and would throw on a missing node. -->
+          <div id="preset-pill" hidden style="display:none">
+            <span id="preset-pill-count"></span>
+            <div id="preset-popover" hidden>
+              <span id="preset-pop-pinned-label"></span>
+              <div id="preset-pop-last"><span id="preset-pop-last-tag"></span></div>
+              <div id="preset-pop-list"></div>
             </div>
           </div>
         </div>
@@ -1154,10 +1023,14 @@
         <button type="button" class="rt-tab on" data-rt="local" role="tab" onclick="pickRunTarget('local')">
           <span class="t">💻 This machine</span><span class="s">Runs while the app is open — pause &amp; resume anytime</span>
         </button>
-        <button type="button" class="rt-tab" data-rt="cloud" role="tab" onclick="pickRunTarget('cloud')">
-          <span class="t">☁︎ Cloud VM</span><span class="s">Keeps going after you close the laptop</span>
+        <button type="button" class="rt-tab is-discontinued" data-rt="cloud" role="tab" aria-disabled="true" onclick="pickRunTarget('cloud')">
+          <span class="t">☁︎ Cloud VM</span><span class="s">Discontinued in this version</span>
         </button>
       </div>
+      <!-- Ortus Basics 1.0: cloud runs are discontinued. The tab stays visible so
+           the choice is explained rather than silently missing; selecting it shows
+           this note and leaves the target on "This machine". -->
+      <div class="rt-discontinued" id="rt-discontinued" hidden>This feature has been discontinued.</div>
       <div class="rt-facts" id="run-target-facts"></div>
     </div>
 
@@ -1166,17 +1039,15 @@
       <h2 data-edit="h2-settings">1. Campaign Type <span class="section-summary" id="summary-settings"></span></h2>
       <div class="mode-grid" id="mode-grid"></div>
       <select id="campaign-mode" onchange="onModeChange()" style="display:none">
-        <option value="connect_only">Connect Only</option>
-        <option value="connect_and_introduce">Connect + Introduce Back</option>
-        <option value="connect_and_message">Connect + DM</option>
-        <!-- message_only (Direct Messages) + inmail_only (InMail Only) retired
-             2026-08-06 — see RETIRED_MODES in /js/campaign-modes.mjs. -->
-        <option value="introduce_back">Introduction Campaign (3-way intro DM)</option>
+        <!-- Ortus Basics 1.0: the offered campaign types are Message, Connect +
+             Introduce Back and Introduction Campaign. Connect Only, Connect + DM,
+             Check DMs, Follower Growth and Post Amplification were removed here
+             and from MODE_LIST in app.js. sales_nav_scrape stays — it is the
+             Sales Nav board's value, not a campaign card. -->
         <option value="open_profile_only">Message Campaign</option>
-        <option value="follower_growth">Follower Growth</option>
-        <option value="check_dms">Check DMs (scan inboxes for replies)</option>
+        <option value="connect_and_introduce">Connect + Introduce Back</option>
+        <option value="introduce_back">Introduction Campaign (3-way intro DM)</option>
         <option value="sales_nav_scrape">Sales Nav Scrape</option>
-        <option value="post_amplification">Post Amplification</option>
       </select>
 
       <!-- v2.62: variant-C wiring — Primary Person + Cadence sit as a
@@ -1242,160 +1113,17 @@
             </div>
           </div>
 
-          <div class="auto-box" id="manifest-auto-box">
-            <div class="auto-head">
-              <span class="auto-title">WHAT HAPPENS AUTOMATICALLY — <b id="manifest-state">STANDARD</b></span>
-              <button type="button" id="manifest-customize-btn" class="auto-edit">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
-                <span>Customize</span>
-              </button>
-            </div>
+          <!-- Ortus Basics 1.0: automatic acceptance at campaign start is removed,
+               so the "what happens automatically" manifest and its Customize drawer
+               (primary source, check timing, auto-accept) are gone. The primary is
+               simply who the lead gets introduced to — name + profile URL above.
+               A sender that is not 1st-degree with the primary still sends the
+               lead's connection request; only the introduction is skipped.
+               Nodes kept hidden: renderManifest() writes to them on every recalc. -->
+          <div class="auto-box" id="manifest-auto-box" hidden style="display:none">
+            <b id="manifest-state"></b>
             <div id="manifest-readback" class="auto-lines"></div>
-            <div class="auto-nudge">Every line above is a setting — hit <b>Customize</b> to change any of them.</div>
             <div id="manifest-cloud-notice" class="pc-cloud" hidden></div>
-
-            <!-- Customize drawer — holds the REAL controls, moved verbatim
-                 (same ids/classes/handlers as before; only the parent changed). -->
-            <div id="manifest-drawer" class="cust" hidden>
-              <!-- v2.94.x: the primary's ONE identity — used by both auto-accept and the follow-up -->
-              <div class="intro-config-field" id="primary-source-field">
-                <label class="intro-config-label">Logged in via</label>
-                <div class="aa-src-cards">
-                  <div class="aa-src-card">
-                    <label class="aa-src-head">
-                      <input type="radio" name="primary-source" value="local-browser" checked
-                             onchange="togglePrimarySource(); savePrimaryPersonFields();">
-                      <span class="aa-src-title">My local browser</span>
-                    </label>
-                    <div class="aa-src-desc">The primary is logged into LinkedIn in your own Chrome.</div>
-                  </div>
-                  <div class="aa-src-card">
-                    <label class="aa-src-head">
-                      <input type="radio" name="primary-source" value="gologin"
-                             onchange="togglePrimarySource(); savePrimaryPersonFields();">
-                      <span class="aa-src-title">A GoLogin profile</span>
-                    </label>
-                    <div class="aa-src-desc">The primary is one of your GoLogin profiles — pick which one.</div>
-                    <div id="primary-source-picker" style="display:none;">
-                      <input type="text" id="primary-source-search" class="aa-acct-search"
-                             placeholder="Search by name or email…" oninput="filterPrimarySourcePicker()">
-                      <div class="aa-soo-toolbar">
-                        <button type="button" id="primary-source-soo-reload" class="aa-soo-reload" onclick="reloadPrimarySourceSoO()" title="Reload SoO" aria-label="Reload SoO">
-                          <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                            <polyline points="23 4 23 10 17 10"></polyline>
-                            <polyline points="1 20 1 14 7 14"></polyline>
-                            <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
-                          </svg>
-                        </button>
-                        <span id="primary-source-soo-status" class="aa-soo-status"></span>
-                      </div>
-                      <div id="primary-source-grid" class="aa-acct-grid"></div>
-                    </div>
-                    <input type="hidden" id="primary-source-profile-id" value="">
-                  </div>
-                </div>
-                <div class="intro-config-hint">Used for <b>both</b> primary-side actions below. It must be logged into LinkedIn as the primary.</div>
-              </div>
-
-              <!-- #7: Primary check timing — CC+IC only. -->
-              <div class="intro-config-field" id="primary-timing-field">
-                <label for="primary-timing-select" class="intro-config-label">Primary check timing</label>
-                <select id="primary-timing-select" class="intro-config-select-wide" onchange="savePrimaryPersonFields()">
-                  <option value="immediately" selected>Immediately (at start)</option>
-                  <option value="after_connections">After connections complete</option>
-                </select>
-                <div class="intro-config-hint">When the connect/check to the primary person runs. "After connections complete" starts sending right away and does the primary step once every account has finished its connection requests for the day.</div>
-              </div>
-
-              <!-- v2.91: Auto-accept the primary connection — locked until a URL is set -->
-              <div id="auto-accept-block" class="intro-config-card" style="display:none;">
-                <div class="intro-config-eyebrow">Auto-accept the connection <span class="intro-config-newtag">NEW</span></div>
-                <div class="intro-config-toggle-row">
-                  <span id="auto-accept-label" class="intro-config-toggle-key">Auto-accept the primary's invitation</span>
-                  <label class="notif-pref-toggle" id="auto-accept-toggle-wrap">
-                    <input type="checkbox" id="auto-accept-toggle" checked data-wanted="1" disabled onchange="savePrimaryPersonFields(); refreshAutoAcceptGate();">
-                    <span class="notif-pref-slider"></span>
-                  </label>
-                </div>
-                <div id="auto-accept-gate" class="intro-config-gate">
-                  🔒 Add the primary person's LinkedIn URL above to switch this on — without the URL there's nothing to accept from.
-                </div>
-                <!-- v2.94.x: accepts as the shared primary identity (set in Primary Person) -->
-                <div id="auto-accept-primary-line" class="uses-primary" style="display:none;">
-                  <span class="dot"></span><span>Accepts as your primary — <span class="nm" id="auto-accept-primary-label">your local browser</span></span>
-                </div>
-                <div class="intro-config-hint">When an account isn't connected to your primary, it requests them and the chosen browser accepts that one invitation automatically — no manual step before the intro.</div>
-                <!-- v2.107: accept-all opt-in (default OFF). Only relevant while auto-accept is on; gated by refreshAutoAcceptGate. -->
-                <div class="intro-config-toggle-row" id="auto-accept-all-row" style="margin-top:12px;">
-                  <span id="auto-accept-all-label" class="intro-config-toggle-key">Also accept <b>all other</b> pending invitations</span>
-                  <label class="notif-pref-toggle" id="auto-accept-all-toggle-wrap">
-                    <input type="checkbox" id="auto-accept-all-toggle" disabled>
-                    <span class="notif-pref-slider"></span>
-                  </label>
-                </div>
-                <div class="intro-config-hint" id="auto-accept-all-hint">⚠️ With this on, your primary also accepts <b>every</b> pending invite in its inbox during pre-flight — including strangers and real prospects, not just this campaign's sender accounts. Leave off to accept only your senders.</div>
-              </div>
-
-              <!-- Auto-check cadence (CC+IC + CC+DM). Honored during sending AND monitoring. Options must match MIN/MAX_CADENCE_MINUTES in campaign-modes.mjs. -->
-              <div id="check-cadence-block" class="intro-config-card" style="display:none;">
-                <div class="intro-config-eyebrow">Auto-check &amp; intro cadence</div>
-                <div class="intro-config-field">
-                  <label for="check-cadence-select" class="intro-config-label">Cadence</label>
-                  <div style="display:flex; align-items:center; gap:10px;">
-                    <span class="intro-config-prefix">Every</span>
-                    <select id="check-cadence-select" class="intro-config-select-wide" style="flex:1">
-                      <option value="60" selected>1 hour</option>
-                      <option value="120">2 hours</option>
-                      <option value="240">4 hours</option>
-                      <option value="360">6 hours</option>
-                      <option value="720">12 hours</option>
-                    </select>
-                  </div>
-                  <div class="intro-config-hint">How often we check each account for new acceptances and fire the follow-up — during sending and after. The first check is always ~1 hour in; after that it follows this interval. A little later if all browsers are busy sending.</div>
-                </div>
-                <!-- v2.112: pause the AFTER-sending automatic checks at launch (default on). -->
-                <div class="intro-config-toggle-row" style="margin-top:14px;">
-                  <span class="intro-config-toggle-key">Run checks automatically</span>
-                  <label class="notif-pref-toggle">
-                    <input type="checkbox" id="auto-checks-toggle" checked>
-                    <span class="notif-pref-slider"></span>
-                  </label>
-                </div>
-                <div class="intro-config-hint">On (default): after sending ends we keep checking on the cadence above and auto-send any due intros/follow-ups. Off: that pauses — run a check yourself with ⚡ Check now on the live campaign card.</div>
-              </div>
-
-              <!-- v2.91: Automated first follow-up -->
-              <div id="follow-up-block" class="intro-config-card" style="display:none;">
-                <div class="intro-config-eyebrow">Automated first follow-up <span class="intro-config-newtag">NEW</span></div>
-                <div class="intro-config-toggle-row">
-                  <span class="intro-config-toggle-key">Send a first follow-up (batched after the last intro)</span>
-                  <label class="notif-pref-toggle">
-                    <input type="checkbox" id="follow-up-toggle" onchange="savePrimaryPersonFields(); toggleFollowUpFields();">
-                    <span class="notif-pref-slider"></span>
-                  </label>
-                </div>
-                <div id="follow-up-fields" style="display:none;">
-                  <div class="intro-config-field" style="margin-bottom:14px;">
-                    <label class="intro-config-label" for="follow-up-delay">Send after</label>
-                    <div style="display:flex; align-items:center; gap:8px;">
-                      <select id="follow-up-delay" class="intro-config-select-wide" onchange="savePrimaryPersonFields()">
-                        <option value="10" selected>10 minutes</option>
-                        <option value="20">20 minutes</option>
-                        <option value="30">30 minutes</option>
-                        <option value="45">45 minutes</option>
-                        <option value="60">1 hour</option>
-                        <option value="120">2 hours</option>
-                      </select>
-                      <span class="intro-config-prefix">after the last intro</span>
-                    </div>
-                  </div>
-                  <div class="uses-primary">
-                    <span class="dot"></span><span>Sent from your primary — <span class="nm" id="follow-up-primary-label">your local browser</span></span>
-                  </div>
-                  <div class="intro-config-hint">Write the message in <b>Section 5 · Message Templates → First Follow-up Message</b> — it unlocks while this is on.</div>
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </div>
@@ -1411,28 +1139,15 @@
              accounts) instead of stacked. Same IDs preserved so
              updateCampaignSummary writes through unchanged. -->
         <div class="alpha-throughput">
-          <!-- Top headline (was the bottom forecast). IDs hero-actions /
-               hero-duration / hero-finish + subs are unchanged. -->
-          <div id="campaign-summary" class="alpha-headline">
-            <div class="alpha-headline-left">
-              <div class="alpha-big" id="hero-actions">—</div>
-              <div class="alpha-big-unit" id="hero-actions-sub">select accounts to see forecast</div>
-            </div>
-            <div class="alpha-headline-eq">
-              <!-- The row LABELS carry ids because a cloud campaign is described
-                   in capacity/day rather than wall-clock (see cloudThroughputView):
-                   "Duration/Finishes" becomes "Capacity/<N> leads". -->
-              <div class="alpha-eq-row">
-                <span class="alpha-eq-k" id="hero-duration-k">Duration</span>
-                <span class="alpha-eq-v" id="hero-duration">—</span>
-                <span class="alpha-eq-sub" id="hero-duration-sub">—</span>
-              </div>
-              <div class="alpha-eq-row">
-                <span class="alpha-eq-k" id="hero-finish-k">Finishes</span>
-                <span class="alpha-eq-v" id="hero-finish">—</span>
-                <span class="alpha-eq-sub" id="hero-finish-sub">—</span>
-              </div>
-            </div>
+          <!-- Ortus Basics 1.0: the forecast headline (actions / Duration /
+               Finishes) is not shown. The nodes stay in the DOM, hidden, because
+               updateCampaignSummary and the cloud throughput view write to them
+               on every recalc. -->
+          <div id="campaign-summary" class="alpha-headline" hidden style="display:none">
+            <div class="alpha-big" id="hero-actions"></div>
+            <div class="alpha-big-unit" id="hero-actions-sub"></div>
+            <span id="hero-duration-k"></span><span id="hero-duration"></span><span id="hero-duration-sub"></span>
+            <span id="hero-finish-k"></span><span id="hero-finish"></span><span id="hero-finish-sub"></span>
             <div id="summary-stats" style="display:none"></div>
           </div>
 
@@ -1448,34 +1163,9 @@
                 </div>
                 <span class="alpha-knob-suffix">invites / day</span>
               </div>
-              <div class="alpha-knob-help">LinkedIn caps invites at ~100/account/week. <b>50</b> is a safe daily default — runs back-to-back for 2 days before LinkedIn starts throttling.</div>
               <!-- Capacity forecast (feature ⑥) — filled by updateCapacityForecast()
                    in app.js once the sheet is previewed and accounts are selected. -->
               <div class="capacity-forecast" id="capacity-forecast-line" style="display:none"></div>
-            </div>
-
-            <!-- Right column — parallel accounts. Visibility/disabled state
-                 managed by alphaRecalc; pill shown when locked (<5 accounts).
-                 Server only honors concurrency at ≥5 accounts (server.js
-                 buildCampaignConfig), so the UI unlock threshold matches. -->
-            <div id="alpha-concurrency-row" class="alpha-concurrency">
-              <div class="alpha-knob-label">
-                Parallel accounts
-                <span class="unlock-pill" id="concurrency-unlock-pill">available with 5+ accounts</span>
-              </div>
-              <div class="alpha-knob-row" style="gap:14px;">
-                <input class="alpha-knob-input" type="number" id="concurrency-count" value="2" min="2" max="5" disabled oninput="updateCampaignSummary()" />
-                <div class="step-col">
-                  <button type="button" class="step-btn" onclick="alphaStepConcurrency(1)">+</button>
-                  <button type="button" class="step-btn" onclick="alphaStepConcurrency(-1)">−</button>
-                </div>
-                <span class="alpha-knob-suffix">at a time</span>
-                <label class="alpha-toggle" title="Run accounts in parallel">
-                  <input type="checkbox" id="concurrency-toggle" onchange="alphaSyncConcurrency()" />
-                  <span class="alpha-toggle-track"></span>
-                </label>
-              </div>
-              <div class="alpha-knob-help">Speeds up campaigns by running multiple GoLogin browsers simultaneously. If RAM gets tight, the bot drops back to one at a time automatically.</div>
             </div>
 
             <!-- Cloud replacement for the Parallel-accounts knob. That control is
@@ -1501,9 +1191,9 @@
             <div class="alpha-advanced-body">
               <div class="alpha-knob-label">Pause between leads</div>
               <div class="alpha-knob-row">
-                <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-min" value="30" min="5" max="120" oninput="updateCampaignSummary(); checkDelayDanger();" />
+                <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-min" value="10" min="5" max="120" oninput="updateCampaignSummary(); checkDelayDanger();" />
                 <span class="alpha-pause-sep">to</span>
-                <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-max" value="60" min="10" max="300" oninput="updateCampaignSummary()" />
+                <input class="alpha-knob-input alpha-pause-input" type="number" id="within-batch-max" value="20" min="10" max="300" oninput="updateCampaignSummary()" />
                 <span class="alpha-knob-suffix">seconds</span>
               </div>
               <div class="alpha-knob-help">Random pause between each invitation, picked from this range every time.</div>
@@ -1548,11 +1238,6 @@
         <div id="within-batch-max-wrap" style="display:none"></div>
         <div id="message-gap-wrap" style="display:none"></div>
         <div id="daily-limit-wrap" style="display:none"></div>
-
-        <div class="campaign-warnings-inline">
-          <div class="warn-line" data-edit="warn-1">Keep laptop open until the campaign finishes</div>
-          <div class="warn-line" data-edit="warn-2">Do not close the browser windows that open — they run the campaign</div>
-        </div>
       </div>
     </div>
 
@@ -1566,23 +1251,6 @@
              the LinkedIn URL Column mapping (also filled by previewSheet)
              gets the gold-tint banner treatment. All existing IDs and event
              handlers preserved. -->
-        <!-- Entry C — build the lead list from the team's warm connections.
-             Mode-gated (Message Campaign + Introduction Campaign) by onModeChange.
-             (i) Build & attach → creates a Sheet of the picked people and sets it
-             as this campaign's source. (ii) Open builder → just opens Connections. -->
-        <div id="conn-source-block" class="conn-source-block" style="display:none;">
-          <div class="conn-source-head">◆ Build from warm connections</div>
-          <div class="conn-source-sub">Find people your team can warmly introduce — by geography, title or company — instead of pasting a sheet.</div>
-          <div class="conn-source-actions">
-            <button type="button" class="btn" onclick="buildWarmListForCampaign()">Build &amp; attach a warm list →</button>
-            <button type="button" class="btn btn-secondary" onclick="openConnectionsBuilder()">Open the Connections builder</button>
-          </div>
-          <div class="conn-source-hint">
-            <b>Build &amp; attach</b> creates a new Google Sheet of the people you pick and sets it as this campaign's source automatically.
-            <b>Open the builder</b> just opens Connections — export a CSV, drop it in your own sheet, and paste the URL below.
-          </div>
-        </div>
-
         <div class="sheet-hero">
           <div class="sheet-hero-top">
             <div class="sheet-hero-url-block">
@@ -1608,18 +1276,6 @@
             </div>
           </div>
           <div id="sheet-preview" class="hidden sheet-hero-preview"></div>
-          <!-- v2.135: inline blocklist editor — enter blocklisted companies BEFORE
-               pressing Start. Same data as the #bl-scrim panel (GET/POST/DELETE
-               /api/blocklist); chips render via renderWizardBlocklist() in app.js. -->
-          <div class="wiz-blocklist" id="wiz-blocklist">
-            <div class="wiz-blocklist-label">Blocklist</div>
-            <div class="wiz-blocklist-chips wiz-bl-chips" id="wiz-bl-chips"></div>
-            <div class="wiz-blocklist-add">
-              <input type="text" class="wiz-bl-value" id="wiz-bl-value" placeholder="Company, domain, or LinkedIn profile URL…" />
-              <button type="button" class="btn btn-secondary btn-sm wiz-bl-add" id="wiz-bl-add">Add</button>
-            </div>
-            <div class="wiz-blocklist-hint">Never contacted by any campaign. Scrapes also skip blocklisted companies, and people added by the <code>linkedin.com/in/ACw…</code> form of their URL. Email domains apply to campaigns only, since a scrape has no email address to match against.</div>
-          </div>
         </div>
 
         <!-- v2.58.x — IC sheet mapping (Variant C — progressive disclosure).
@@ -2365,59 +2021,24 @@
       </div>
 
 
-      <!-- v2.112.10 (Window C / banner-led): big Credit-passover banner up top,
-           then a compact stat-pill row, then the Browse-accounts card. The
-           banner's countdown bits are populated by renderPassoverBanner(). -->
-      <div class="acct-banner">
-        <div class="acct-banner-l">
-          <div class="acct-banner-h"><span class="ic">⏳</span> Credit passover</div>
-          <div class="acct-banner-sub">Accounts assigned to a person lock to them at the start of each cycle — they turn <b>blue</b> and only the assignee should use them. On <b>passover</b> day, any account not yet used frees up to <b>available</b> (green) for everyone. Weekly Connect (CC): locks <b>Monday</b>, frees on <b>Thursday</b>. Monthly (Open Profile · InMail · Sales Nav): locks the <b>1st</b>, frees on the <b>16th</b>.</div>
-        </div>
-        <div class="acct-banner-r">
-          <div class="acct-cd">
-            <div class="acct-cd-t">Monthly · OP/InMail/SN</div>
-            <div class="acct-cd-n" id="pass-monthly-days">—</div>
-            <div class="acct-cd-s" id="pass-monthly-state">—</div>
-            <div class="acct-cd-w" id="pass-monthly-note">—</div>
-          </div>
-          <div class="acct-cd">
-            <div class="acct-cd-t">Weekly · Connect (CC)</div>
-            <div class="acct-cd-n" id="pass-cc-days">—</div>
-            <div class="acct-cd-s" id="pass-cc-state">—</div>
-            <div class="acct-cd-w" id="pass-cc-note">—</div>
-          </div>
-        </div>
+      <!-- Ortus Basics 1.0: Credit-passover banner and availability preset pills
+           removed — every account is listed whatever the SoO says. Countdown and
+           preset-count ids kept hidden (their renderers still write to them).
+           Match name stays: it is identity, not availability chrome. -->
+      <div hidden style="display:none">
+        <span id="pass-monthly-days"></span><span id="pass-monthly-state"></span><span id="pass-monthly-note"></span>
+        <span id="pass-cc-days"></span><span id="pass-cc-state"></span><span id="pass-cc-note"></span>
+        <span id="preset-count-assigned"></span><span id="preset-count-pool"></span>
+        <span id="preset-count-available-now"></span><span id="preset-count-all-accounts"></span>
       </div>
-
-      <!-- v2.112.10: compact stat-pill row. The buttons keep their ids +
-           applyPreset() onclicks — only the classes/CSS changed (pill row). -->
-      <div class="acct-summary-bar acct-pills">
-        <button type="button" class="acct-sb-stat acct-pill preset" data-preset="assigned" onclick="applyPreset('assigned')">
-          <span class="acct-sb-stat-num acct-pill-num preset-count" id="preset-count-assigned">—</span>
-          <span class="acct-sb-stat-lbl acct-pill-lbl">Assigned to me</span>
-        </button>
-        <button type="button" class="acct-sb-stat acct-pill preset" data-preset="pool" onclick="applyPreset('pool')">
-          <span class="acct-sb-stat-num acct-pill-num preset-count" id="preset-count-pool">—</span>
-          <span class="acct-sb-stat-lbl acct-pill-lbl">Unassigned pool</span>
-        </button>
-        <button type="button" class="acct-sb-stat acct-pill preset" data-preset="available-now" onclick="applyPreset('available-now')">
-          <span class="acct-sb-stat-num acct-pill-num preset-count" id="preset-count-available-now">—</span>
-          <span class="acct-sb-stat-lbl acct-pill-lbl">Available now</span>
-        </button>
-        <button type="button" class="acct-sb-stat acct-pill preset active" data-preset="all" onclick="applyPreset('all')">
-          <span class="acct-sb-stat-num acct-pill-num preset-count" id="preset-count-all-accounts">—</span>
-          <span class="acct-sb-stat-lbl acct-pill-lbl">All profiles</span>
-        </button>
-        <div class="acct-sb-match acct-pill-match my-identity-row">
-          <label class="acct-sb-match-lbl my-identity-label" for="my-identifier">
-            Match name
-            <a href="#" id="identifier-toggle" onclick="event.preventDefault(); toggleIdentifierMode()" class="identifier-toggle-link">Override</a>
-          </label>
-          <input type="text" id="my-identifier" readonly placeholder="auto-derived from email"
-                 oninput="saveMyIdentifier()" />
-        </div>
-      </div>
-      <div class="acct-sb-hint">Match name is your ID in the lead sheet — it links you to your assigned LinkedIn accounts. Click Override to edit.</div>
+       <!-- Ortus Basics 1.0: the Match name row and its hint are removed. The
+            input stays in the DOM (hidden) because six call sites read
+            getElementById('my-identifier'); the value still identifies this
+            operator, it just is not editable from here any more. -->
+       <div hidden style="display:none">
+         <a href="#" id="identifier-toggle"></a>
+         <input type="text" id="my-identifier" readonly />
+       </div>
 
       <!-- v2.62 (variant C): browse panel consolidated into a single card.
            Toolbar = search + filter chips + icon-style refresh buttons.
@@ -2430,12 +2051,7 @@
             <div class="browse-search">
               <input type="text" id="profile-search" placeholder="Search by name or email…" oninput="filterProfiles()" />
             </div>
-            <div class="chip-row">
-              <button type="button" class="chip active" data-filter="all" onclick="applyFilter('all')">All <span class="count" id="chip-count-all">0</span></button>
-              <button type="button" class="chip" data-filter="available" onclick="applyFilter('available')">Available <span class="count" id="chip-count-available">0</span></button>
-              <button type="button" class="chip" data-filter="in-use" onclick="applyFilter('in-use')">In use <span class="count" id="chip-count-in-use">0</span></button>
-              <button type="button" class="chip" data-filter="selected" onclick="applyFilter('selected')">Selected <span class="count" id="chip-count-selected">0</span></button>
-            </div>
+            <!-- Ortus Basics 1.0: availability filter chips removed. -->
             <div class="browse-icon-row">
               <button class="browse-icon-btn" onclick="loadProfiles()" title="Refresh profile list" aria-label="Refresh profile list">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>
@@ -2455,12 +2071,7 @@
             </div>
           </div>
 
-          <!-- Local Browser tile — separate from the GoLogin profile grid because
-               it has unique semantics (uses local Chromium, not Orbita). Rendered
-               into this host by renderProfiles(). Lives at the top of the grid
-               area as the first selectable tile. -->
-          <div id="local-browser-host" class="local-browser-host"></div>
-
+          <!-- Ortus Basics 1.0: Local Browser tile removed. -->
           <div id="guardrail-alert" class="guardrail-alert hidden"></div>
           <div id="profiles-loading">Loading profiles…</div>
           <div id="profiles-grid" class="profile-grid hidden"></div>
@@ -3060,17 +2671,8 @@
           </div>
         </div>
       </div>
-      <!-- v2.62: visible Preview Messages CTA — moved out of the hidden
-           templates-header so operators can preview rendered output without
-           leaving the wizard. handlePreviewClick + state management
-           (enabled/disabled by sheet URL + at least one template) unchanged. -->
-      <div class="tpl-cta-row">
-        <button type="button" id="btn-preview-messages" class="tpl-preview-btn" onclick="handlePreviewClick()" title="Enter a sheet URL and at least one template to preview">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
-          <span>Preview messages</span>
-        </button>
-        <div class="tpl-cta-hint">See the connection note + intro DM rendered with real sheet rows before launching.</div>
-      </div>
+      <!-- Ortus Basics 1.0: Preview Messages CTA removed; the id stays so handlePreviewClick wiring is safe. -->
+      <button type="button" id="btn-preview-messages" hidden></button>
       <div class="template-bar" id="template-bar" style="display:none">
         <select id="tpl-select" onchange="loadSelectedTemplate()">
           <option value="">-- Select a template --</option>
@@ -3086,11 +2688,17 @@
          the pre-send identity gate, so the note returns to a plain always-visible
          field for every connect mode. -->
     <div class="section tpl-section" id="tpl-connect-section">
-      <h2><span data-edit="h2-connect">Connection Note</span> <small>(optional, max 300 chars)</small></h2>
-      <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!" oninput="updateTplNoteCount()"></textarea>
-      <div id="tpl-note-count" style="font-size:0.7rem; color:var(--gray); margin-top:4px; text-align:right; font-family:var(--mono);">0 / 300</div>
-      <div id="tpl-note-hint" class="note-hint note-hint-callout hidden"><span class="nh-ic">!</span><span class="nh-tx"><b>You usually don't need a note.</b> Requests sent without one tend to get accepted more often and keep the intro thread clean. Only add one if it clearly helps this specific audience.</span></div>
-      <div class="placeholder-tags" data-target="tpl-note"></div>
+      <h2><span data-edit="h2-connect">Connection Note</span> <small>(disabled)</small></h2>
+      <!-- Ortus Basics 1.0: connection notes are switched off. Requests go out
+           bare; the conversation belongs in the group thread after the intro.
+           #tpl-note stays in the DOM and stays EMPTY — roughly a dozen call
+           sites read `getElementById('tpl-note').value` without a null guard,
+           so removing it would throw. Disabled + empty means every launch
+           payload carries connectionNote: "". -->
+      <div class="note-hint note-hint-callout"><span class="nh-ic">!</span><span class="nh-tx"><b>Connection notes are disabled in this version.</b> Requests are sent without a note — they get accepted more often, and the conversation is meant to happen in the group thread once the introduction is made.</span></div>
+      <textarea id="tpl-note" hidden disabled></textarea>
+      <span id="tpl-note-count" hidden></span>
+      <span id="tpl-note-hint" hidden></span>
     </div>
 
     <!-- ── Direct message (message_only) — introduce_back keeps this hidden ── -->
@@ -3377,7 +2985,8 @@
       <div class="collapsible-body">
       <div class="launch-hero">
         <div>
-          <div class="launch-number" id="launch-number">—</div>
+          <!-- Ortus Basics 1.0: the big lead-count number is not shown; the id stays, its writers are unguarded. -->
+          <div class="launch-number" id="launch-number" hidden style="display:none">—</div>
           <div class="launch-caption">
             Number of accounts being used: <strong id="launch-accounts">—</strong> ·
             <strong id="launch-connections">—</strong> ·
@@ -3397,7 +3006,12 @@
             <button type="button" id="btn-start" class="btn btn-start" onclick="window.launchStartNow()">Start a campaign</button>
             <button type="button" id="btn-queue" class="btn btn-secondary" onclick="window.launchQueueIt()" title="Stage this campaign to run after the current one">Queue it</button>
             <button type="button" id="btn-schedule" class="btn btn-secondary" onclick="window.launchScheduleIt()" title="Schedule for a specific date and time">Schedule it</button>
-            <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveButton()" title="Save current configuration as a draft and return to the dashboard">Save as draft</button>
+            <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveButton()" title="Save the current configuration">Save</button>
+            <!-- Ortus Basics 1.0: run the acceptance check straight from the
+                 wizard, without starting a campaign first. Connect + Introduce
+                 Back only — it is the mode whose intros depend on acceptances.
+                 Shown/hidden by onModeChange via refreshLaunchCheckBtn(). -->
+            <button type="button" id="btn-launch-check" class="btn btn-secondary" onclick="window.launchCheckNow()" title="Open each selected account and check who accepted — fires any due introductions. Does not start the campaign." hidden>⚡ Run check now</button>
           </div>
           <div id="launch-run-note" class="launch-run-note"></div>
           <!-- Cloud campaigns (beta): when ON, "Start a campaign" dispatches to
@@ -3779,7 +3393,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
             </span>
             <span class="wiz-launch-menu-text">
-              <span class="wiz-launch-menu-lbl">Save as draft</span>
+              <span class="wiz-launch-menu-lbl">Save</span>
               <span class="wiz-launch-menu-hint">Keep editing later — close wizard</span>
             </span>
           </button>
@@ -3812,7 +3426,7 @@
           <span class="wiz-launch-controls-divider"></span>
           <button type="button" class="wiz-ctrl-btn" id="wiz-ctrl-pause" onclick="pauseOrResumeCampaign()">Pause</button>
           <button type="button" class="wiz-ctrl-btn danger" onclick="confirmStopCampaign()">Stop</button>
-          <button type="button" class="wiz-ctrl-btn" onclick="window.railSaveAsDraft()">Save as draft</button>
+          <button type="button" class="wiz-ctrl-btn" onclick="window.railSaveAsDraft()">Save</button>
         </div>
       </div>
     </div>
@@ -4360,7 +3974,7 @@
   <script>
     fetch('/api/health').then(r => r.json()).then(d => {
       if (d && d.version) {
-        const v = 'v' + d.version;
+        const v = d.version;
         const main = document.getElementById('app-version');
         const side = document.getElementById('app-version-sidebar');
         if (main) main.textContent = v;
@@ -4573,5 +4187,40 @@
     </div>
   </div>
 </div>
+
+  <!-- ── GoLogin workspace tokens (Ortus Basics 1.0) ──────────────────────────
+       Filled by renderCredentialsModal() from /api/credentials, which reports
+       only whether each token is set plus its last four characters. A token is
+       never sent back to the browser. -->
+  <div id="credentials-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeCredentialsModal()">
+    <div class="modal-card cred-card" role="dialog" aria-modal="true" aria-labelledby="cred-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeCredentialsModal()">&times;</button>
+      <div class="stop-choice-eyebrow">Settings</div>
+      <h3 id="cred-title" class="modal-title">GoLogin workspace tokens</h3>
+      <p class="stop-choice-sub">Paste the tokens you have. What you can use follows from what you add — a workspace with no token contributes no accounts, and its accounts never appear in the picker. Stored on this Mac only, never in the app itself.</p>
+      <div id="cred-fields"></div>
+      <div id="cred-msg" class="cred-msg" hidden></div>
+      <div class="stop-choice-cancel-row">
+        <button type="button" class="btn btn-secondary" onclick="closeCredentialsModal()">Cancel</button>
+        <button type="button" class="btn" id="cred-save" onclick="saveCredentialsFromModal()">Save tokens</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Duplicate campaign name (Ortus Basics 1.0) ───────────────────────────
+       A campaign's settings are stored against its NAME, so two campaigns
+       sharing one name would overwrite each other's settings. The name has to
+       be unique, and this is where that is said. -->
+  <div id="dupe-name-modal" class="modal-backdrop hidden" onclick="if(event.target===this)closeDupeNameModal()">
+    <div class="modal-card cred-card" role="dialog" aria-modal="true" aria-labelledby="dupe-name-title">
+      <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeDupeNameModal()">&times;</button>
+      <div class="stop-choice-eyebrow">Name already used</div>
+      <h3 id="dupe-name-title" class="modal-title">Change the campaign name</h3>
+      <p class="stop-choice-sub">A campaign called <b id="dupe-name-value">—</b> already exists. Each campaign keeps its own settings under its name, so two campaigns cannot share one — the second would overwrite the first's sheet, accounts and templates.</p>
+      <div class="stop-choice-cancel-row">
+        <button type="button" class="btn" onclick="closeDupeNameModal(); document.getElementById('campaign-name-input')?.focus();">Change the name</button>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

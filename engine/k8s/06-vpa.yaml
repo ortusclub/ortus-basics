@@ -1,0 +1,57 @@
+# Vertical Pod Autoscaler — THE actual autoscaling answer for this app.
+#
+# Watches the pod's CPU/RAM usage and adjusts its resource requests over
+# time. When it decides the pod needs more (or less) capacity, it restarts
+# the pod with the new sizing. This is the "server grows itself under load"
+# behaviour your boss is asking for.
+#
+# Prereq: VPA must be installed in your cluster.
+#   - GKE Autopilot:    enabled by default, nothing to do.
+#   - GKE Standard:     enable via cluster setting OR install vpa addon.
+#   - EKS / AKS / etc.: install via
+#                       https://github.com/kubernetes/autoscaler/tree/master/vertical-pod-autoscaler
+#
+# updateMode options:
+#   "Off"      — only computes recommendations, doesn't change anything.
+#                Good for the first few days while you observe.
+#   "Initial"  — sets resources only on pod creation, doesn't restart.
+#   "Auto"     — actively resizes the pod as load changes (restarts pod).
+#                This is what the user wants. Set this once you're confident.
+#
+# The minAllowed / maxAllowed bounds keep VPA in a sane range.
+apiVersion: autoscaling.k8s.io/v1
+kind: VerticalPodAutoscaler
+metadata:
+  name: salesnav-scraper
+  namespace: salesnav-scraper
+spec:
+  targetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: salesnav-scraper
+  updatePolicy:
+    # MUST be "Off" once horizontal scaling (KEDA HPA, 09-keda-scaledobject.yaml)
+    # is in play. VPA actively resizing CPU on the SAME workload conflicts with
+    # an HPA scaling on CPU/queue, and it would override the deliberately
+    # GUARANTEED request==limit (4 vCPU / 8 GiB) sizing in 03-deployment.yaml.
+    # "Off" keeps VPA computing recommendations (useful to observe) without
+    # touching the pods. Scaling is now HORIZONTAL (more pods), not vertical.
+    updateMode: "Off"
+  resourcePolicy:
+    containerPolicies:
+      - containerName: app
+        # Floor 8Gi: always-reserved (billed 24/7) so a normal scrape (1–4
+        # accounts) never OOMs. Cheap baseline.
+        minAllowed:
+          cpu: "1"
+          memory: "8Gi"
+        # Ceiling 26Gi / 6 CPU: the most a single pod can use on an
+        # e2-standard-8 node (~28Gi / 7 vCPU allocatable, leaving room for
+        # system pods). VPA grows the pod toward this under SUSTAINED load
+        # (~16 concurrent scrapes) and you're only billed for it while it's
+        # actually used — "max capacity, pay-as-you-grow". Past ~16 needs the
+        # multi-pod (Redis + HPA) rework — a single pod can't exceed one node.
+        maxAllowed:
+          cpu: "6"
+          memory: "26Gi"
+        controlledResources: ["cpu", "memory"]

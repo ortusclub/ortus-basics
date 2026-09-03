@@ -1,0 +1,23 @@
+# Cloud Build config for the scraper image.
+#
+# Uses the docker builder with BuildKit ENABLED (DOCKER_BUILDKIT=1) because the
+# Dockerfile uses `COPY --chmod=`, which only works under BuildKit. The default
+# `gcloud builds submit --tag` path uses the legacy builder and fails on that.
+#
+# Build a new tag:
+#   gcloud builds submit --config cloudbuild.yaml \
+#     --substitutions=_TAG=v29 --project=salesnav-scraper-prod .
+substitutions:
+  _TAG: latest
+  _IMAGE: asia-southeast1-docker.pkg.dev/salesnav-scraper-prod/salesnav-images/scraper
+steps:
+  - name: gcr.io/cloud-builders/docker
+    env:
+      - DOCKER_BUILDKIT=1
+    args:
+      - build
+      - -t
+      - ${_IMAGE}:${_TAG}
+      - .
+images:
+  - ${_IMAGE}:${_TAG}

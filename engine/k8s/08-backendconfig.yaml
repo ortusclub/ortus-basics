@@ -1,0 +1,15 @@
+# BackendConfig — extends the GKE load balancer's backend timeout so
+# long-lived WebSocket connections (noVNC for the "Open Browser Window"
+# feature) don't get killed after the default 30 seconds.
+#
+# 3600 sec = 1 hour. Plenty for an interactive LinkedIn login session.
+# We also disable session affinity since we only have one pod.
+apiVersion: cloud.google.com/v1
+kind: BackendConfig
+metadata:
+  name: salesnav-bc
+  namespace: salesnav-scraper
+spec:
+  timeoutSec: 3600
+  connectionDraining:
+    drainingTimeoutSec: 60

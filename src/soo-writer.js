@@ -169,10 +169,18 @@ export function resolveSoOEmail(accountName, sooEmails, { threshold = 0.93, gap 
   return { email: best.raw, exact: false, score: best.score };
 }
 
-/** Kill-switch: enabled unless ORTUS_SOO_WRITEBACK is off/0/false. Default on. */
+/**
+ * Ortus Basics 1.0: the SoO is never written to. Campaign results go straight to
+ * the campaign sheet (src/sheets-writer.js), which is untouched by this.
+ *
+ * Forced off rather than deleted because every writer below already returns
+ * `{ ok:false, disabled:true }` through this one gate — flipping it here stops
+ * the In Use flip, the weekly-connections bump and the needs-login stamp in a
+ * single place, and the same gate covers src/cloud-soo-reconcile.js.
+ * (was: enabled unless ORTUS_SOO_WRITEBACK is off/0/false)
+ */
 export function sooWritebackEnabled() {
-  const v = (process.env.ORTUS_SOO_WRITEBACK || '').toString().trim().toLowerCase();
-  return !(v === 'off' || v === '0' || v === 'false');
+  return false;
 }
 
 // Shared/admin logins that must NEVER be stamped as an individual reserver.

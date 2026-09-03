@@ -1,0 +1,8 @@
+node_modules/
+sessions/
+.env
+service-account.json
+*.log
+
+# Subagent-driven-development scratch (ledger, briefs, review packages)
+.superpowers/

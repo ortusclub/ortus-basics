@@ -104,6 +104,61 @@ echo "  dev engine:   $DEV_VERSION"
 echo "  live engine:  $LIVE_VERSION"
 echo "  tunnel auth:  $TUNNEL_IDENTITY"
 
+# ── Engine drift guard (Ortus Basics) ────────────────────────────────────────
+# This capsule is a frozen snapshot, but salesnav-dev is shared infrastructure
+# that anyone can redeploy. The launcher reads whatever image is deployed, so
+# without this check a colleague's deploy would silently change the engine the
+# capsule tests against — the one thing a time capsule must not allow.
+#
+# The digest is the pin, not the tag: a tag can be repointed at a new image
+# while keeping its name, so comparing tags alone proves nothing.
+ENGINE_PIN_FILE="$PROJECT_ROOT/.ortus-basics-engine-pin"
+running_digest() {
+  # imageID on a running pod is the resolved digest. Read it from the API pod
+  # (the deployment the tunnel targets); workers scale to 0 via KEDA and may
+  # have no pod at all, so they cannot be relied on here.
+  kubectl -n "$DEV_NAMESPACE" get pods \
+    -l app.kubernetes.io/name="$DEPLOYMENT" \
+    -o jsonpath='{.items[0].status.containerStatuses[?(@.name=="app")].imageID}' 2>/dev/null \
+    | sed 's/.*@//'
+}
+if [ -f "$ENGINE_PIN_FILE" ]; then
+  PINNED_TAG="$(sed -n 's/^TAG=//p' "$ENGINE_PIN_FILE" | tail -1)"
+  PINNED_DIGEST="$(sed -n 's/^DIGEST=//p' "$ENGINE_PIN_FILE" | tail -1)"
+  ACTUAL_DIGEST="$(running_digest)"
+
+  if [ "${ORTUS_REPIN_ENGINE:-}" = "1" ] && [ -n "$ACTUAL_DIGEST" ]; then
+    sed -i.bak "s|^TAG=.*|TAG=$DEV_VERSION|; s|^DIGEST=.*|DIGEST=$ACTUAL_DIGEST|" "$ENGINE_PIN_FILE"
+    rm -f "$ENGINE_PIN_FILE.bak"
+    echo "  engine pin:   RE-PINNED to $DEV_VERSION ($ACTUAL_DIGEST)"
+  elif [ -z "$ACTUAL_DIGEST" ]; then
+    echo "  engine pin:   ⚠ could not read the running engine digest — not verified"
+  elif [ "$ACTUAL_DIGEST" != "$PINNED_DIGEST" ]; then
+    echo
+    echo "  ✗ DEVELOPMENT ENGINE HAS CHANGED"
+    echo
+    echo "    This capsule is pinned to: $PINNED_TAG"
+    echo "      $PINNED_DIGEST"
+    echo "    salesnav-dev now runs:     $DEV_VERSION"
+    echo "      $ACTUAL_DIGEST"
+    echo
+    echo "    Someone redeployed the shared development engine. Anything you"
+    echo "    test now runs against different engine code than this capsule"
+    echo "    was built against."
+    echo
+    echo "    Start anyway (this once):  ORTUS_ALLOW_ENGINE_DRIFT=1 npm run electron:dev"
+    echo "    Accept the new engine:     ORTUS_REPIN_ENGINE=1 npm run electron:dev"
+    echo
+    if [ "${ORTUS_ALLOW_ENGINE_DRIFT:-}" != "1" ]; then
+      exit 1
+    fi
+    echo "  engine pin:   ⚠ DRIFTED — continuing because ORTUS_ALLOW_ENGINE_DRIFT=1"
+  else
+    echo "  engine pin:   ✓ $PINNED_TAG (digest verified)"
+  fi
+fi
+
+
 start_port_forward
 
 # Wait for the first tunnel before Electron starts polling the engine.
@@ -150,8 +205,49 @@ WORKSPACES="Ortus"
 [ -n "$DEV_GOLOGIN_TOKEN_MKT" ] && WORKSPACES="$WORKSPACES + Marketing"
 echo "  workspaces:   $WORKSPACES"
 
+# ── Local engine (ORTUS_LOCAL_ENGINE=1) ──────────────────────────────────────
+# Run the vendored engine in ./engine instead of the shared GKE one, so this
+# app owns the engine it tests against: editable here, immune to anyone
+# redeploying salesnav-dev, and unable to affect production.
+#
+# The GKE tunnel still comes up first, because the GoLogin workspace tokens are
+# only obtainable from the dev engine's /api/dev/bootstrap. It is used for
+# credentials alone — campaigns run against the local engine below.
+# See engine/ORIGIN.md for what this copy is and how it differs.
+APP_ENGINE_URL="http://127.0.0.1:$LOCAL_ENGINE_PORT"
+LOCAL_ENGINE_PID=""
+if [ "${ORTUS_LOCAL_ENGINE:-}" = "1" ]; then
+  LOCAL_ENGINE_DIR="$PROJECT_ROOT/engine"
+  LOCAL_ENGINE_OWN_PORT="${ORTUS_LOCAL_ENGINE_PORT:-3000}"
+  if [ ! -f "$LOCAL_ENGINE_DIR/server.js" ]; then
+    echo "  ✗ ORTUS_LOCAL_ENGINE=1 but $LOCAL_ENGINE_DIR/server.js is missing."
+    exit 1
+  fi
+  (
+    cd "$LOCAL_ENGINE_DIR" && env \
+      PORT="$LOCAL_ENGINE_OWN_PORT" \
+      ENGINE_SHARED_TOKEN="$ENGINE_TOKEN" \
+      APP_PASSWORD="$ENGINE_TOKEN" \
+      GOLOGIN_API_TOKEN="$DEV_GOLOGIN_API_TOKEN" \
+      GOLOGIN_API_TOKEN_LINKEDVELOCITY="$DEV_GOLOGIN_TOKEN_LV" \
+      GOLOGIN_API_TOKEN_MARKETING="$DEV_GOLOGIN_TOKEN_MKT" \
+      node server.js
+  ) >/tmp/ortus-local-engine.log 2>&1 &
+  LOCAL_ENGINE_PID=$!
+  for _i in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    curl -fsS --max-time 3 -H "Authorization: Bearer $ENGINE_TOKEN" \
+      "http://127.0.0.1:$LOCAL_ENGINE_OWN_PORT/api/health" >/dev/null 2>&1 && break
+    kill -0 "$LOCAL_ENGINE_PID" 2>/dev/null || { echo "  ✗ local engine exited — see /tmp/ortus-local-engine.log"; tail -15 /tmp/ortus-local-engine.log; exit 1; }
+    sleep 1
+  done
+  APP_ENGINE_URL="http://127.0.0.1:$LOCAL_ENGINE_OWN_PORT"
+  DEV_VERSION="local (./engine)"
+  echo "  local engine: ✓ :$LOCAL_ENGINE_OWN_PORT from ./engine — log /tmp/ortus-local-engine.log"
+fi
+trap '[ -n "$LOCAL_ENGINE_PID" ] && kill "$LOCAL_ENGINE_PID" 2>/dev/null' EXIT
+
 env \
-  SCRAPER_ENGINE_URL="http://127.0.0.1:$LOCAL_ENGINE_PORT" \
+  SCRAPER_ENGINE_URL="$APP_ENGINE_URL" \
   SCRAPER_ENGINE_TOKEN="$ENGINE_TOKEN" \
   SCRAPER_ENGINE_VERSION="$DEV_VERSION" \
   PRODUCTION_ENGINE_VERSION="$LIVE_VERSION" \

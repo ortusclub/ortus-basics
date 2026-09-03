@@ -1,0 +1,21 @@
+# PodDisruptionBudget for the single-replica frontend.
+#
+# Autopilot periodically compacts nodes (bin-packing) and voluntarily evicts
+# pods to do it. With ONE frontend replica, every such eviction = ~30s of 502s
+# at scraper.ortusclub.com while the pod reschedules (observed in the wild:
+# intermittent 502s recovering after ~30s, frontend pod age resetting).
+#
+# minAvailable: 1 on a 1-replica deployment blocks VOLUNTARY evictions
+# entirely — Autopilot must leave the frontend where it is during compaction.
+# Involuntary disruptions (node failure, mandatory GKE upgrades) still happen,
+# but those are rare vs. routine bin-packing.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: salesnav-scraper-pdb
+  namespace: salesnav-scraper
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: salesnav-scraper

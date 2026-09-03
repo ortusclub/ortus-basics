@@ -1,0 +1,25 @@
+{
+  "name": "salesnav-cloud-scraper",
+  "version": "1.0.0",
+  "description": "Cloud-based LinkedIn Sales Navigator scraper with web UI",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "install-browser": "npx playwright install chromium",
+    "login": "node login.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.1",
+    "express": "^4.18.2",
+    "gologin": "^2.2.8",
+    "googleapis": "^134.0.0",
+    "http-proxy-middleware": "^2.0.6",
+    "ioredis": "^5.11.1",
+    "pg": "^8.22.0",
+    "playwright": "^1.42.0",
+    "puppeteer-core": "^25.2.0",
+    "uuid": "^9.0.0",
+    "ws": "^8.16.0"
+  }
+}

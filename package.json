@@ -1,7 +1,7 @@
 {
-  "name": "ortus-outreach",
-  "productName": "The Ortus Outreach",
-  "version": "3.1.60.14",
+  "name": "ortus-basics",
+  "productName": "Ortus Basics",
+  "version": "1.3.0",
   "description": "LinkedIn outreach automation for The Ortus Club",
   "type": "module",
   "main": "electron/main.js",
@@ -15,7 +15,7 @@
     "electron:dev": "bash scripts/electron-dev-vm.sh",
     "electron:dev:production": "electron .",
     "electron:dev:vm": "bash scripts/electron-dev-vm.sh",
-    "dev:app": "ORTUS_DATA_DIR=\"$HOME/Library/Application Support/The Ortus Outreach/data\" electron .",
+    "dev:app": "ORTUS_DATA_DIR=\"$HOME/Library/Application Support/Ortus Basics/data\" electron .",
     "dev:app:mine": "SCRAPER_ENGINE_URL=http://localhost:3010 npm run dev:app",
     "electron:build": "electron-builder",
     "electron:build:mac": "node scripts/detach-stale-dmgs.js && electron-builder --mac && node scripts/rename-dmgs.js && node scripts/notarize-dmgs.js",
@@ -43,8 +43,8 @@
     "pptxgenjs": "^4.0.1"
   },
   "build": {
-    "appId": "com.ortusclub.outreach",
-    "productName": "The Ortus Outreach",
+    "appId": "com.ortusclub.basics",
+    "productName": "Ortus Basics",
     "asar": false,
     "afterPack": "electron/after-pack.cjs",
     "files": [
@@ -78,12 +78,6 @@
       "!**/example/**/*",
       "!**/examples/**/*"
     ],
-    "extraResources": [
-      {
-        "from": ".env",
-        "to": ".env"
-      }
-    ],
     "directories": {
       "buildResources": "build",
       "output": "dist"
@@ -103,7 +97,8 @@
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist"
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "identity": null
     },
     "dmg": {
       "writeUpdateInfo": false,
@@ -113,7 +108,7 @@
         "height": 480
       },
       "iconSize": 110,
-      "artifactName": "Ortus-Outreach-${arch}.dmg",
+      "artifactName": "Ortus-Basics-${arch}.dmg",
       "contents": [
         {
           "x": 140,
@@ -125,12 +120,6 @@
           "y": 170,
           "type": "link",
           "path": "/Applications"
-        },
-        {
-          "x": 280,
-          "y": 350,
-          "type": "file",
-          "path": "build/installer-app/Ortus Outreach Setup.app"
         }
       ]
     },
@@ -149,6 +138,21 @@
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
       "perMachine": false
-    }
+    },
+    "extraResources": [
+      {
+        "from": "engine",
+        "to": "engine",
+        "filter": [
+          "**/*",
+          "!k8s/**",
+          "!docs/**",
+          "!.planning/**",
+          "!data/**",
+          "!*.log",
+          "!.env"
+        ]
+      }
+    ]
   }
 }
