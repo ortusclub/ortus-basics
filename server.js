@@ -6560,13 +6560,28 @@ app.post('/api/bulk-check-now', async (req, res) => {
       nameByProfileId = new Map(allProfiles.map((p) => [p.id, p.name || p.id]));
     } catch { /* fall back to id-as-name if cache fetch fails */ }
 
-    // Filter out accounts the most-recent campaign parked. parkedProfiles is
-    // in-memory (not persisted across restarts) so this only catches the
-    // current/last-run session-dead accounts — but that's exactly the case
-    // the operator is hitting: ran a campaign, an account got parked for
-    // session-expired, then they hit Bulk Check and it tried that dead
-    // account anyway. Now skip it and tell them why in the response.
-    const parkedSet = new Set((campaign.parkedProfiles || []).map((p) => p.profileId));
+    // Filter out accounts the most-recent campaign parked — but ONLY the ones
+    // that genuinely cannot be driven. parkedProfiles is in-memory (not
+    // persisted across restarts) so this catches the current/last-run
+    // accounts, which is the case this guard was written for: ran a campaign,
+    // an account got parked for session-expired, then Bulk Check tried that
+    // dead account anyway.
+    //
+    // A park is not one thing, though, and this used to treat it as one. A
+    // weekly invitation cap says nothing about whether the browser works: the
+    // session is fine, the account can still read its connections and still
+    // send messages — it just cannot send more INVITES. Skipping it here cost
+    // the operator both halves of this endpoint, because it does the
+    // acceptance sweep AND fires runAutoIntros. Five capped accounts sat out
+    // their own introductions for a limit that has nothing to do with either
+    // (operator, 2026-09-04). Same for a throttle or a skip streak: they are
+    // sending problems, and a sweep is not sending.
+    //
+    // So the test is "can this browser be driven at all", not "was it parked".
+    const CANNOT_BE_DRIVEN = /session.?expired|challenge|checkpoint|proxy|407|cannot.?open|identity.?restricted/i;
+    const parkedSet = new Set((campaign.parkedProfiles || [])
+      .filter((p) => CANNOT_BE_DRIVEN.test(String(p.reason || '')))
+      .map((p) => p.profileId));
     const skippedParked = [];
     profileIdsToSweep = profileIdsToSweep.filter((pid) => {
       if (parkedSet.has(pid)) {
