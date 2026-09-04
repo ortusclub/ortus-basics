@@ -1306,9 +1306,6 @@ let selectedProfileIds = [];
 let selectedProfileNames = {};
 let allProfilesData = [];
 
-// v2.78: accounts pre-benched in the wizard — selected but start the campaign
-// out of the rotation (translated to campaign._skippedProfiles on launch).
-let benchedProfileIds = new Set();
 // Task 6: multi-tab lead-source guard state
 window._chosenSheetGid = '';      // gid of the operator's chosen tab
 window._tabsData = [];            // full tab list from last /api/sheet/tabs call
@@ -1603,7 +1600,6 @@ function gatherCampaignFormState() {
     linkedinColumn,
     templates,
     profileIds: [...selectedProfileIds],
-    benchedProfileIds: [...benchedProfileIds].filter((id) => selectedProfileIds.includes(id)),
     senderFirstNames,
     senderNames,
     mode,
@@ -2747,15 +2743,15 @@ function renderSelectedPanel() {
     const senderTag = first
       ? `<span class="sender-first" style="color:#3fb950;font-size:11px;margin-left:6px">→ "${escHtml(first)}"</span>`
       : `<span class="sender-first" style="color:#f85149;font-size:11px;margin-left:6px">⚠ no first name</span>`;
-    // v2.78: bench toggle — a benched account is still selected but starts the
-    // campaign out of the rotation (you can un-bench it live mid-run).
-    const benched = benchedProfileIds.has(id);
-    const benchBtn = `<button type="button" class="bench-btn ${benched ? 'is-benched' : ''}" onclick="toggleBenchProfile('${id}')" title="${benched ? 'Benched — will start out of the rotation. Click to include.' : 'Active — click to bench (start this account out of the rotation).'}">${benched ? 'Benched' : 'Active'}</button>`;
-    return `<div class="selected-item${benched ? ' is-benched' : ''}">
+    // Benching is gone (operator, 2026-09-04). An account is either in this
+    // campaign or it is not: to take one out you stop the campaign, remove it
+    // here, and start again. A half-in "selected but benched" state was a third
+    // thing to reason about, and it never belonged to a campaign — the Set was
+    // module-level, so a bench set in one campaign followed you into the next.
+    return `<div class="selected-item">
       <span class="order">${i + 1}</span>
       <span class="name">${escHtml(name)}</span>
       ${senderTag}
-      ${benchBtn}
       <button class="btn-remove" onclick="removeProfile('${id}')" title="Remove">&times;</button>
     </div>`;
   }).join('');
@@ -2801,17 +2797,9 @@ function renderGuardrailAlert() {
   el.classList.remove('hidden');
 }
 
-function toggleBenchProfile(id) {
-  if (benchedProfileIds.has(id)) benchedProfileIds.delete(id);
-  else benchedProfileIds.add(id);
-  renderSelectedPanel();
-}
-window.toggleBenchProfile = toggleBenchProfile;
-
 function removeProfile(id) {
   selectedProfileIds = selectedProfileIds.filter(pid => pid !== id);
   delete selectedProfileNames[id];
-  benchedProfileIds.delete(id);
   const cb = document.querySelector(`#profiles-grid input[value="${id}"]`);
   if (cb) { cb.checked = false; cb.closest('.profile-item')?.classList.remove('selected'); }
   renderSelectedPanel();
@@ -7031,8 +7019,6 @@ async function startCampaign(opts = {}) {
 
   const body = {
     profileIds: selectedProfileIds,
-    // v2.78: accounts to start benched (out of the rotation).
-    benchedProfileIds: [...benchedProfileIds].filter((id) => selectedProfileIds.includes(id)),
     sheetUrl,
     sheetGid: window._chosenSheetGid || '',
     multiTab: !!window._tabPickerMulti,
@@ -19186,7 +19172,7 @@ async function onUpdateClick(e) {
           // to do about it up front rather than after they ask.
           if (text) {
             text.innerHTML = 'The app will close and reopen on the new version.'
-              + '<br><strong>If it doesn\'t reopen by itself, open Ortus Basics from your Applications folder — the update is already installed.</strong>';
+              + '<br><strong>If it fails to automatically open again, please quit the app and open it again.</strong>';
           }
         } else {
           // Fallback: DMG opened for a manual drag, or install error.
@@ -27681,7 +27667,7 @@ async function toggleProfileSkip(id, checked, event) {
       body: JSON.stringify({ profileId: id, skip: !checked }),
     });
     if (typeof showCampaignToast === 'function') {
-      showCampaignToast(checked ? 'Account back in the rotation.' : 'Account benched for this run.', 3000);
+      showCampaignToast('Account back in the rotation.', 3000);
     }
   } catch (e) {
     if (typeof showCampaignToast === 'function') showCampaignToast('Could not change account: ' + e.message, 4000);
@@ -27772,19 +27758,16 @@ function renderActiveProfiles(status) {
     const chip = _activeProfileChip(name, status);
     const sent = id ? (Number(counts[id]) || 0) : 0;
     const todayCell = cap > 0 ? `${sent}/${cap} today` : `${sent} today`;
-    // v2.78: skip toggle. "Active" (checked) = in the rotation. An account is
-    // off when manually skipped OR auto-parked/capped (is-warn). Flipping a
-    // parked account on retries it; flipping an active one off benches it.
+    // Only one direction survives: putting a PARKED or skipped account back.
+    // That is recovery, not benching — taking a working account OUT mid-run is
+    // gone, because a campaign's accounts are decided before it starts.
+    // Always emits a cell, so the row's grid column count stays honest.
     const isSkipped = !!(id && skippedList.includes(id));
     const isWarn = chip.cls === 'is-warn';
     const active = !isSkipped && !isWarn;
-    const toggleTitle = active
-      ? 'In rotation — turn off to skip this account for the rest of the run'
-      : (isWarn ? 'Parked — turn on to retry this account' : 'Skipped — turn on to put it back in the rotation');
-    const toggle = id ? `<label class="prof-skip-toggle" title="${escHtml(toggleTitle)}">
-          <input type="checkbox" ${active ? 'checked' : ''} onchange="toggleProfileSkip('${escHtml(id)}', this.checked, event)" />
-          <span class="prof-skip-slider"></span>
-        </label>` : '<span></span>';
+    const toggle = (id && !active)
+      ? `<button type="button" class="prof-putback-btn" title="${escHtml(isWarn ? 'Parked — put this account back in the rotation' : 'Skipped — put this account back in the rotation')}" onclick="event.stopPropagation(); toggleProfileSkip('${escHtml(id)}', true, event)">Put back</button>`
+      : '<span></span>';
     // v2.78: open the account's browser to fix issues (e.g. "needs login").
     const openBtn = id
       ? `<button type="button" class="prof-open-btn" title="Open this account's browser to log in / fix issues" onclick="event.stopPropagation(); openProfileBrowser('${escHtml(id)}')">Open</button>`

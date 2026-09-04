@@ -1427,14 +1427,13 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
     font-size: 0.72rem;
   }
   /* v2.78: pre-launch bench toggle in the Selected Accounts list. */
-  body[data-dashboard='v3'] .bench-btn {
+  /* Benching removed 2026-09-04 — .bench-btn / .is-benched are no longer
+     emitted. Rules kept out of the sheet rather than left to rot. */
+  body[data-dashboard='v3'] .bench-btn--removed {
     font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.12em; text-transform: uppercase;
     color: var(--ink); background: transparent; border: 1px solid var(--hairline);
     border-radius: 9999px; padding: 3px 10px; cursor: pointer; white-space: nowrap; margin-left: 10px;
   }
-  body[data-dashboard='v3'] .bench-btn:hover { border-color: var(--ink); }
-  body[data-dashboard='v3'] .bench-btn.is-benched { color: var(--red); border-color: var(--red); background: rgba(248,81,73,0.08); }
-  body[data-dashboard='v3'] .selected-item.is-benched .name { color: var(--gray); text-decoration: line-through; }
 
   /* v2.78: connection-to-primary label (CC+IC). */
   body[data-dashboard='v3'] .prof-primary-tag {
@@ -1458,6 +1457,7 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
   /* "I'm logged back in" — only ever drawn on a signed-out account, so it is
      deliberately quieter than Open: no border until you reach for it. */
   body[data-dashboard='v3'] .prof-relogin-btn,
+  body[data-dashboard='v3'] .prof-putback-btn,
   .stg-relogin-btn {
     font-family: var(--mono); font-size: 0.55rem; letter-spacing: 0.12em; text-transform: uppercase;
     color: var(--gray, #6b7280); background: transparent; border: 1px solid transparent;
@@ -1465,6 +1465,7 @@ body[data-dashboard='v3'] .vj-card.is-stopped .vj-eyebrow .vj-tag .dot { backgro
     text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--hairline);
   }
   body[data-dashboard='v3'] .prof-relogin-btn:hover,
+  body[data-dashboard='v3'] .prof-putback-btn:hover,
   .stg-relogin-btn:hover { color: var(--ink); border-color: var(--hairline); text-decoration-color: transparent; }
   body[data-dashboard='v3'] .prof-relogin-btn:disabled,
   .stg-relogin-btn:disabled { opacity: 0.6; cursor: default; text-decoration: none; }
