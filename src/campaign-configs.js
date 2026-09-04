@@ -64,6 +64,38 @@ export function listConfigs() {
     .sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
 }
 
+/**
+ * Rename a campaign: move its settings from one name to another.
+ *
+ * Settings are keyed by name, so "Save under a new name" wrote a SECOND record
+ * and left the first in place — the rename looked saved, then the dashboard
+ * showed the old name again because nothing had moved (operator, 2026-09-04).
+ *
+ * Returns { ok } | { ok:false, reason:'missing'|'clash'|'invalid' }. A clash is
+ * refused rather than merged: two campaigns must never collapse into one record.
+ */
+export function renameConfig(from, to) {
+  const fromKey = normaliseName(from);
+  const toKey = normaliseName(to);
+  if (!fromKey || !toKey) return { ok: false, reason: 'invalid' };
+  if (fromKey === toKey) {
+    // Same campaign, new capitalisation only — keep the operator's spelling.
+    const all = readAll();
+    if (!all[fromKey]) return { ok: false, reason: 'missing' };
+    all[fromKey].name = String(to).trim();
+    all[fromKey].savedAt = new Date().toISOString();
+    writeAll(all);
+    return { ok: true, name: all[fromKey].name };
+  }
+  const all = readAll();
+  if (!all[fromKey]) return { ok: false, reason: 'missing' };
+  if (all[toKey]) return { ok: false, reason: 'clash' };
+  all[toKey] = { ...all[fromKey], name: String(to).trim(), savedAt: new Date().toISOString() };
+  delete all[fromKey];
+  writeAll(all);
+  return { ok: true, name: all[toKey].name };
+}
+
 export function deleteConfig(name) {
   const all = readAll();
   const key = normaliseName(name);

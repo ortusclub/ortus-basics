@@ -43,7 +43,7 @@ import {
 } from './public/js/scrape-board.mjs';
 import { getOperatorId } from './src/operator-id.js';
 import { relaunchHistoryEntry, archiveHistoryEntry, listHistory, readCampaignLog } from './src/history-helpers.js';
-import { getDrafts, getDraft, addDraft, updateDraft, removeDraft, trashDraft, trashAllDrafts, purgeTrashedDrafts } from './src/drafts.js';
+import { getDrafts, getDraft, addDraft, updateDraft, removeDraft, trashDraft, trashAllDrafts, purgeTrashedDrafts, DRAFT_IDENTITY_MISMATCH } from './src/drafts.js';
 import { startScheduler as startPostCampaignScheduler, listSchedule as listPostCampaignSchedule, removeSchedulesForSheet as removeBulkSchedules } from './src/post-campaign-bulk-check.js';
 import { startScheduler as startReplyCheckScheduler, listSchedule as listReplyCheckSchedule, removeSchedulesForSheet as removeReplySchedules, registerReplySchedule } from './src/post-campaign-reply-check.js';
 import { startPrimaryTaskRunner } from './src/primary-task-runner.js';
@@ -150,6 +150,19 @@ const UI_PREVIEW = process.env.ORTUS_UI_PREVIEW === '1';
 
 const pkg = JSON.parse(await readFile(resolve(__dirname, 'package.json'), 'utf8'));
 const APP_VERSION = pkg.version;
+
+// API responses are live state, never cacheable. They carried only an ETag and
+// no Cache-Control, which lets Chromium apply heuristic freshness and serve
+// them from its own disk cache — a cache that lives in the user-data dir and
+// survives restarting the app. Campaign settings edited on disk kept coming
+// back as the previous values, and an updated app kept reporting its old
+// version, because the renderer never asked the server (operator, 2026-09-04).
+app.use('/api', (_req, res, next) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.set('Pragma', 'no-cache');
+  res.set('Expires', '0');
+  next();
+});
 
 app.use(express.json());
 app.use(cookieParser());
@@ -5393,12 +5406,25 @@ app.post('/api/runtime/resumed', async (_req, res) => {
 let _manualSweepRunning = false;
 let _manualSweepAbort = false;
 
-// v2.78: bench / un-bench an account in the live sending rotation. Body:
-// { profileId, skip }. skip=false also retries an auto-parked account.
+// Put an account BACK into the live sending rotation. Body: { profileId }.
+//
+// This used to bench too (skip=true). Benching an account mid-run is no longer
+// a thing the app can do: a campaign's accounts are decided before it starts,
+// and to take one out you stop the campaign, remove it, and start again
+// (operator, 2026-09-04). The UI no longer offers it, and the endpoint refuses
+// it — so the rule holds even if some caller asks.
+//
+// The other direction stays: it retries an auto-parked account (weekly cap,
+// signed out, skipped), which is recovery, not benching.
 app.post('/api/campaign/profile-skip', (req, res) => {
   const { profileId, skip } = req.body || {};
   if (!profileId) return res.status(400).json({ error: 'profileId required' });
-  const result = setProfileSkip(profileId, !!skip);
+  if (skip) {
+    return res.status(400).json({
+      error: 'Accounts cannot be benched mid-campaign. Stop the campaign, remove the account, and start it again.',
+    });
+  }
+  const result = setProfileSkip(profileId, false);
   res.json(result);
 });
 
@@ -7131,6 +7157,11 @@ app.patch('/api/drafts/:id', async (req, res) => {
     const collision = _draftNameCollision(req.body?.name);
     if (collision) return res.status(collision.status).json(collision.body);
     const updated = await updateDraft(req.params.id, req.body || {});
+    // The write named one campaign; this draft belongs to another. Refuse it —
+    // the client detaches on 409 rather than continuing to write across.
+    if (updated === DRAFT_IDENTITY_MISMATCH) {
+      return res.status(409).json({ error: 'This draft belongs to a different campaign' });
+    }
     if (!updated) return res.status(404).json({ error: 'Not found' });
     res.json({ ok: true, draft: updated });
   } catch (err) { res.status(500).json({ error: err.message }); }
@@ -8379,6 +8410,80 @@ app.get('/api/campaign-configs/:name', async (req, res) => {
     if (!entry) return res.status(404).json({ ok: false, error: 'No saved settings for that campaign name.' });
     res.json({ ok: true, ...entry });
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+// Rename a campaign everywhere it is named, in one call.
+//
+// A campaign's name is its identity: settings are keyed by it, and the board
+// reads it from the run history. Renaming used to touch neither — Save wrote a
+// SECOND settings record under the new name and the board kept showing the old
+// one (operator, 2026-09-04). All three stores move together here, or the
+// campaign ends up existing twice.
+app.post('/api/campaign-configs/rename', async (req, res) => {
+  try {
+    const from = String(req.body?.from || '').trim();
+    const to = String(req.body?.to || '').trim();
+    if (!from || !to) return res.status(400).json({ error: 'from and to are required' });
+
+    const { renameConfig } = await import('./src/campaign-configs.js');
+    const moved = renameConfig(from, to);
+    // 'missing' just means this campaign had no saved settings yet — the board
+    // rename below is still worth doing. A clash is fatal: two campaigns must
+    // not collapse into one record.
+    if (!moved.ok && moved.reason === 'clash') {
+      return res.status(409).json({ error: `A campaign named "${to}" already exists` });
+    }
+    if (!moved.ok && moved.reason === 'invalid') {
+      return res.status(400).json({ error: 'Invalid name' });
+    }
+
+    // The dashboard's local campaigns read their name from the run history.
+    let historyRenamed = 0;
+    try {
+      let history = [];
+      try { history = JSON.parse(await readFile(HISTORY_PATH, 'utf-8')); } catch { /* none yet */ }
+      if (Array.isArray(history)) {
+        const key = (v) => String(v || '').trim().toLowerCase();
+        for (const entry of history) {
+          if (entry && key(entry.name) === key(from)) { entry.name = to; historyRenamed += 1; }
+        }
+        if (historyRenamed) await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2), 'utf-8');
+      }
+    } catch (err) {
+      console.warn('[rename] history rename failed:', err.message);
+    }
+
+    // Drafts. The dashboard lists these by name, so a draft left on the old
+    // name is a renamed campaign that reappears under its old one.
+    let draftsRenamed = 0;
+    try {
+      const { renameDrafts } = await import('./src/drafts.js');
+      draftsRenamed = await renameDrafts(from, to);
+    } catch (err) {
+      console.warn('[rename] draft rename failed:', err.message);
+    }
+
+    // And the per-run snapshots, which the wizard falls back to.
+    let snapshotsRenamed = 0;
+    try {
+      const { renameCloudLaunchConfigs } = await import('./src/cloud-launch-configs.js');
+      snapshotsRenamed = await renameCloudLaunchConfigs(from, to);
+    } catch (err) {
+      console.warn('[rename] launch-config rename failed:', err.message);
+    }
+
+    // A campaign running right now carries its name in memory too.
+    try {
+      if (campaign && String(campaign.name || '').trim().toLowerCase() === from.toLowerCase()) {
+        setCampaignName(to);
+      }
+    } catch (_) { /* nothing running */ }
+
+    res.json({ ok: true, name: to, settingsMoved: !!moved.ok, historyRenamed, draftsRenamed, snapshotsRenamed });
+  } catch (err) {
+    console.error('[campaign-configs] rename failed:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post('/api/campaign-configs', async (req, res) => {

@@ -1340,6 +1340,33 @@ async function loadPrimaryStatusForPicker() {
 // ─────────────────────────────────────────────────────────────────────────
 const ACTIVE_DRAFT_KEY = 'ortus.activeDraftId';
 
+// ─────────────────────────────────────────────────────────────────────────
+// Which campaign the wizard is bound to.
+//
+// Settings used to be written to whatever the ambient pointer happened to be:
+// the autosave PATCHed /api/drafts/<activeDraftId> with the whole form on every
+// keystroke, and that id survived opening a different campaign. So editing
+// CTAX_GUES_MUN wrote CTAX's message — and CTAX's name — into HTECHxGGL's draft
+// row. One campaign's settings landing in another's record (operator,
+// 2026-09-04).
+//
+// Now every write NAMES the campaign it belongs to, and the store refuses a
+// write whose identity does not match the record it is addressed to. An ambient
+// pointer can no longer decide where settings land.
+// ─────────────────────────────────────────────────────────────────────────
+let _wizardBoundKey = '';
+function _campaignKey(name) { return String(name || '').trim().toLowerCase(); }
+function _currentWizardName() {
+  return (document.getElementById('campaign-name-input')?.value || '').trim();
+}
+/** Bind the wizard to a campaign. Called by every path that opens one. */
+function bindWizardTo(name) { _wizardBoundKey = _campaignKey(name); }
+function boundWizardKey() { return _wizardBoundKey; }
+if (typeof window !== 'undefined') {
+  window.bindWizardTo = bindWizardTo;
+  window.boundWizardKey = boundWizardKey;
+}
+
 function getActiveDraftId() {
   try {
     // Prefer the new key; fall back to the legacy `currentDraftId` so any
@@ -11026,11 +11053,18 @@ function renderUnifiedStrip(it) {
     // OPEN routing for a finished strip: STOPPED/cancelled cloud → prefilled
     // editable setup wizard (edit & re-launch); cleanly-done cloud → live view;
     // local → its cockpit. Mirrors vjcard.mjs's card-#2 routing.
+    // A local campaign's Open used to be _openPill — viewRunningCampaign(),
+    // which takes NO id. Every local campaign's Open called the same
+    // argument-less function and showed one shared cockpit, so opening CTAX and
+    // opening Test did exactly the same thing and the wizard kept whichever
+    // campaign was there before (operator, 2026-09-04). A finished or stopped
+    // local campaign now opens BY ID, like its cloud counterpart, which loads
+    // that campaign's own saved settings by name.
     const _doneOpen = cloud
       ? (it.bad
         ? `<button class="mini solid" onclick="openCampaignForEdit('${escHtml(it.id)}')">Open</button>`
         : _cloudOpen)
-      : _openPill;
+      : `<button class="mini solid" onclick="openCampaignForEdit('${escHtml(it.id)}')">Open</button>`;
     // ⚡ Check now on a FINISHED/STOPPED cloud connect_and_* strip — late
     // acceptances still need a sweep + intro/DM backlog flush after the campaign
     // was stopped overall. One-shot on the engine: no re-arm, no resumed sending.
@@ -13267,25 +13301,53 @@ async function openCampaignForEdit(id) {
     if (ni) ni.value = displayName;
   };
 
-  if (d && d.config) {
-    // Full snapshot → prefill the whole wizard from it.
-    try { clearCloudEditMode(); } catch (_) { /* not in running-edit lock mode */ }
-    try { clearActiveDraft(); } catch (_) { /* editing a finished campaign, not a draft */ }
-    _seedName();
+  // A campaign's settings live under its NAME (src/campaign-configs.js). That is
+  // the store the wizard writes on every Save, and the only one that is keyed
+  // per campaign.
+  //
+  // The id-keyed launch snapshot fetched above is a record of one RUN, and its
+  // `name` can be stale: cloud-launch-configs.json held two records both named
+  // CTAX_GUES_MUN_CCVI, one of them carrying a different campaign's message, so
+  // two different campaign cards resolved into the same snapshot and showed one
+  // message no matter which you opened (operator, 2026-09-04). Asking it first
+  // is what made every downstream fix look like it had not worked.
+  //
+  // So: the named record wins. The run snapshot is only a fallback for a
+  // campaign that has never been saved by name.
+  try { clearCloudEditMode(); } catch (_) { /* not in running-edit lock mode */ }
+  try { clearActiveDraft(); } catch (_) { /* editing a saved campaign, not a draft */ }
+  _seedName();
+
+  let _loaded = false;
+  if (displayName && typeof loadCampaignConfigByName === 'function') {
+    try { _loaded = await loadCampaignConfigByName(displayName); } catch (_) { _loaded = false; }
+    if (_loaded) {
+      // loadCampaignConfigByName writes the name too; re-assert the board's
+      // capitalisation so the field reads as the operator named it.
+      _seedName();
+      // A saved campaign is not a draft — keep the autosave detached so
+      // keystrokes cannot land in some other campaign's draft row.
+      try { clearActiveDraft(); } catch (_) { /* nothing attached */ }
+    }
+  }
+
+  if (!_loaded && d && d.config) {
+    // Never saved by name — fall back to the snapshot of its last run.
     if (typeof applyPresetConfig === 'function') applyPresetConfig(d.config);
-    goCreateCampaign();
-  } else {
-    // No snapshot — an older campaign launched before configs were recorded.
-    // We can't recover its message/delays/sheet, but we DO know its name + type
-    // from the board, so best-effort: a clean wizard seeded with name + type,
-    // everything else blank. startNewCampaign() clears every stale field and
-    // spawns a fresh draft; then we re-assert this campaign's name + type.
-    try { clearCloudEditMode(); } catch (_) { /* */ }
+    _seedName();
+    _loaded = true;
+  }
+
+  if (!_loaded) {
+    // Nothing recorded anywhere: a clean wizard seeded with the name and type
+    // we do know from the board.
     await startNewCampaign();
     _seedName();
     const select = document.getElementById('campaign-mode');
     if (select && mode) { select.value = mode; if (typeof onModeChange === 'function') onModeChange(); }
   }
+  goCreateCampaign();
+
   // Lock the campaign type — an existing campaign's type is fixed; everything
   // else stays editable. Runs last so it survives any nav-triggered re-render.
   if (mode) lockCampaignType(mode);
@@ -21066,6 +21128,22 @@ async function editDraft(id) {
       const d = await r.json();
       const input = document.getElementById('campaign-name-input');
       if (input && d) input.value = d.name || '';
+      // Opening a draft used to set its NAME and nothing else — the draft's own
+      // config was never loaded, so the wizard kept whatever campaign was on it
+      // before, wearing this draft's name. Open CTAX then HTECH and both showed
+      // CTAX's message; the next keystroke autosaved it into HTECH's draft
+      // (operator, 2026-09-04). applyPresetConfig replaces the whole form, so
+      // the draft now arrives complete or not at all.
+      if (d && d.config && typeof applyPresetConfig === 'function') {
+        applyPresetConfig(d.config);
+        if (input && d) input.value = d.name || '';
+      } else if (typeof applyPresetConfig === 'function') {
+        // A draft with no config is an empty one. applyPresetConfig is a full
+        // reset, so an empty object clears the form rather than leaving the
+        // previous campaign's settings under this draft's name.
+        applyPresetConfig({});
+        if (input && d) input.value = d.name || '';
+      }
     }
   } catch {}
   goCreateCampaign();
@@ -26734,6 +26812,10 @@ async function flushAutosaveImmediate() {
 async function _flushAutosave() {
   const id = getActiveDraftId();
   if (!id) return;
+  // Unbound wizard → we cannot say which campaign this form is, so we must not
+  // write it anywhere. Silence beats corrupting a record.
+  const expectKey = _campaignKey(_currentWizardName());
+  if (!expectKey) return;
   let config = null;
   try { config = (typeof collectCurrentConfig === 'function') ? collectCurrentConfig() : null; }
   catch (err) { console.warn('[drafts] collectCurrentConfig failed:', err); }
@@ -26745,9 +26827,19 @@ async function _flushAutosave() {
   _autosavePending = fetch('/api/drafts/' + encodeURIComponent(id), {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, config }),
+    // expectKey names the campaign this form IS. The server writes only if the
+    // draft it addresses still belongs to that campaign.
+    body: JSON.stringify({ name, config, expectKey }),
   }).then(async (r) => {
+    if (r.status === 409) {
+      // The active draft belongs to a different campaign than the one on screen.
+      // Detach rather than keep hammering someone else's record.
+      clearActiveDraft();
+      console.warn('[drafts] autosave refused — this draft belongs to another campaign; detached.');
+      return;
+    }
     if (r.ok) {
+      if (name) _wizardBoundKey = _campaignKey(name);
       _lastAutosavedAt = Date.now();
       updateSavePip();
       if (typeof window.updateEditingBanner === 'function') window.updateEditingBanner();
@@ -34195,6 +34287,7 @@ async function loadCampaignConfigByName(name) {
     _openedCampaignName = d.name || n;
     const nameEl = document.getElementById('campaign-name-input');
     if (nameEl) nameEl.value = _openedCampaignName;
+    bindWizardTo(_openedCampaignName);
     if (typeof applyPresetConfig === 'function') applyPresetConfig(d.config);
     if (typeof showCampaignToast === 'function') showCampaignToast(`Loaded settings for "${_openedCampaignName}"`);
     return true;
@@ -34215,11 +34308,38 @@ if (typeof window !== 'undefined') {
     if (typeof orig !== 'function') continue;
     window[fn] = async function(...args) {
       const name = (document.getElementById('campaign-name-input')?.value || '').trim();
+      // Renaming an OPEN campaign is a rename, not a new campaign. Because
+      // settings are keyed by name, saving under a new name used to write a
+      // second record and leave the first — so the campaign existed twice and
+      // the dashboard, which reads its name from the run history, kept showing
+      // the old one (operator, 2026-09-04). Move the campaign first, then save
+      // the form onto the name it now has.
+      const opened = String(_openedCampaignName || '').trim();
+      if (name && opened && opened.toLowerCase() !== name.toLowerCase()) {
+        try {
+          const rr = await fetch('/api/campaign-configs/rename', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ from: opened, to: name }),
+          });
+          if (rr.ok) {
+            _openedCampaignName = name;
+            if (typeof bindWizardTo === 'function') bindWizardTo(name);
+            await refreshKnownCampaignNames();
+          } else if (rr.status === 409) {
+            // Another campaign already owns that name. Say so and stop, rather
+            // than silently creating a duplicate under it.
+            const j = await rr.json().catch(() => ({}));
+            if (typeof showCampaignToast === 'function') {
+              showCampaignToast(j.error || `A campaign named "${name}" already exists.`, 6000);
+            }
+            return;
+          }
+        } catch (err) {
+          console.warn('[rename] failed:', err);
+        }
+      }
       // The name IS the campaign's identity, so saving or starting under an
-      // existing name UPDATES that campaign — which is what Save means. Two
-      // campaigns cannot end up sharing a name because there is only ever one
-      // config per name. (Was: refuse any name already in the store, which made
-      // re-saving your own campaign impossible.)
+      // existing name UPDATES that campaign — which is what Save means.
       if (name) await saveCampaignConfigByName(name);
       return orig.apply(this, args);
     };
@@ -34237,6 +34357,11 @@ if (typeof window !== 'undefined') {
   let _restoring = false;                    // loadCampaignConfigByName calls back in
   applyPresetConfig = function(config) {
     const out = _origApplyPresetConfig.call(this, config);
+    // Every path that opens a campaign lands here, so this is where the wizard
+    // learns which campaign it is now editing. Without it the binding would
+    // still describe the campaign opened before this one, and the autosave
+    // would write this form into that one's record.
+    bindWizardTo(_currentWizardName());
     if (_restoring) return out;
     // A snapshot that carries no sheet URL is an empty one — the old id-keyed
     // store had nothing for local campaigns. Fall back to the settings saved

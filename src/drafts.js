@@ -161,10 +161,31 @@ export async function addDraft({ name = '', config = null } = {}) {
   return entry;
 }
 
+/** Normalised campaign identity — same rule as campaign-configs.normaliseName. */
+function _key(name) { return String(name || '').trim().toLowerCase(); }
+
+/**
+ * Sentinel returned when a write is addressed to a draft that belongs to a
+ * different campaign. The caller turns this into a 409 and writes nothing.
+ *
+ * The wizard is one shared form, and the id of the draft it autosaves to used
+ * to be an ambient pointer that survived opening a different campaign — so a
+ * keystroke in one campaign rewrote another campaign's saved settings, name
+ * included (operator, 2026-09-04). A write now has to name the campaign it
+ * belongs to, and this is the check that makes that claim mean something: the
+ * store is the last line, so a client bug cannot corrupt a record again.
+ */
+export const DRAFT_IDENTITY_MISMATCH = Symbol('draft-identity-mismatch');
+
 export async function updateDraft(id, patch) {
   await load();
   const idx = cache.findIndex((d) => d.id === id);
   if (idx === -1) return null;
+  // An unnamed draft has no identity yet, so the first write adopts one. A
+  // named draft only accepts writes that address it by that name.
+  const expectKey = patch && typeof patch.expectKey === 'string' ? _key(patch.expectKey) : '';
+  const storedKey = _key(cache[idx].name);
+  if (expectKey && storedKey && expectKey !== storedKey) return DRAFT_IDENTITY_MISMATCH;
   if (patch && typeof patch.name === 'string') {
     const trimmed = patch.name.trim();
     cache[idx].name = trimmed;
@@ -176,6 +197,32 @@ export async function updateDraft(id, patch) {
   cache[idx].lastEditedAt = _nowIso();
   await persist();
   return cache[idx];
+}
+
+/**
+ * Point every draft carrying `from` at `to`.
+ *
+ * A campaign's name lives in four places and a rename has to move all of them.
+ * This one was missed first time round: the settings record moved, but the
+ * dashboard lists drafts from here, so a renamed draft came straight back
+ * wearing its old name (operator, 2026-09-04).
+ */
+export async function renameDrafts(from, to) {
+  await load();
+  const key = (v) => String(v || '').trim().toLowerCase();
+  const fromKey = key(from);
+  if (!fromKey || !String(to || '').trim()) return 0;
+  let changed = 0;
+  for (const d of cache) {
+    if (d && key(d.name) === fromKey) {
+      d.name = String(to).trim();
+      d.updatedAt = Date.now();
+      d.lastEditedAt = _nowIso();
+      changed += 1;
+    }
+  }
+  if (changed) await persist();
+  return changed;
 }
 
 export async function removeDraft(id) {

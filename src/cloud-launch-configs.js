@@ -48,6 +48,29 @@ export async function saveCloudLaunchConfig(id, name, config) {
   await persist();
 }
 
+/**
+ * Point every run snapshot that carries `from` at `to`.
+ *
+ * These snapshots are keyed by run id but carry a name, and the dashboard and
+ * the wizard both read that name. Leaving it stale after a rename is what makes
+ * a renamed campaign come back wearing its old name.
+ */
+export async function renameCloudLaunchConfigs(from, to) {
+  const key = (v) => String(v || '').trim().toLowerCase();
+  const fromKey = key(from);
+  if (!fromKey || !String(to || '').trim()) return 0;
+  await load();
+  let changed = 0;
+  for (const id of Object.keys(cache)) {
+    if (key(cache[id] && cache[id].name) === fromKey) {
+      cache[id].name = String(to).trim();
+      changed += 1;
+    }
+  }
+  if (changed) await persist();
+  return changed;
+}
+
 export async function getCloudLaunchConfig(id) {
   if (!id) return null;
   await load();
