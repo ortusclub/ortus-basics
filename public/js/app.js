@@ -19756,20 +19756,49 @@ function renderDiskBanner(disk) {
 // kept as a no-op shim so any cached HTML still calling it doesn't error.
 // ─────────────────────────────────────────────────────────────────────────
 function setIntroMode() { /* deprecated in v2.11.17 — segment toggle removed */ }
+// ─────────────────────────────────────────────────────────────────────────
+// Wizard field memory, scoped to the campaign being edited.
+//
+// The intro message, primary person and CC+DM body used to live in five
+// un-namespaced localStorage keys, so every campaign wrote into the same
+// slot. Editing HTECHxGGL_LON_OP_CCVI's golf invite replaced CTAX_GUES_MUN's
+// tax-luncheon message, and the next page load painted the golf text back
+// over the campaign's own saved config (operator, 2026-09-04). The bare key
+// survives as the seed for a NEW, unnamed campaign, so a fresh wizard still
+// pre-fills the primary person you used last.
+// ─────────────────────────────────────────────────────────────────────────
+function _wizScopedKey(base) {
+  const n = (document.getElementById('campaign-name-input')?.value || '').trim();
+  return n ? `${base}::${n.toLowerCase()}` : base;
+}
+function _wizLsSet(base, value) {
+  try { localStorage.setItem(_wizScopedKey(base), value); } catch { /* storage blocked */ }
+}
+function _wizLsGet(base) {
+  try {
+    const scoped = _wizScopedKey(base);
+    // A named campaign never falls back to the shared slot — that fallback IS
+    // the bug. Only an unnamed wizard reads the bare key.
+    return localStorage.getItem(scoped);
+  } catch { return null; }
+}
+// Restore fills a BLANK field and nothing else. A campaign's own saved config
+// is authoritative; this memory only exists so a half-typed field survives
+// navigating away and back.
+function _wizLsFill(el, base) {
+  if (!el || String(el.value || '').trim()) return;
+  const v = _wizLsGet(base);
+  if (v) el.value = v;
+}
+
 function saveIntroFields() {
-  const name  = document.getElementById('intro-name')?.value || '';
-  const title = document.getElementById('intro-title')?.value || '';
-  try { localStorage.setItem('ortus-intro-name', name); }   catch { /* storage blocked */ }
-  try { localStorage.setItem('ortus-intro-title', title); } catch { /* storage blocked */ }
+  _wizLsSet('ortus-intro-name', document.getElementById('intro-name')?.value || '');
+  _wizLsSet('ortus-intro-title', document.getElementById('intro-title')?.value || '');
 }
 
 function restoreIntroState() {
-  const nameEl  = document.getElementById('intro-name');
-  const titleEl = document.getElementById('intro-title');
-  try {
-    if (nameEl)  nameEl.value  = localStorage.getItem('ortus-intro-name')  || nameEl.value;
-    if (titleEl) titleEl.value = localStorage.getItem('ortus-intro-title') || titleEl.value;
-  } catch { /* storage blocked — DOM defaults stand */ }
+  _wizLsFill(document.getElementById('intro-name'), 'ortus-intro-name');
+  _wizLsFill(document.getElementById('intro-title'), 'ortus-intro-title');
 }
 document.addEventListener('DOMContentLoaded', restoreIntroState);
 
@@ -19949,9 +19978,9 @@ window.primaryRecallOnKeydown = primaryRecallOnKeydown;
 
 function savePrimaryPersonFields() {
   try {
-    localStorage.setItem('ortus-primary-name', document.getElementById('primary-person-name')?.value || '');
-    localStorage.setItem('ortus-primary-url',  document.getElementById('primary-person-url')?.value  || '');
-    localStorage.setItem('ortus-primary-body', document.getElementById('primary-intro-body')?.value  || '');
+    _wizLsSet('ortus-primary-name', document.getElementById('primary-person-name')?.value || '');
+    _wizLsSet('ortus-primary-url',  document.getElementById('primary-person-url')?.value  || '');
+    _wizLsSet('ortus-primary-body', document.getElementById('primary-intro-body')?.value  || '');
   } catch { /* storage blocked */ }
   // v2.91: typing the primary URL unlocks the auto-accept toggle live.
   try { if (typeof refreshAutoAcceptGate === 'function') refreshAutoAcceptGate(); } catch (_) {}
@@ -20210,14 +20239,9 @@ function refreshPrimarySourceLabels() {
 }
 window.refreshPrimarySourceLabels = refreshPrimarySourceLabels;
 function restorePrimaryPersonState() {
-  try {
-    const nameEl = document.getElementById('primary-person-name');
-    const urlEl  = document.getElementById('primary-person-url');
-    const bodyEl = document.getElementById('primary-intro-body');
-    if (nameEl) nameEl.value = localStorage.getItem('ortus-primary-name') || nameEl.value;
-    if (urlEl)  urlEl.value  = localStorage.getItem('ortus-primary-url')  || urlEl.value;
-    if (bodyEl) bodyEl.value = localStorage.getItem('ortus-primary-body') || bodyEl.value;
-  } catch { /* storage blocked — DOM defaults stand */ }
+  _wizLsFill(document.getElementById('primary-person-name'), 'ortus-primary-name');
+  _wizLsFill(document.getElementById('primary-person-url'),  'ortus-primary-url');
+  _wizLsFill(document.getElementById('primary-intro-body'),  'ortus-primary-body');
 }
 window.savePrimaryPersonFields = savePrimaryPersonFields;
 document.addEventListener('DOMContentLoaded', restorePrimaryPersonState);
@@ -20227,15 +20251,10 @@ if (document.readyState !== 'loading') restorePrimaryPersonState();
 // pattern as savePrimaryPersonFields so the textarea repopulates after
 // navigation. No primary person fields — CC+DM only needs the body.
 function saveCcDmFields() {
-  try {
-    localStorage.setItem('ortus-cc-dm-body', document.getElementById('tpl-cc-dm-body')?.value || '');
-  } catch { /* storage blocked */ }
+  _wizLsSet('ortus-cc-dm-body', document.getElementById('tpl-cc-dm-body')?.value || '');
 }
 function restoreCcDmState() {
-  try {
-    const bodyEl = document.getElementById('tpl-cc-dm-body');
-    if (bodyEl) bodyEl.value = localStorage.getItem('ortus-cc-dm-body') || bodyEl.value;
-  } catch { /* storage blocked — DOM defaults stand */ }
+  _wizLsFill(document.getElementById('tpl-cc-dm-body'), 'ortus-cc-dm-body');
 }
 window.saveCcDmFields = saveCcDmFields;
 document.addEventListener('DOMContentLoaded', restoreCcDmState);
