@@ -613,7 +613,22 @@ fi
 rm -rf "$BK"
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null
 echo "[updater] relaunching"
-open "$APP"
+# One open call is not enough. macOS sometimes refuses to launch a bundle it has
+# just watched get replaced — LaunchServices is still holding the old record —
+# and the helper exits "successfully" with no app on screen (operator,
+# 2026-09-04: swap logged, /Applications on the new version, nothing running).
+# Re-register the bundle, then retry until a process actually appears.
+LSREG="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+[ -x "$LSREG" ] && "$LSREG" -f "$APP" >/dev/null 2>&1
+for i in 1 2 3 4 5; do
+  open "$APP" 2>&1 && sleep 2
+  if pgrep -f "$APP/Contents/MacOS/" >/dev/null; then
+    echo "[updater] relaunched on attempt $i"; exit 0
+  fi
+  echo "[updater] relaunch attempt $i did not stick — retrying"
+  sleep 2
+done
+echo "[updater] could not relaunch — the update IS installed; open Ortus Basics from Applications"
 `;
   try {
     writeFileSync(scriptPath, script, 'utf8');

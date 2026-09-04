@@ -18548,9 +18548,11 @@ function applyPresetConfig(config) {
     config = { ...config, mode: 'introduce_back' };
   }
 
-  // Mode — triggers the rest of the mode-dependent UI
-  if (config.mode) {
-    setV('campaign-mode', config.mode);
+  // Mode — triggers the rest of the mode-dependent UI. Unconditional, and
+  // defaulted the same way collectCurrentConfig() defaults it: a config with no
+  // mode is a campaign with no mode, not an invitation to keep the last one's.
+  {
+    setV('campaign-mode', config.mode || 'connect_only');
     if (typeof onModeChange === 'function') onModeChange();
   }
   setV('sheet-url', config.sheetUrl || '');
@@ -18558,11 +18560,16 @@ function applyPresetConfig(config) {
   // has always SAVED profileIds, but nothing here read them back, so reopening a
   // campaign / draft / preset came back with an empty account list and the
   // operator had to re-pick every time.
-  if (Array.isArray(config.profileIds)) {
-    selectedProfileIds = config.profileIds.filter(Boolean);
-    if (config.profileNames && typeof config.profileNames === 'object') {
-      selectedProfileNames = { ...config.profileNames };
-    }
+  // Unconditional: a config WITHOUT accounts means this campaign has none, not
+  // "keep whichever accounts the last campaign used". Every `if (present) set()`
+  // in this function turned it into a merge onto the previous campaign's form,
+  // which is how one campaign's settings walked into another's (operator,
+  // 2026-09-04). Campaigns are separate; loading one replaces the form entirely.
+  {
+    selectedProfileIds = Array.isArray(config.profileIds) ? config.profileIds.filter(Boolean) : [];
+    selectedProfileNames = (config.profileNames && typeof config.profileNames === 'object')
+      ? { ...config.profileNames }
+      : {};
     try { if (typeof renderProfiles === 'function') renderProfiles(); } catch (_) { /* grid may not be built yet */ }
     try { if (typeof renderSelectedPanel === 'function') renderSelectedPanel(); } catch (_) { /* */ }
     try { if (typeof updateCampaignSummary === 'function') updateCampaignSummary(); } catch (_) { /* */ }
@@ -18572,7 +18579,9 @@ function applyPresetConfig(config) {
   // auto-trigger in _wireTabPicker only runs at page load, so re-opening a
   // saved campaign left the tab picker stale/hidden for multi-tab workbooks.
   // Re-run it here (it self-hides for single-tab sheets, so always safe).
-  if (config.sheetUrl && typeof refreshSheetTabPicker === 'function') {
+  // Always re-run: with no sheet on this campaign the picker must clear, or the
+  // previous campaign's tab list stays on screen and can be launched against.
+  if (typeof refreshSheetTabPicker === 'function') {
     Promise.resolve(refreshSheetTabPicker()).catch(() => {});
   }
 
@@ -18597,22 +18606,27 @@ function applyPresetConfig(config) {
   // table is blank and the saved column picks land on elements that don't exist
   // yet (the old requestAnimationFrame defer raced the dropdowns and lost). The
   // sheet-url field was set by setV above, so previewSheet reads the right URL.
+  // The column picks and the all-connected toggle belong to THIS campaign, so
+  // they are written whether or not the value is present and whether or not a
+  // sheet renders. `allLeadsConnected` was the worst of these: it could only
+  // ever switch ON, so one campaign's toggle stayed set for every campaign
+  // opened after it.
+  const _applySheetMapping = () => {
+    const lc = document.getElementById('linkedin-col-select');
+    if (lc) lc.value = config.linkedinColumn || '';
+    const sc = document.getElementById('ic-sender-col-select');
+    if (sc) sc.value = config.senderColumn || '';
+    const tog = document.getElementById('ic-all-connected-toggle');
+    if (tog) tog.checked = config.allLeadsConnected === true;
+    if (typeof updateCampaignSummary === 'function') updateCampaignSummary();
+  };
+  _applySheetMapping();
   if (config.sheetUrl && typeof previewSheet === 'function') {
-    Promise.resolve(previewSheet()).then(() => {
-      if (config.linkedinColumn) {
-        const sel = document.getElementById('linkedin-col-select');
-        if (sel) sel.value = config.linkedinColumn;
-      }
-      if (config.senderColumn) {
-        const sel = document.getElementById('ic-sender-col-select');
-        if (sel) sel.value = config.senderColumn;
-      }
-      if (config.allLeadsConnected) {
-        const tog = document.getElementById('ic-all-connected-toggle');
-        if (tog) tog.checked = true;
-      }
-      if (typeof updateCampaignSummary === 'function') updateCampaignSummary();
-    }).catch(() => { /* preview failed (bad URL / offline) — fields stay as set */ });
+    // previewSheet() rebuilds the column dropdowns, which discards the values
+    // just written — so re-apply once it has landed.
+    Promise.resolve(previewSheet())
+      .then(_applySheetMapping)
+      .catch(() => { /* preview failed (bad URL / offline) — fields stay as set */ });
   }
 
   const opCheck = document.getElementById('open-profile-msg');
@@ -18639,7 +18653,7 @@ function applyPresetConfig(config) {
   // introName (the retired intro-name field). Seed the Primary Person name from it
   // when primaryName is absent so the migrated campaign shows the primary.
   if (!t.primaryName && t.introName) setV('primary-person-name', t.introName);
-  if (t.introTitle) setV('intro-title', t.introTitle);
+  setV('intro-title', t.introTitle || '');
 
   // v2.91: restore CC+IC auto-accept + automated first follow-up. Without these
   // a Re-run / preset load drops the toggles back to defaults.
@@ -18653,7 +18667,7 @@ function applyPresetConfig(config) {
   if (document.getElementById('auto-accept-all-toggle')) document.getElementById('auto-accept-all-toggle').checked = !!t.autoAcceptAllPending;
   if (document.getElementById('follow-up-toggle')) document.getElementById('follow-up-toggle').checked = !!t.followUpEnabled;
   setV('follow-up-body', t.followUpBody || '');
-  if (t.followUpDelayMinutes) setV('follow-up-delay', t.followUpDelayMinutes);
+  setV('follow-up-delay', t.followUpDelayMinutes ?? 10);
   // v2.94.x: restore the shared primary source. A profileId → GoLogin source;
   // 'local-browser'/absent → local. refreshAutoAcceptGate() below re-renders.
   {
@@ -18683,7 +18697,7 @@ function applyPresetConfig(config) {
   // never wrote it back into the dropdown, so re-runs silently reset to the
   // HTML default (60 = 1 hour) regardless of what the original run used. Applies
   // to every monitoring mode (CC+IC + CC+DM).
-  if (config.checkIntervalMinutes) setV('check-cadence-select', String(config.checkIntervalMinutes));
+  setV('check-cadence-select', String(config.checkIntervalMinutes || 60));
 
   // v2.112: restore the automatic-checks toggle on Re-run (default on when absent).
   {
@@ -19165,7 +19179,15 @@ async function onUpdateClick(e) {
         catch (e) { inst = { error: e.message }; }
         if (inst.relaunching) {
           pill.innerHTML = '<span class="update-pill-arrow">✓</span> Updating — the app will reopen…';
-          if (text) text.textContent = 'The app will close and reopen on the new version.';
+          // The swap itself is reliable; the relaunch is not. macOS sometimes
+          // ignores the helper's `open` on a bundle it has just watched get
+          // replaced, and the operator is left staring at a closed app with no
+          // idea the update already succeeded (operator, 2026-09-04). Say what
+          // to do about it up front rather than after they ask.
+          if (text) {
+            text.innerHTML = 'The app will close and reopen on the new version.'
+              + '<br><strong>If it doesn\'t reopen by itself, open Ortus Basics from your Applications folder — the update is already installed.</strong>';
+          }
         } else {
           // Fallback: DMG opened for a manual drag, or install error.
           const msg = summarizeUpdateError({ installError: inst.error, fallback: inst.fallback });
