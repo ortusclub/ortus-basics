@@ -2488,11 +2488,9 @@ function renderProfiles(profiles) {
       // above wrong-workspace because switching campaign type brings it back.
       const foreignBump = p.available === false ? 10
         : (Array.isArray(p.allowedModes) && !p.allowedModes.includes(_mode)) ? 5 : 0;
-      if (_breakdown && soo) {
-        const br = classifyAccountChannels(soo);
-        // free-first: usable (0) → has-status-but-none-free (1) → blocked (2).
-        return { p, i, soo, br, rank: (br.blocked ? 2 : (br.anyFree ? 0 : 1)) + foreignBump };
-      }
+      // Ortus Basics 1.0: breakdown tiles are disabled (_showBreakdown = false),
+      // so every profile needs a `st` for the two-zone tile renderer. Skip the
+      // breakdown sorting path entirely — classifyAccountState handles all modes.
       const st = classifyAccountState(soo, _meId, _mode, _passover);
       return { p, i, soo, st, rank: (_RANK[st.state] ?? 9) + foreignBump };
     })
@@ -2534,10 +2532,9 @@ function renderProfiles(profiles) {
     // proof that this account is missing from SoO. Keep Ortus accounts locked
     // until their credits/restrictions can actually be checked. A stale snapshot
     // remains usable and is visibly labelled at the panel level.
-    const _sooUnknown = !_soo && (sooLoadState === 'idle' || sooLoadState === 'loading' || sooLoadState === 'error');
-    const _sooLock = _nonOrtusRoster
-      ? false
-      : (_sooUnknown || (_showBreakdown ? (_br.blocked || !_br.anyActive) : (_state.state === 'blocked')));
+    // Ortus Basics 1.0: the SoO does not gate the picker — the operator
+    // decides what is usable. Locking is disabled entirely.
+    const _sooLock = false;
     const _locked = _foreign || _wrongMode || _sooLock;
     // Defensive: a restored preset/schedule must not keep a now-unusable account
     // selected — drop it (before building the tile so `checked` reflects reality).
@@ -6198,8 +6195,8 @@ const CLOUD_CAPABLE_MODES = new Set(['connect_only', 'message_only', 'introduce_
   'connect_and_introduce', 'connect_and_message', 'follower_growth',
   'inmail_only', 'open_profile_only', 'check_status']);
 function isCloudRunOn() {
-  return CLOUD_CAPABLE_MODES.has(document.getElementById('campaign-mode')?.value)
-    && !!document.getElementById('cloud-run-checkbox')?.checked;
+  // Ortus Basics 1.0: Cloud VM is not available — all campaigns run locally.
+  return false;
 }
 
 function alphaRecalc() {
@@ -19227,14 +19224,28 @@ async function onUpdateClick(e) {
         catch (e) { inst = { error: e.message }; }
         if (inst.relaunching) {
           pill.innerHTML = '<span class="update-pill-arrow">✓</span> Updating — the app will reopen…';
-          // The swap itself is reliable; the relaunch is not. macOS sometimes
-          // ignores the helper's `open` on a bundle it has just watched get
-          // replaced, and the operator is left staring at a closed app with no
-          // idea the update already succeeded (operator, 2026-09-04). Say what
-          // to do about it up front rather than after they ask.
+          // Show a live countdown so the operator knows something is happening.
+          // The shell script waits up to 60s for the process to exit, then
+          // mounts/copies/swaps (~5-15s), then relaunches. Total ≤ ~80s.
           if (text) {
-            text.innerHTML = 'The app will close and reopen on the new version.'
-              + '<br><strong>If it fails to automatically open again, please quit the app and open it again.</strong>';
+            let elapsed = 0;
+            const phases = [
+              [0,  'Waiting for the app to close…'],
+              [5,  'Closing the app…'],
+              [15, 'Mounting the update…'],
+              [25, 'Copying new version…'],
+              [40, 'Swapping into /Applications…'],
+              [55, 'Relaunching…'],
+              [70, 'Still waiting for macOS to relaunch… if nothing happens, quit and reopen manually.'],
+            ];
+            const updateText = () => {
+              const phase = [...phases].reverse().find(([t]) => elapsed >= t);
+              text.innerHTML = (phase ? phase[1] : 'Installing…')
+                + `<br><span style="opacity:0.5">${elapsed}s elapsed</span>`
+                + (elapsed >= 30 ? '<br><strong>If nothing happens, quit the app (Cmd+Q) and reopen it — the update is already installed.</strong>' : '');
+            };
+            updateText();
+            const iv = setInterval(() => { elapsed += 1; updateText(); if (elapsed > 120) clearInterval(iv); }, 1000);
           }
         } else {
           // Fallback: DMG opened for a manual drag, or install error.

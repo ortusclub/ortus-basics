@@ -1393,8 +1393,10 @@ async function handleStartCloud(req, res) {
     if (rejectIfNoOperatorEmail(res)) return;
     if (await rejectIfForeignProfiles(req, res, profileIds, mode)) return;
 
-    // ── Pre-flight gate: same ack/blocklist check as /api/campaign/start ─────
-    if (!await runPreflightGate(req, res)) return;
+    // Ortus Basics 1.0: pre-flight gate disabled — the linter's blocker list
+    // (missing columns, sender mismatches, blocklist) targets the full Outreach
+    // SoO-driven workflow and fires false positives on Basics sheets.
+    // if (!await runPreflightGate(req, res)) return;
 
     // Auto-routed modes derive the account per-row from the sheet's sender
     // column (the picker is hidden for them), so we pin each lead to its
@@ -2645,10 +2647,8 @@ async function handoverToVm(id, req, res) {
     excludeLeadUrls: excluded,
   };
   req.body = cloudBody;
-  // Run the same gate the cloud launch will run, BEFORE stopping this Mac. If
-  // the sheet has unacknowledged blockers the gate answers the operator itself
-  // and the local campaign carries on untouched.
-  if (!await runPreflightGate(req, res)) return;
+  // Ortus Basics 1.0: pre-flight gate disabled.
+  // if (!await runPreflightGate(req, res)) return;
 
   // Now, and only now, stop this side, and prove it stopped.
   const stopped = await stopLocalAndConfirm();
@@ -3108,10 +3108,8 @@ app.post('/api/campaign/start', async (req, res) => {
       }
     }
 
-    // ── Pre-flight gate (spec 2026-07-07): refuse un-acknowledged blockers;
-    // blocklisted rows are excluded server-side regardless of the client.
-    // Shared with /api/campaign/queue-only via runPreflightGate().
-    if (!await runPreflightGate(req, res)) return;
+    // Ortus Basics 1.0: pre-flight gate disabled.
+    // if (!await runPreflightGate(req, res)) return;
 
     const config = buildCampaignConfig(body);
     const owner = req.user;
@@ -5203,11 +5201,8 @@ app.post('/api/campaign/queue-only', async (req, res) => {
       }
     }
 
-    // ── Pre-flight gate: same ack check as /api/campaign/start — blocklist
-    // rows get a 409 until the operator acknowledges; blocklisted URLs are
-    // always hard-excluded regardless of ack (via _preflightExcludedUrls →
-    // buildCampaignConfig → excludedUrls → startCampaign central guard).
-    if (!await runPreflightGate(req, res)) return;
+    // Ortus Basics 1.0: pre-flight gate disabled.
+    // if (!await runPreflightGate(req, res)) return;
 
     const config = buildCampaignConfig(body);
     const owner = req.user;

@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=3.1.60.14" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.14" />
+  <link rel="stylesheet" href="/css/style.css?v=1.7.1" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=1.7.1" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -1017,20 +1017,11 @@
         </div>
       </div>
 
-    <!-- Where it runs — the first decision; writes #cloud-run-checkbox (hidden source of truth) -->
-    <div id="run-target" class="run-target" data-target="local">
-      <div class="rt-tabs" role="tablist" aria-label="Where the campaign runs">
-        <button type="button" class="rt-tab on" data-rt="local" role="tab" onclick="pickRunTarget('local')">
-          <span class="t">💻 This machine</span><span class="s">Runs while the app is open — pause &amp; resume anytime</span>
-        </button>
-        <button type="button" class="rt-tab is-discontinued" data-rt="cloud" role="tab" aria-disabled="true" onclick="pickRunTarget('cloud')">
-          <span class="t">☁︎ Cloud VM</span><span class="s">Discontinued in this version</span>
-        </button>
-      </div>
-      <!-- Ortus Basics 1.0: cloud runs are discontinued. The tab stays visible so
-           the choice is explained rather than silently missing; selecting it shows
-           this note and leaves the target on "This machine". -->
-      <div class="rt-discontinued" id="rt-discontinued" hidden>This feature has been discontinued.</div>
+    <!-- Ortus Basics 1.0: Cloud VM locked out — all campaigns run locally.
+         Hidden from the UI; the hidden checkbox + data-target stay so JS that
+         reads them still sees "local". -->
+    <div id="run-target" class="run-target" data-target="local" hidden>
+      <label id="cloud-run-toggle" hidden><input type="checkbox" id="cloud-run-checkbox" hidden></label>
       <div class="rt-facts" id="run-target-facts"></div>
     </div>
 
@@ -3964,7 +3955,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=3.1.60.14"></script>
+<script type="module" src="/js/app.js?v=1.7.1"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before
