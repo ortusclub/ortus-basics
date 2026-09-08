@@ -141,6 +141,10 @@
     },
     "extraResources": [
       {
+        "from": ".env",
+        "to": ".env"
+      },
+      {
         "from": "engine",
         "to": "engine",
         "filter": [
