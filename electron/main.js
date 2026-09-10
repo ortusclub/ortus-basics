@@ -16,7 +16,7 @@
 // log-writer.js below) is evaluated. See electron/load-env.js for why.
 import './load-env.js';
 import { app, BrowserWindow, Tray, Menu, shell, dialog, powerMonitor } from 'electron';
-import { existsSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:net';
@@ -119,14 +119,29 @@ async function startBundledEngine() {
     return null;
   }
   const token = process.env.SCRAPER_ENGINE_TOKEN || 'ortus2026scraper';
+  // Read operator-saved GoLogin tokens from the credentials file so the
+  // bundled engine can launch browser profiles. The main server.js does this
+  // via applyCredentials(), but the engine spawns BEFORE server.js starts.
+  let credEnv = {};
+  try {
+    const credPath = join(userDataDir, 'gologin-credentials.json');
+    if (existsSync(credPath)) {
+      const creds = JSON.parse(readFileSync(credPath, 'utf8'));
+      for (const [k, v] of Object.entries(creds)) {
+        if (k.startsWith('GOLOGIN_API_TOKEN') && typeof v === 'string' && v) credEnv[k] = v;
+      }
+    }
+  } catch (e) { console.warn('[main] Could not read GoLogin credentials for engine:', e.message); }
   engineProcess = spawn(process.execPath, [engineEntry], {
     cwd: dirname(engineEntry),
     env: {
       ...process.env,
+      ...credEnv,
       ELECTRON_RUN_AS_NODE: '1',
       PORT: String(enginePort),
       ENGINE_SHARED_TOKEN: token,
       APP_PASSWORD: token,
+      SKIP_AUTH: '1',
       // No PG_URL and no USE_REDIS: the engine falls back to its in-memory
       // queue, which is what a single-user local engine wants.
     },

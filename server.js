@@ -296,14 +296,18 @@ app.use((req, res, next) => {
 
 // ── Session gate ───────────────────────────────────────────────────
 app.use(async (req, res, next) => {
+  // Electron mode: no login required — the app is a local desktop tool.
+  if (process.env.ORTUS_ELECTRON_MODE === '1') {
+    req.user = req.user || 'operator@ortusclub.com';
+    return next();
+  }
   if (PUBLIC_PATHS.has(req.path)) return next();
   if (req.path.startsWith('/sketches/') || req.path === '/sketches.html') return next();
   const email = await readSessionFromRequest(req);
   if (!email) {
     // API calls get 401 JSON; page navigations get redirected to the right login page.
     if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Not authenticated' });
-    const loginPage = process.env.ORTUS_ELECTRON_MODE === '1' ? '/electron-login.html' : '/login.html';
-    return res.redirect(loginPage);
+    return res.redirect('/login.html');
   }
   req.user = email;
   next();

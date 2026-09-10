@@ -66,6 +66,8 @@ async function generateToken() {
 }
 
 async function authMiddleware(req, res, next) {
+  // Bundled engine (inside Electron) runs on localhost only — skip auth entirely.
+  if (process.env.SKIP_AUTH === '1') return next();
   try {
     // 1) Web-UI session token (x-auth-token header or ?token= query).
     const sessionToken = req.headers["x-auth-token"] || req.query.token;
@@ -92,7 +94,7 @@ wss.on("connection", async (ws, req) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const token = url.searchParams.get("token");
   const userId = url.searchParams.get("userId");
-  if (!token || !(await jobQueue.hasToken(token))) {
+  if (process.env.SKIP_AUTH !== '1' && (!token || !(await jobQueue.hasToken(token)))) {
     ws.close(4001, "Unauthorized");
     return;
   }

@@ -1,11 +1,12 @@
 {
   "name": "ortus-basics",
   "productName": "Ortus Basics",
-  "version": "1.7.2",
+  "version": "1.7.21",
   "description": "LinkedIn outreach automation for The Ortus Club",
   "type": "module",
   "main": "electron/main.js",
   "scripts": {
+    "postinstall": "cd engine && npm install --production",
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test tests/*.test.js tests/connections/*.test.js tests/linkedin/*.test.js",
