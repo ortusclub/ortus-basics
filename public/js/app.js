@@ -84,7 +84,16 @@ let _snEverLoaded = false;   // have we rendered the board successfully at least
 let _snConsecFail = 0;       // consecutive failed polls before the first success
 // Navigate to the Sales Nav board (its own top-level route #/salesnav). The
 // router (applyRoute) calls openSalesNavBoard() on entry to load + start polling.
-function goSalesNav() { window.location.hash = '#/salesnav'; }
+// Ortus Basics 1.0: locked behind a team password.
+const _SN_PASS = 'techTEAM2026';
+function goSalesNav() {
+  if (sessionStorage.getItem('sn_unlocked') !== '1') {
+    const pw = prompt('🔒 Sales Nav Scraper is locked.\nEnter the team password:');
+    if (pw !== _SN_PASS) { if (pw !== null) alert('Incorrect password.'); return; }
+    sessionStorage.setItem('sn_unlocked', '1');
+  }
+  window.location.hash = '#/salesnav';
+}
 window.goSalesNav = goSalesNav;
 
 // Route-entry initializer for the board. View visibility is handled by the
@@ -20843,6 +20852,11 @@ function applyRoute() {
   // Leaving the board with the inline scrape setup open: move the relocated
   // wizard sections back so the campaign wizard is intact for other modes.
   if (!isSalesNav && _snSetupOpen && typeof closeScrapeSetup === 'function') closeScrapeSetup();
+  // Ortus Basics 1.0: block direct navigation to #/salesnav without password.
+  if (isSalesNav && sessionStorage.getItem('sn_unlocked') !== '1') {
+    window.location.hash = '#/';
+    return;
+  }
   if (isSalesNav) {
     // Sales Nav board — its own top-level route-view. Stop the other routes'
     // pollers and start the board's load/poll loop.
