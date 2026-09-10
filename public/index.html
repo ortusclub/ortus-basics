@@ -1017,10 +1017,16 @@
         </div>
       </div>
 
-    <!-- Ortus Basics 1.0: Cloud VM locked out — all campaigns run locally.
-         Hidden from the UI; the hidden checkbox + data-target stay so JS that
-         reads them still sees "local". -->
-    <div id="run-target" class="run-target" data-target="local" hidden>
+    <div id="run-target" class="run-target" data-target="local">
+      <div class="rt-tabs" role="tablist" aria-label="Where the campaign runs">
+        <button type="button" class="rt-tab on" data-rt="local" role="tab" onclick="pickRunTarget('local')">
+          <span class="t">💻 This machine</span><span class="s">Runs while the app is open — pause &amp; resume anytime</span>
+        </button>
+        <button type="button" class="rt-tab rt-tab-disabled" data-rt="cloud" role="tab" onclick="pickRunTarget('cloud')" disabled>
+          <span class="t">☁︎ Cloud VM</span><span class="s">Not available in Ortus Basics</span>
+        </button>
+      </div>
+      <p id="rt-discontinued" hidden style="color:var(--c-warn,#e5a100);font-size:.85rem;margin:.5rem 0 0">Cloud VM is not available in Ortus Basics — campaigns run on this machine.</p>
       <label id="cloud-run-toggle" hidden><input type="checkbox" id="cloud-run-checkbox" hidden></label>
       <div class="rt-facts" id="run-target-facts"></div>
     </div>
