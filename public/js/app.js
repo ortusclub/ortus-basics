@@ -1917,6 +1917,7 @@ function openUnifiedLog() {
   // v2.86.1 (port): explicit request to see the log — reveal Live Status even
   // when idle, then scroll to it. Without forcing, scrollToSection targets a
   // display:none element and nothing happens.
+  _suppressFinishedSection = false;  // explicit "Open log" overrides suppression
   liveStatusForcedOpen = true;
   try { syncLiveStatusVisibility(); } catch (_) { /* */ }
   // Re-uses scrollToSection so the dashboard → wizard route swap happens
@@ -9725,6 +9726,10 @@ window.duplicatePastCampaign = duplicatePastCampaign;
 // "… copy" name. Nothing runs until the operator picks Start/Queue/Schedule.
 async function _openDuplicateDraft(srcName, config) {
   if (typeof unlockCampaignType === 'function') unlockCampaignType();  // v2.160.42: a duplicate is a new campaign — type editable
+  // Suppress the previous campaign's Live Status (log + progress) so the
+  // duplicate opens with a clean wizard — no inherited logs or progress.
+  _suppressFinishedSection = true;
+  liveStatusForcedOpen = false;
   const copyName = /\bcopy\b/i.test(srcName) ? srcName : `${srcName} copy`;
   let draftId = '';
   try {
@@ -16770,6 +16775,8 @@ async function pollStatus() {
     // launch popup now, in the same tick the card repaints below, so it reveals
     // the NEW campaign with no flash of the previous one.
     if (window.__launching && s.running) endLaunching();
+    // A new campaign started — clear the suppression so its Live Status shows.
+    if (s.running || s.state === 'monitoring') _suppressFinishedSection = false;
 
     // Phase 2.8.12: feed the cockpit panel with the latest status snapshot
     // (renderCockpit + tick handle the smooth countdown without re-polling).
@@ -16972,6 +16979,12 @@ async function pollStatus() {
 // session). Without it, "Open log" was a no-op when nothing was running — it
 // scrolled to a display:none element. Reset on leaving the wizard (applyRoute).
 let liveStatusForcedOpen = false;
+// Set by _openDuplicateDraft / editDraft / startNewCampaign — suppresses the
+// "finished campaign log" section when the operator explicitly opened a different
+// draft. Without this, duplicating a finished campaign shows its log/progress in
+// the wizard, making it look like the duplicate inherited them. Cleared when a
+// campaign starts running (the Live Status should show for the new run).
+let _suppressFinishedSection = false;
 function syncLiveStatusVisibility() {
   const sec = document.getElementById('nav-status');
   if (!sec) return;
@@ -16998,7 +17011,7 @@ function syncLiveStatusVisibility() {
   // regardless of the local __cockpit state (which is idle for a VM campaign) and
   // even if liveStatusForcedOpen was reset by an unrelated re-render.
   const cloudView = !!(_viewingCloudId && window.__cloudActiveStatus);
-  const show = !inFollowerGrowth && onNew && (liveStatusForcedOpen || cloudView || ((running || monitoring) && !editingDraft) || finished);
+  const show = !inFollowerGrowth && onNew && (liveStatusForcedOpen || cloudView || ((running || monitoring) && !editingDraft) || (finished && !_suppressFinishedSection));
   sec.style.display = show ? '' : 'none';
   // A live ownership transition is operational status, not optional wizard
   // content. Accordion defaults and renderer reloads used to collapse section 7
@@ -21112,6 +21125,7 @@ async function viewRunningCampaign() {
   if (typeof flushAutosaveImmediate === 'function') {
     try { await flushAutosaveImmediate(); } catch {}
   }
+  _suppressFinishedSection = false;  // viewing the live campaign — show its status
   clearActiveDraft();
   goCreateCampaign();
 }
@@ -21120,6 +21134,8 @@ window.viewRunningCampaign = viewRunningCampaign;
 async function editDraft(id) {
   window.__viewingActiveCampaign = false;
   if (typeof unlockCampaignType === 'function') unlockCampaignType();  // v2.160.42: drafts stay type-editable
+  _suppressFinishedSection = true;
+  liveStatusForcedOpen = false;
   if (!id) return;
   // 2026-05-27 (drafts-isolation, Task 6): flush any pending autosave for
   // the CURRENT active draft BEFORE switching the id. Otherwise the next
@@ -21976,6 +21992,8 @@ function rerunPastCampaign() {
   const c = pastCampaignModalEntry.c;
   const s = c.settings;
   if (!s) return;
+  _suppressFinishedSection = true;
+  liveStatusForcedOpen = false;
 
   // Extract the saved tab gid: prefer s.sheetGid (persisted by Task 5's history
   // snapshot); fall back to extracting #gid= from the saved sheetUrl.
@@ -22960,6 +22978,7 @@ async function startNewCampaign() {
   if (typeof clearCloudEditMode === 'function') clearCloudEditMode();
   // v2.160.51: unbind any opened campaign's Live Status/log so a brand-new
   // campaign doesn't show the previous campaign's log at the bottom.
+  _suppressFinishedSection = true;
   liveStatusForcedOpen = false;
   try { stopViewingCloudCampaign(); } catch (_) { /* nothing bound */ }
   // Fresh draft → re-arm the scrape baseline so the next scrape view hides any
