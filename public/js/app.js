@@ -14817,12 +14817,14 @@ async function _submitCloudCampaign(body) {
 }
 
 async function submitStartCampaign(body, opts = {}) {
+  // Ortus Basics: cloud is disabled — never dispatch to the cloud engine.
+  const _cloudDisabled = typeof isCloudRunOn === 'function' && !isCloudRunOn();
   // Cloud edit mode: the wizard is re-launching an EDITED (paused) cloud
   // campaign — divert the body to edit-redispatch instead of a fresh launch.
-  if (_cloudEdit && _cloudEdit.paused) return _submitCloudEditRedispatch(body);
+  if (!_cloudDisabled && _cloudEdit && _cloudEdit.paused) return _submitCloudEditRedispatch(body);
   // "Run in cloud" toggle → hand off to the engine and return; local path below
   // stays exactly as-is for normal (local) launches.
-  if (opts.cloud) return _submitCloudCampaign(body);
+  if (!_cloudDisabled && opts.cloud) return _submitCloudCampaign(body);
   // v2.59.x — Add to Queue routes to /api/campaign/queue-only, which always
   // queues and never auto-drains. The regular Start path is unchanged: it
   // hits /api/campaign/start which fires immediately if idle, queues if a
@@ -27085,8 +27087,11 @@ window.launchStartNow = async function() {
   if (_editingCampaignId) {
     const id = _editingCampaignId;
     _closeLaunchMenu();
-    if (typeof restartCloudCampaignUI === 'function') {
-      await restartCloudCampaignUI(id, false); // continue where it left off
+    // Ortus Basics: cloud is disabled — always restart via the local path.
+    if (typeof isCloudRunOn === 'function' && !isCloudRunOn()) {
+      if (typeof restartLocalFromItem === 'function') await restartLocalFromItem(id, false);
+    } else if (typeof restartCloudCampaignUI === 'function') {
+      await restartCloudCampaignUI(id, false);
     }
     window.location.hash = '#/'; // back to the dashboard to watch it run
     return;
