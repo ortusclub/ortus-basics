@@ -1810,6 +1810,11 @@ select {
   text-transform: uppercase;
 }
 .campaign-name-row > input:focus { border-bottom-color: var(--ink); }
+.campaign-name-row > input.has-warning { border-bottom-color: var(--red); }
+.campaign-name-warn {
+  font-family: var(--mono); font-size: 0.62rem; color: var(--red);
+  letter-spacing: 0.06em; margin-top: 4px;
+}
 .campaign-name-row > .btn { margin-bottom: 4px; white-space: nowrap; }
 
 /* Start CTA — transparent pill with 1px white border + GOLD label (the only gold in the UI) */

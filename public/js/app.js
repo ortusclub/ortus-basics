@@ -7032,10 +7032,14 @@ async function startCampaign(opts = {}) {
       const ni = document.getElementById('campaign-name-input');
       const desired = (ni?.value || '').trim();
       if (desired) {
-        const unique = _uniqueCampaignName(desired, _existingMineCampaignNames());
-        if (ni && unique !== desired) {
-          ni.value = unique;
-          if (typeof showCampaignToast === 'function') showCampaignToast(`That name is taken — saved as "${unique}".`, 4500);
+        const taken = new Set((_knownCampaignNames || []).map(n => String(n).toLowerCase()));
+        const isOwnName = typeof _editingExistingCampaign !== 'undefined' && _editingExistingCampaign
+          && desired.toLowerCase() === String(_openedCampaignName || '').trim().toLowerCase();
+        if (!isOwnName && taken.has(desired.toLowerCase())) {
+          if (typeof _showDupeNameModal === 'function') _showDupeNameModal(desired);
+          else alert('A campaign with this name already exists. Choose a different name.');
+          if (ni) { ni.scrollIntoView({ behavior: 'smooth', block: 'center' }); setTimeout(() => ni.focus(), 400); }
+          return;
         }
       }
     }
@@ -13380,6 +13384,29 @@ async function openCampaignForEdit(id) {
   _bindLiveStatusToCampaign(id);
 }
 window.openCampaignForEdit = openCampaignForEdit;
+
+// ── Live campaign-name collision warning ─────────────────────────────────────
+function _checkCampaignNameCollision() {
+  const input = document.getElementById('campaign-name-input');
+  const warn = document.getElementById('campaign-name-warn');
+  if (!input || !warn) return;
+  const name = (input.value || '').trim();
+  if (!name) { warn.style.display = 'none'; input.classList.remove('has-warning'); return; }
+  // Editing an existing campaign keeps its own name — that is not a clash.
+  if (typeof _editingExistingCampaign !== 'undefined' && _editingExistingCampaign
+      && name.toLowerCase() === String(_openedCampaignName || '').trim().toLowerCase()) {
+    warn.style.display = 'none'; input.classList.remove('has-warning'); return;
+  }
+  const taken = new Set((_knownCampaignNames || []).map(n => String(n).toLowerCase()));
+  if (taken.has(name.toLowerCase())) {
+    warn.textContent = 'A campaign with this name already exists';
+    warn.style.display = '';
+    input.classList.add('has-warning');
+  } else {
+    warn.style.display = 'none';
+    input.classList.remove('has-warning');
+  }
+}
 
 // ── Unique campaign names within "Your campaigns" ───────────────────────────
 // Names of the viewer's OWN non-FG campaigns from the last board render — the
@@ -26814,6 +26841,7 @@ function initWizardDirtyTracking() {
       if (typeof window.updateEditingBanner === 'function') {
         try { window.updateEditingBanner(); } catch (_) {}
       }
+      try { _checkCampaignNameCollision(); } catch (_) {}
     });
     nameInput.__pillMirrorWired = true;
   }
