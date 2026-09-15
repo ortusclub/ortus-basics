@@ -13163,8 +13163,18 @@ window.clearCloudEditMode = clearCloudEditMode;
 // is always visible at the bottom of the wizard, under section 6 (Launch).
 function _bindLiveStatusToCampaign(id, seed = null) {
   try { stopViewingCloudCampaign(); } catch (_) { /* nothing bound yet */ }
-  _viewingCloudId = id;
   liveStatusForcedOpen = true;
+  // Ortus Basics: cloud is disabled — don't set _viewingCloudId or fetch from
+  // the cloud engine. The local poll (pollStatus) owns the card; just force the
+  // Live Status section open so the operator sees the current local state.
+  if (typeof isCloudRunOn === 'function' && !isCloudRunOn()) {
+    try { syncLiveStatusVisibility(); } catch (_) { /* */ }
+    try { placeLiveCard(); } catch (_) { /* */ }
+    const sec = document.getElementById('nav-status');
+    if (sec) sec.classList.remove('collapsed');
+    return;
+  }
+  _viewingCloudId = id;
   // Pin the requested campaign synchronously, before the route changes. The
   // shared #active-card still contains whatever the background local poll last
   // painted (often "N campaigns running in the cloud"). Waiting for the detail
@@ -31040,6 +31050,8 @@ window.openCampaignResumeDecision = async function(id, phase = 'sending', curren
 // 2026-09-01). The status object the card renders already carries the truth:
 // _buildCloudActiveStatus stamps { _cloud: true, id }. Ask the data first.
 function _activeCardCloudId() {
+  // Ortus Basics: cloud is disabled — never route controls through the cloud path.
+  if (typeof isCloudRunOn === 'function' && !isCloudRunOn()) return '';
   if (_viewingCloudId) return String(_viewingCloudId);
   const st = window.__cloudActiveStatus;
   if (st && st._cloud && st.id) return String(st.id);
