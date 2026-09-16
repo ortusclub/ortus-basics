@@ -34417,7 +34417,13 @@ if (typeof window !== 'undefined') {
       }
       // The name IS the campaign's identity, so saving or starting under an
       // existing name UPDATES that campaign — which is what Save means.
-      if (name) await saveCampaignConfigByName(name);
+      if (name) {
+        await saveCampaignConfigByName(name);
+        // saveCampaignConfigByName adds the name to _knownCampaignNames.
+        // Mark as "editing own campaign" so the inline dedup check in the
+        // original function recognises this name as its own, not a clash.
+        _editingExistingCampaign = true;
+      }
       return orig.apply(this, args);
     };
   }
