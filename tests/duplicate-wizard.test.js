@@ -23,7 +23,7 @@ function harness(answers, responses = []) {
 const response = (status, data) => ({ status, ok: status < 400, json: async () => data });
 
 test('duplicate prompts with II, retries an existing name, and copies configuration only after saving', async () => {
-  const h = harness(['Original II', 'Original III'], [response(409, { message: 'Already exists. Choose another name.' }), response(200, { draft: { id: 'new-draft', name: 'Original III' } })]);
+  const h = harness(['Original II', 'Original III'], [response(409, { message: 'Already exists. Choose another name.' }), response(200, { draft: { id: 'new-draft', campaignId: 'duplicate-id', name: 'Original III' } })]);
   const config = { profileIds: ['a', 'b'], sheetUrl: 'sheet', templates: { primaryIntroBody: 'Hello' } };
   await h.context._openDuplicateDraft('Original', config);
   assert.equal(h.prompts[0].defaultValue, 'Original II');
@@ -31,7 +31,7 @@ test('duplicate prompts with II, retries an existing name, and copies configurat
   assert.equal(h.requests[0].body.uniqueName, true);
   assert.deepEqual(h.requests[1].body.config, config);
   assert.equal(h.input.value, 'Original III');
-  assert.deepEqual(h.opened, ['new-draft', config]);
+  assert.deepEqual(JSON.parse(JSON.stringify(h.opened)), ['new-draft', { ...config, campaignId: 'duplicate-id' }]);
 });
 
 test('cancel leaves the source campaign untouched', async () => {

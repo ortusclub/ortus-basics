@@ -872,6 +872,11 @@
         <button type="button" class="route-seg-btn" onclick="goDashboard()">Campaigns</button>
         <button type="button" class="route-seg-btn is-active" onclick="goSalesNav()">Sales Nav Scraper</button>
       </div>
+      <div class="sn-fallback-note" role="note">
+        <strong>Scraper not working for you?</strong>
+        You can always default to the Chrome extension instead.
+        <a href="https://drive.google.com/uc?export=download&amp;id=1F_GjRUY3QOHUpu4XRqdnt0vpjJxEmp8H" target="_blank" rel="noopener">Download the Chrome extension →</a>
+      </div>
       <div class="sn-boardhead">
         <div>
           <div class="sn-kicker" id="sn-datekicker">Sales Nav Scraper</div>
@@ -1002,6 +1007,10 @@
     <div class="section" id="nav-settings">
       <h2 data-edit="h2-settings">1. Campaign Type <span class="section-summary" id="summary-settings"></span></h2>
       <div class="mode-grid" id="mode-grid"></div>
+      <div class="sn-fallback-note" id="ic-beta-note" role="note" style="display:none">
+        <strong>Heads up — the Introduction Campaign has not been extensively tested.</strong>
+        Please be mindful of bugs: check the first few sends, and report anything that looks wrong.
+      </div>
       <select id="campaign-mode" onchange="onModeChange()" style="display:none">
         <!-- Ortus Basics 1.0: the offered campaign types are Message, Connect +
              Introduce Back and Introduction Campaign. Connect Only, Connect + DM,
@@ -1343,6 +1352,10 @@
   .route-seg-btn.is-active{background:var(--ink);color:var(--bg);}
   .route-seg-btn:not(.is-active):hover{color:var(--ink);}
   #salesnav-view > .route-seg{margin-top:14px;}
+  /* Always-visible fallback pointer at the top of the scraper board. */
+  .sn-fallback-note{margin:14px 0 4px;padding:16px 20px;border:2px solid var(--ink,#111);border-left-width:6px;border-radius:0;font-size:16px;font-weight:500;line-height:1.45;}
+  .sn-fallback-note strong{display:block;font-size:18px;font-weight:700;margin-bottom:3px;}
+  .sn-fallback-note a{font-weight:700;text-decoration:underline;color:inherit;white-space:nowrap;}
 
   /* Composer restyle — scoped to the board's inline setup (#sn-setup) ONLY, so
      the shared campaign-wizard sections keep their styling everywhere else.

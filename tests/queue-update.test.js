@@ -20,12 +20,13 @@ try { fs.unlinkSync(QUEUE_FILE); } catch { /* fine if missing */ }
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import {
+// Dynamic import: a static one is hoisted above the ORTUS_DATA_DIR assignment.
+const {
   addToQueue,
   updateQueueEntry,
   removeFromQueue,
   popNextReady,
-} from '../src/campaign-queue.js';
+} = await import('../src/campaign-queue.js');
 
 test('updateQueueEntry — patches name field', async () => {
   const entry = await addToQueue({ name: 'Original', mode: 'C+I' });

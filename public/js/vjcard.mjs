@@ -1,5 +1,5 @@
 import { terminalPresentation } from './campaign-terminal.mjs';
-import { normalizeLifecycle } from './campaign-lifecycle.mjs';
+import { normalizeLifecycle, campaignLifecycle, withCampaignLifecycle, campaignActionSpecs } from './campaign-lifecycle.mjs';
 
 // Pure helpers for rendering card #2 (the .vj-card live-status card) inside an
 // EXPANDED dashboard strip — browser-safe (no DOM), so app.js imports them and
@@ -31,6 +31,7 @@ export function statusFromItem(it = {}) {
     : undefined;
   return {
     lifecycle,
+    campaignId: it.campaignId,
     executionId: lifecycle.executionId,
     needsReview: lifecycle.needsReview,
     reviewAction: lifecycle.reviewAction,
@@ -216,6 +217,7 @@ export function monitorSweepDisposition(status = {}) {
 /** Computed field values for the card body (no time-based countdown here — that
  *  is filled live by the ticker). Pure + testable. */
 export function vjCardFields(status = {}) {
+  if (status.campaignId && !status._cloud) status = withCampaignLifecycle(status);
   const s = status || {};
   const isMonitor = s.state === 'monitoring';
   const isDone = s.state === 'done';
@@ -255,7 +257,7 @@ export function vjCardFields(status = {}) {
   return {
     isMonitor, isDone, isQueued, isWaiting, isInterrupted,
     name: s.name || 'Loading campaign…',
-    eyebrow, pct, done, total, accountsCount, accepted, sendingLbl,
+    eyebrow: s.campaignId && !s._cloud ? campaignLifecycle(s).label : eyebrow, pct, done, total, accountsCount, accepted, sendingLbl,
   };
 }
 
@@ -279,6 +281,19 @@ export function hasLocalCampaignRun(s = {}) {
 }
 
 export function vjCardControlsFor(status = {}) {
+  if (status.campaignId && !status._cloud) {
+    const c = { open: null, sheet: { onclick: 'window.openVjCardSheet(this)' }, pause: null, stop: null, restart: null, copy: null, extra: [] };
+    for (const spec of campaignActionSpecs(status)) {
+      const control = { tip: spec.label, kind: spec.kind, onclick: spec.onclick };
+      if (spec.action === 'open') c.open = control;
+      else if (spec.action === 'pause' || (spec.action === 'resume' && campaignLifecycle(status).status === 'paused')) c.pause = control;
+      else if (spec.action === 'stop') c.stop = control;
+      else if (spec.action === 'check') c.bulk = control;
+      else c.extra.push(control);
+    }
+    if (status.monitoringCheckInProgress) c.stop = { tip: 'Stop check', onclick: 'stopSoloCheck(this)' };
+    return c;
+  }
   const s = status || {};
   const cloud = !!s._cloud;
   const id = _esc(String(s.id || ''));
@@ -496,6 +511,7 @@ export function acctRowState(a = {}, { isCCIC = false, nextMonday = 'Monday' } =
   }
   else if (a.parkReason === 'throttle' || a.parkReason === 'throttle_paused') { pills.push(['bad', 'Throttled']); status = 'Throttled — pausing between sends, it comes back on its own'; }
   else if (a.parkReason === 'unconfirmed_streak') { pills.push(['bad', '5 unconfirmed']); status = 'Five leads in a row could not be confirmed — open the account, then try again'; }
+  else if (a.parkReason === 'op_credit_limit') { pills.push(['bad', 'Suspected OP credits limit reached']); status = 'Benched — five contacts in a row were not Open Profile, so its monthly OP credits are probably used up. Retry to unbench'; }
   else if (a.parked) {
     const reason = String(a.parkReason || 'stopped').replace(/[_-]+/g, ' ');
     pills.push(['bad', 'Stopped']); status = `Stopped — ${reason}`;

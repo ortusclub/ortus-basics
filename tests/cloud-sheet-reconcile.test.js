@@ -83,7 +83,7 @@ test('dup (skipped, no error) → Skipped: Duplicate', () => {
 // canonical "Skipped: …" a local run produces. Table = [engine error, expected].
 const ENGINE_ERROR_CASES = [
   ['Profile not found',                                              'Skipped: Profile not found (404)'],
-  ['NOT_OPEN_PROFILE: lead is not Open Profile (tick "Spend an InMail credit" to message anyway)', 'Skipped: Not Open Profile'],
+  ['NOT_OPEN_PROFILE: lead is not Open Profile (tick "Spend an InMail credit" to message anyway)', 'Skipped: contact is either not Open Profile or the sending account has reached its monthly OP credit limit'],
   ['Connect failed: Connect button not found after 60s [no-tags]',   'Skipped: Connect button not found'],
   ['Session expired — please log in again',                          'Skipped: Session expired'],
   ['Redirected to /authwall',                                        'Skipped: Session expired'],

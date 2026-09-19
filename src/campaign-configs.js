@@ -1,106 +1,84 @@
-/**
- * src/campaign-configs.js — a campaign's wizard settings, kept by NAME.
- *
- * Ortus Basics 1.0. Settings used to hang off the cloud launch-config snapshot,
- * keyed by an engine campaign id. Local runs had no such id, and the ids that
- * did exist did not survive a restart — so reopening a campaign came back empty
- * every time. The operator's own key for a campaign is its name, so that is what
- * this stores against.
- *
- * The rule: a save (Save, or starting a run) writes the settings and they stay
- * written until the same name is saved again. Nothing else clears them.
- *
- * Lives in the app's data directory, so it survives reinstalling the app.
+/** Permanent campaign registry. Names are unique labels, never record keys.
+ * Legacy name-keyed files are backed up and migrated atomically on first read.
  */
-
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, renameSync, copyFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { dataPath } from './paths.js';
-
 const FILE = () => dataPath('campaign-configs.json');
-
-/** Names are compared case-insensitively and trimmed — "Test" and "test " are
- *  the same campaign to an operator, so they must be the same key here. */
-export function normaliseName(name) {
-  return String(name || '').trim().toLowerCase();
+export const normaliseName = name => String(name || '').trim().toLowerCase();
+const empty = () => ({ version: 2, campaigns: {} });
+function writeAll(store) {
+  const tmp = `${FILE()}.tmp`;
+  writeFileSync(tmp, JSON.stringify(store, null, 2) + '\n');
+  renameSync(tmp, FILE());
 }
-
 function readAll() {
-  try {
-    const p = FILE();
-    if (!existsSync(p)) return {};
-    const parsed = JSON.parse(readFileSync(p, 'utf8'));
-    return (parsed && typeof parsed === 'object') ? parsed : {};
-  } catch (err) {
-    console.warn(`[campaign-configs] could not read: ${err.message}`);
-    return {};
+  if (!existsSync(FILE())) return empty();
+  // Do not replace unreadable/corrupt settings with an empty registry.
+  const old = JSON.parse(readFileSync(FILE(), 'utf8'));
+  if (old?.version === 2 && old.campaigns && typeof old.campaigns === 'object') return old;
+  if (!old || typeof old !== 'object' || Array.isArray(old)) throw new Error('Invalid campaign registry');
+  const store = empty();
+  for (const entry of Object.values(old)) {
+    if (!entry || typeof entry !== 'object' || !entry.name) throw new Error('Invalid legacy campaign settings');
+    const campaignId = randomUUID();
+    store.campaigns[campaignId] = { ...entry, campaignId, config: { ...entry.config, campaignId } };
   }
+  if (!existsSync(`${FILE()}.before-ids.bak`)) copyFileSync(FILE(), `${FILE()}.before-ids.bak`);
+  writeAll(store);
+  return store;
 }
-
-function writeAll(all) {
-  writeFileSync(FILE(), JSON.stringify(all, null, 2), 'utf8');
-}
-
-export function saveConfig(name, config) {
+function byName(store, name) {
   const key = normaliseName(name);
-  if (!key) return null;
-  const all = readAll();
-  all[key] = {
-    name: String(name).trim(),      // the operator's own capitalisation
-    savedAt: new Date().toISOString(),
-    config: config || {},
-  };
-  writeAll(all);
-  return all[key];
+  return Object.values(store.campaigns).find(e => normaliseName(e.name) === key) || null;
 }
-
-export function getConfig(name) {
-  return readAll()[normaliseName(name)] || null;
+function conflict(message, code = 'name_exists') {
+  const error = new Error(message); error.status = 409; error.code = code; throw error;
 }
-
-/** Every saved name, newest first — the dashboard needs this to spot clashes. */
+export function getConfig(name) { return byName(readAll(), name); }
+export function getConfigById(campaignId) { return readAll().campaigns[campaignId] || null; }
+export function saveConfig(name, config, { campaignId = config?.campaignId, create = false, listed } = {}) {
+  const label = String(name || '').trim();
+  if (!label) return null;
+  const store = readAll();
+  const named = byName(store, label);
+  const current = campaignId ? store.campaigns[campaignId] : named;
+  if (campaignId && !current) conflict('Campaign no longer exists. Reopen it from the dashboard.', 'unknown_campaign');
+  if ((create && named) || (named && current && named.campaignId !== current.campaignId)) conflict('That campaign name already exists. Please choose a different name.');
+  const id = current?.campaignId || randomUUID();
+  store.campaigns[id] = { ...current, campaignId: id, name: label, listed: listed ?? current?.listed ?? true, savedAt: new Date().toISOString(), config: { ...config, campaignId: id } };
+  writeAll(store);
+  return store.campaigns[id];
+}
+/** Resolve identity without overwriting saved wizard settings. */
+export function ensureCampaignIdentity({ campaignId, name = '', config = {}, listed = true } = {}) {
+  const entry = campaignId ? getConfigById(campaignId) : (normaliseName(name) ? getConfig(name) : null);
+  if (campaignId && !entry) conflict('Campaign no longer exists. Reopen it from the dashboard.', 'unknown_campaign');
+  if (entry) return { campaignId: entry.campaignId, name: entry.name };
+  if (!normaliseName(name)) {
+    const store = readAll(); const id = randomUUID();
+    store.campaigns[id] = { campaignId: id, name: '', listed, savedAt: new Date().toISOString(), config: { ...config, campaignId: id } };
+    writeAll(store); return { campaignId: id, name: '' };
+  }
+  const created = saveConfig(name, config, { listed });
+  return { campaignId: created.campaignId, name: created.name };
+}
 export function listConfigs() {
-  return Object.values(readAll())
-    .map((e) => ({ name: e.name, savedAt: e.savedAt }))
-    .sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+  return Object.values(readAll().campaigns).filter(e => e.listed !== false && normaliseName(e.name)).map(({campaignId,name,savedAt}) => ({campaignId,name,savedAt}))
+    .sort((a,b) => String(b.savedAt).localeCompare(String(a.savedAt)));
 }
-
-/**
- * Rename a campaign: move its settings from one name to another.
- *
- * Settings are keyed by name, so "Save under a new name" wrote a SECOND record
- * and left the first in place — the rename looked saved, then the dashboard
- * showed the old name again because nothing had moved (operator, 2026-09-04).
- *
- * Returns { ok } | { ok:false, reason:'missing'|'clash'|'invalid' }. A clash is
- * refused rather than merged: two campaigns must never collapse into one record.
- */
-export function renameConfig(from, to) {
-  const fromKey = normaliseName(from);
-  const toKey = normaliseName(to);
-  if (!fromKey || !toKey) return { ok: false, reason: 'invalid' };
-  if (fromKey === toKey) {
-    // Same campaign, new capitalisation only — keep the operator's spelling.
-    const all = readAll();
-    if (!all[fromKey]) return { ok: false, reason: 'missing' };
-    all[fromKey].name = String(to).trim();
-    all[fromKey].savedAt = new Date().toISOString();
-    writeAll(all);
-    return { ok: true, name: all[fromKey].name };
-  }
-  const all = readAll();
-  if (!all[fromKey]) return { ok: false, reason: 'missing' };
-  if (all[toKey]) return { ok: false, reason: 'clash' };
-  all[toKey] = { ...all[fromKey], name: String(to).trim(), savedAt: new Date().toISOString() };
-  delete all[fromKey];
-  writeAll(all);
-  return { ok: true, name: all[toKey].name };
+export function renameConfig(from, to, campaignId = null) {
+  if (!normaliseName(to) || (!campaignId && !normaliseName(from))) return { ok: false, reason: 'invalid' };
+  const entry = campaignId ? getConfigById(campaignId) : getConfig(from);
+  if (!entry) return { ok: false, reason: 'missing' };
+  try {
+    const saved = saveConfig(to, entry.config, { campaignId: entry.campaignId });
+    return { ok: true, name: saved.name, campaignId: saved.campaignId };
+  } catch (error) { if (error.code === 'name_exists') return { ok: false, reason: 'clash' }; throw error; }
 }
-
-export function deleteConfig(name) {
-  const all = readAll();
-  const key = normaliseName(name);
-  if (!(key in all)) return false;
-  delete all[key];
-  writeAll(all);
-  return true;
+export function deleteConfig(name, campaignId = null) {
+  const store = readAll();
+  const entry = campaignId ? store.campaigns[campaignId] : byName(store, name);
+  if (!entry) return false;
+  delete store.campaigns[entry.campaignId]; writeAll(store); return true;
 }

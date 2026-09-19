@@ -1,3 +1,4 @@
+import { sameCampaign } from '../public/js/campaign-lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
@@ -6,7 +7,7 @@ const source = readFileSync(new URL('../public/js/app.js', import.meta.url), 'ut
 const code = source.slice(source.indexOf('const _localRestartsPending ='), source.indexOf('window.restartLocalFromItem ='));
 function harness({ item = { name: 'Sam II', hist: { totalProcessed: 7 } }, saved, status = 200, selected = null, live = null } = {}) {
   const requests = [], messages = [];
-  const ctx = vm.createContext({
+  const ctx = vm.createContext({ sameCampaign,
     _boardItemsById: new Map(item ? [['past-1', item]] : []), _snItemsById: new Map(),
     window: {}, _viewingLocalCampaign: selected, _localLive: live, _pfState: null,
     runPreflight: async () => ({ findings: { blockers: [], warnings: [] }, ack: "clean-ack" }),

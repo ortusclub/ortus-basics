@@ -1,3 +1,4 @@
+import { sameCampaign } from '../public/js/campaign-lifecycle.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -9,7 +10,7 @@ const code = source.slice(start, source.indexOf('// v2.160.46: OPEN on an ACTIVE
 test('opening a stopped local campaign binds local status without any cloud request', () => {
   const painted = [];
   const local = { name: 'Sam', running: false, state: null, totalTargets: 5551, totalProcessed: 4, logs: ['Campaign ended'] };
-  const context = vm.createContext({
+  const context = vm.createContext({ sameCampaign,
     _viewingLocalCampaign: null, _localLive: local,
     _boardItemsById: new Map([['local-active', { name: 'Sam', where: 'local' }]]), _snItemsById: new Map(),
     document: { getElementById: () => ({ value: 'Sam' }) }, location: { hash: '#/new' },
@@ -40,7 +41,7 @@ test('all dashboard Open entry points reopen saved local settings and never requ
   for (const entry of ['openCampaignForEdit', 'openCloudLive', 'openRunningCampaignReadOnly']) {
     const painted = [];
     const nameInput = { value: '' };
-    const context = vm.createContext({
+    const context = vm.createContext({ sameCampaign,
       window: {}, location: { hash: '#/' },
       _localLive: status, _viewingLocalCampaign: null,
       _boardItemsById: new Map([['past-1', { name: 'Sam', where: 'local', mode: 'connect_and_introduce' }]]),

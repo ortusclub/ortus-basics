@@ -1,0 +1,31 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { normalizeSkipReason, parkSentence, prettyParkReason, missReason } from '../src/campaign.js';
+
+const OP_SKIP = 'Skipped: contact is either not Open Profile or the sending account has reached its monthly OP credit limit';
+
+test('a not-Open-Profile skip tells the sheet it may be the sender out of OP credits', () => {
+  assert.equal(normalizeSkipReason('Not Open Profile'), OP_SKIP);
+  assert.equal(normalizeSkipReason('NOT_OPEN_PROFILE: lead is not Open Profile (tick "Spend an InMail credit" to message anyway)'), OP_SKIP);
+  assert.equal(normalizeSkipReason(OP_SKIP), OP_SKIP);
+  assert.match(missReason('', OP_SKIP), /Open Profile credits/);
+});
+
+test('the bench reason reads as a suspected OP credits limit everywhere', () => {
+  assert.equal(prettyParkReason('op_credit_limit'), 'suspected OP credits limit reached');
+  assert.match(parkSentence('Suspected OP credits limit reached'), /^Suspected OP credits limit reached/);
+});
+
+test('five not-Open-Profile skips in a row bench the sender; anything else breaks the streak', () => {
+  const src = readFileSync(new URL('../src/campaign.js', import.meta.url), 'utf8');
+  assert.match(src, /const NOT_OP_BENCH_THRESHOLD = 5;/);
+  assert.match(src, /if \(!errorMsg\.includes\('NOT_OPEN_PROFILE'\)\) consecutiveNotOp\.delete\(profileId\);/);
+  const branch = src.slice(src.indexOf("} else if (errorMsg.includes('NOT_OPEN_PROFILE')) {"), src.indexOf("} else if (errorMsg.includes('rate_limited')) {"));
+  assert.match(branch, /_notOp >= NOT_OP_BENCH_THRESHOLD && !weeklyLimited\.has\(profileId\)/);
+  assert.match(branch, /weeklyLimited\.add\(profileId\)/);
+  assert.match(branch, /reason: 'op_credit_limit'/);
+  // Retry (unbench) must reset the streak, or the account re-benches on its first skip.
+  const unpark = src.slice(src.indexOf('campaign._unparkProfile = (profileId) => {'), src.indexOf('campaign._unparkProfile = (profileId) => {') + 500);
+  assert.match(unpark, /consecutiveNotOp\.delete\(profileId\)/);
+});

@@ -10,6 +10,7 @@ const MONITORING_FILE = dataPath('monitoring-campaign.json');
  */
 export const MONITORING_FIELDS = [
   'id',
+  'campaignId',
   'name',
   'state',
   'mode',

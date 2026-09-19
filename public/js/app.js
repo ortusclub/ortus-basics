@@ -1,3 +1,4 @@
+import { campaignLifecycle, sameCampaign, withCampaignLifecycle, campaignActionSpecs } from '/js/campaign-lifecycle.mjs';
 /* global fetch */
 
 // Phase 11.3 — app.js is now an ES module so we can import the Replies renderer
@@ -3444,6 +3445,8 @@ if (typeof window !== 'undefined') window.pickRunTarget = pickRunTarget;
 
 function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
+  const _icNote = document.getElementById('ic-beta-note');
+  if (_icNote) _icNote.style.display = mode === 'introduce_back' ? '' : 'none';
   // Default Follower Growth to the Cloud VM. FG-on-cloud is the intended path — a
   // local FG run opens one GoLogin browser tab per account. Reset the local-pin on
   // the transition INTO follower_growth, then apply the cloud default.
@@ -5623,6 +5626,9 @@ async function setModeByIndex(i) {
   select.value = mode.value;
   onModeChange();
   renderModeSelector();
+  // The select is hidden and set programmatically, so no change event fires —
+  // without this a type switch never reached the draft and a reload reverted it.
+  wizardDirtyOnInput();
 }
 
 function updateOpenProfileVisibility() {
@@ -6347,8 +6353,13 @@ function updateCampaignSummary() {
   const rows = typeof window.sheetTotalRows === 'number' && window.sheetTotalRows > 0 ? window.sheetTotalRows : null;
   if (limitInput && rows) {
     limitInput.max = String(rows);
-    const current = parseInt(limitInput.value, 10) || 0;
-    if (current > rows) limitInput.value = String(rows);
+    // Re-derive from what the operator typed every time. Capping the hidden
+    // value in place was one-way: a small sheet (say 11 rows) previewed earlier
+    // left it stuck at 11 while the visible box still read 75, and the campaign
+    // launched with 11.
+    const typed = parseInt(document.getElementById('daily-limit-input')?.value, 10);
+    const wanted = Number.isFinite(typed) && typed > 0 ? typed : (parseInt(limitInput.value, 10) || 0);
+    limitInput.value = String(Math.min(wanted, rows));
   }
 
   const limit = parseInt(document.getElementById('daily-limit').value, 10) || 50;
@@ -7083,6 +7094,7 @@ async function startCampaign(opts = {}) {
   renderAccountQueue(selectedProfileIds.map(id => profileLabel(id)), null);
 
   const body = {
+    campaignId: _openedCampaignId,
     profileIds: selectedProfileIds,
     sheetUrl,
     sheetGid: window._chosenSheetGid || '',
@@ -8080,6 +8092,8 @@ function _cloudAccountPanel(id, d, leads) {
       state = 'stopped';
       sub = a.parkReason === 'unconfirmed_streak'
         ? 'Five leads in a row could not be confirmed. Open this account, then choose Retry.'
+        : a.parkReason === 'op_credit_limit'
+        ? 'Five contacts in a row were skipped as not Open Profile, which usually means this account has used up its monthly Open Profile credits. Choose Retry to unbench it.'
         : (a.parkReason ? `Stopped: ${String(a.parkReason).replace(/_/g, ' ')}.` : 'Stopped for this run.');
     }
     const reached = sent.filter((l) => String(l.account || '') === pid).map((l) => l.fullName || l.firstName || l.leadUrl || 'Lead');
@@ -9275,6 +9289,22 @@ window.renderCloudAccountsPanel = renderCloudAccountsPanel;
 async function unbenchCloudAccount(campaignId, profileId, btn, quiet) {
   if (!campaignId || !profileId) return;
   if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  // A campaign running on this Mac has no cloud record — un-bench it through the
+  // local engine (same unpark "Try again" uses, without relaunching the browser).
+  if (['local-active', 'legacy-singleton'].includes(String(campaignId)) || (!_viewingCloudId && _localLive)) {
+    try {
+      const r = await fetch(`/api/campaign/profile/${encodeURIComponent(profileId)}/retry`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ open: false }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      if (!quiet) showCampaignToast(`▶ ${j.profileName || 'Account'} un-benched — it rejoins on its next turn.`, 6000);
+    } catch (e) {
+      showCampaignToast('Could not un-bench this account: ' + e.message, 6000);
+      if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
+    }
+    return;
+  }
   try {
     const res = await fetch(`/api/campaign/cloud/${encodeURIComponent(campaignId)}/accounts/${encodeURIComponent(profileId)}/unbench`, { method: 'POST' });
     const d = await res.json().catch(() => ({}));
@@ -9452,7 +9482,7 @@ async function deleteBoardCampaign(id, btn) {
   if (!confirm(`Delete "${name}"?\n\nThis removes it from your dashboard for good.`)) return;
   try {
     if (it?.bucket === 'saved') {
-      const response = await fetch('/api/campaign-configs/' + encodeURIComponent(it.name), { method: 'DELETE' });
+      const response = await fetch('/api/campaign-configs/' + encodeURIComponent(it.name) + (it.campaignId ? '?campaignId=' + encodeURIComponent(it.campaignId) : ''), { method: 'DELETE' });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Could not delete saved campaign.');
       await refreshKnownCampaignNames();
@@ -9550,7 +9580,7 @@ async function duplicateCampaign(id) {
   let config = null; let srcName = it.name || 'Campaign';
   try {
     if (it.bucket === 'saved') {
-      const r = await fetch('/api/campaign-configs/' + encodeURIComponent(srcName));
+      const r = await fetch(it.campaignId ? '/api/campaign-configs/by-id/' + encodeURIComponent(it.campaignId) : '/api/campaign-configs/' + encodeURIComponent(srcName));
       if (r.ok) { const data = await r.json(); config = data.config; }
     } else if (it.where === 'cloud') {
       const r = await fetch(`/api/campaign/cloud/${encodeURIComponent(it.id)}/launch-config`);
@@ -9614,6 +9644,7 @@ window.duplicateWizardCampaign = async function() {
 };
 
 async function _openDuplicateDraft(srcName, config) {
+  config = { ...config, campaignId: undefined };
   let proposed = `${srcName} II`;
   let label = 'What would you like to call the duplicate campaign?';
   let error = '';
@@ -9655,6 +9686,9 @@ async function _openDuplicateDraft(srcName, config) {
   liveStatusForcedOpen = false;
   _editingExistingCampaign = false;
   try { localStorage.removeItem('wizardStoppedFromContext'); } catch (_) {}
+  _openedCampaignId = draft.campaignId || null;
+  _openedCampaignName = draft.name;
+  config = { ...config, campaignId: _openedCampaignId };
   setActiveDraftId(draft.id);
   goCreateCampaign();
   const ni = document.getElementById('campaign-name-input');
@@ -10075,7 +10109,7 @@ function _vjControlsHtml(c, status, options = {}) {
   let goHtml = '';
   for (const e of (c.extra || [])) {
     if (e.kind === 'show') actions += dib(V3_SVG_EYE, 'Show', e.onclick);
-    else if (e.kind === 'play') {
+    else if (e.kind === 'play' || e.kind === 'queue') {
       goHtml += `<button class="btn-pill go${e.once ? ' one-shot' : ''}" onclick="${e.onclick}">${escHtml(e.tip || 'Resume sending')}</button>`;
     } else {
       const svg = e.kind === 'debrief' ? V3_SVG_DOC : e.kind === 'dup' ? V3_SVG_COPY
@@ -10654,16 +10688,22 @@ function _fillVjCards(board) {
 function renderSavedCampaignStrip(it) {
   const id = escHtml(it.id);
   const action = (icon, label, handler, cls = '') => `<button type="button" class="dock-btn ${cls}" data-tip="${label}" aria-label="${label}" onclick="${handler}">${icon}</button>`;
+  if (it.campaignId) {
+    const controls = campaignActionSpecs(it).map(spec => spec.action === 'open' || spec.action === 'queue'
+      ? `<button class="mini${spec.action === 'open' ? ' solid' : ''}" onclick="${spec.onclick}">${spec.action === 'open' ? 'Open' : 'Queue'}</button>`
+      : action(spec.kind === 'dup' ? V3_SVG_COPY : spec.kind === 'delete' ? V3_SVG_TRASH : V3_SVG_PLAY, spec.label, spec.onclick, spec.kind === 'delete' ? 'danger' : '')).join('');
+    return `<div class="sn-strip done sn-collapsed"><div class="sn-top"><span class="sn-type">Saved campaign</span></div><div class="sn-name">${escHtml(it.name)}</div><div class="sn-foot"><div class="right">${controls}</div></div></div>`;
+  }
   return `<div class="sn-strip done sn-collapsed"><div class="sn-top"><span class="sn-type">Saved campaign</span></div><div class="sn-name">${escHtml(it.name)}</div><div class="sn-foot"><div class="right">`
     + action(V3_SVG_PLAY, 'Start campaign', `openSavedCampaignStart('${id}')`)
     + action(V3_SVG_TRASH, 'Delete', `deleteBoardCampaign('${id}', this)`, 'danger')
     + action(V3_SVG_COPY, 'Duplicate', `duplicateCampaign('${id}')`)
     + `<button class="mini solid" onclick="openCampaignForEdit('${id}')">Open</button></div></div></div>`;
 }
-window.openSavedCampaignStart = async function(id) {
+window.openSavedCampaignStart = async function(id, action = 'start') {
   await openCampaignForEdit(id);
   scrollToSection('nav-launch');
-  document.getElementById('btn-start')?.focus({ preventScroll: true });
+  document.getElementById(action === 'queue' ? 'btn-queue' : 'btn-start')?.focus({ preventScroll: true });
 };
 
 function renderUnifiedStrip(it) {
@@ -10754,6 +10794,7 @@ function renderUnifiedStrip(it) {
   // engine ships `state` + `senders` on the campaign detail — until then
   // both stay undefined and this never fires (graceful degradation).
   const hsAwaiting = cloud && it.state === 'awaiting_primary_accept' && Array.isArray(it.senders);
+  if (it.campaignId && !cloud) statusTxt = campaignLifecycle(it).label;
   if (hsAwaiting) statusTxt = '🔒 Primary handshake';
   // A launch still running on THIS Mac (handshake → dispatch). Reuses the same
   // handshake panel, but says where it actually is — "Primary handshake" would be
@@ -11015,6 +11056,14 @@ function renderUnifiedStrip(it) {
     foot = _cloudCheck + restartBtns + dismiss + dup + debriefBtn + _doneOpen;
   }
 
+  if (it.campaignId && !cloud) {
+    const specs = campaignActionSpecs(it);
+    foot = specs.map(spec => spec.action === 'open'
+      ? `<button class="mini solid" onclick="${spec.onclick}">Open</button>`
+      : _dib(spec.kind === 'dup' ? V3_SVG_COPY : spec.kind === 'delete' ? V3_SVG_TRASH : spec.kind === 'restart' ? V3_SVG_RESTART : spec.kind === 'debrief' ? V3_SVG_DOC : spec.kind === 'pause' ? V3_SVG_PAUSE : spec.kind === 'stop' ? V3_SVG_STOP : V3_SVG_PLAY,
+        spec.label, spec.onclick, spec.kind === 'delete' || spec.kind === 'stop' ? 'danger' : '')).join('');
+  }
+
   // Active and expanded historical strips render card #2 (.sn-vjcard) instead
   // of the compact body. Active strips never switch renderer when clicked.
   // No card #2 clone for a launch: it has no campaign status to fill, and
@@ -11097,6 +11146,7 @@ const _DB_PARK_LABELS = { // mirrors prettyParkReason in src/campaign.js
   session_expired:   'logged out / session expired',
   weekly_limit_429:  'weekly invite limit reached',
   consecutive_skips: 'too many consecutive skips / failures',
+  op_credit_limit:   'suspected OP credits limit reached',
   challenge:         'LinkedIn checkpoint — needs a human',
   throttle_paused:   'throttled (429) — paused',
 };
@@ -11747,25 +11797,26 @@ async function renderCampaignsBoard() {
 // A local campaign is stored by name; history contains one entry per run.
 // Keep original indices for history actions, but show only its latest run.
 function localDashboardLifecycle(status) {
-  const interrupted = status.state === 'interrupted' || !!status.interrupted;
-  return interrupted
-    ? { bucket: 'done', bad: true, badLabel: 'Stopped', paused: false }
-    : { bucket: 'running' };
+  const lifecycle = campaignLifecycle(status);
+  return { lifecycle, bucket: lifecycle.bucket,
+    paused: lifecycle.status === 'paused',
+    bad: lifecycle.status === 'stopped' || lifecycle.status === 'failed',
+    badLabel: lifecycle.label };
 }
 
 function unlistedSavedCampaigns(configs, items, drafts) {
-  const key = name => String(name || '').trim().toLowerCase();
-  const present = new Set([...items, ...drafts].map(item => key(item.name)));
-  return configs.filter(item => key(item.name) && !present.has(key(item.name)));
+  const key = item => item.campaignId || String(item.name || '').trim().toLowerCase();
+  const present = new Set([...items, ...drafts].map(key));
+  return configs.filter(item => key(item) && !present.has(key(item)));
 }
 
 function latestLocalCampaignHistory(hist, currentItems = []) {
   const key = name => String(name || '').trim().toLowerCase();
-  const seen = new Set(currentItems.filter(it => it.where === 'local' && key(it.name)).map(it => key(it.name)));
+  const seen = new Set(currentItems.filter(it => it.where === 'local' && key(it.name)).map(it => it.campaignId || key(it.name)));
   const latest = [];
   for (let i = hist.length - 1; i >= 0; i--) {
     const p = hist[i];
-    const name = key(p.name);
+    const name = p.campaignId || key(p.name);
     if (name && seen.has(name)) continue;
     if (name) seen.add(name);
     latest.push({ p, histIdx: i });
@@ -11818,7 +11869,7 @@ async function _renderCampaignsBoardInner() {
     const _adopted = s && s.id && s.id !== 'legacy-singleton';
     if (s && (s.running || s.state === 'monitoring' || s.state === 'interrupted' || s.state === 'waiting_daily_reset') && !_adopted) {
       items.push({
-        where: 'local', id: 'local-active', name: s.name, mode: s.mode, isFG: s.mode === 'follower_growth',
+        where: 'local', id: 'local-active', campaignId: s.campaignId, lifecycle: campaignLifecycle(s), name: s.name, mode: s.mode, isFG: s.mode === 'follower_growth',
         ...localDashboardLifecycle(s), sent: s.totalProcessed || 0, total: s.totalTargets || 0,
         startedAt: Date.parse(s.startedAt || s.started_at || '') || Number(s.startedAt) || 0,
         pending: Math.max(0, (Number(s.totalTargets) || 0) - (Number(s.totalProcessed) || 0)),
@@ -11837,7 +11888,7 @@ async function _renderCampaignsBoardInner() {
         // back to RUNNING / Working even though only scheduled checks remain.
         monitoringPhase: s.state === 'monitoring',
         monitoring: s.state === 'monitoring',
-        paused: !(s.state === 'interrupted' || s.interrupted) && (s.state === 'monitoring' || !!(s.paused || s._paused)),
+        paused: campaignLifecycle(s).status === 'paused',
         monitoringCheckInProgress: !!s.monitoringCheckInProgress,
         live: !!s.live,
         liveAccount: s.liveAccount || s.currentProfile || '',
@@ -11871,7 +11922,7 @@ async function _renderCampaignsBoardInner() {
     const q = await (await fetch('/api/queue')).json();
     for (const it of (q.queue || [])) {
       if (it.dailyContinuation && _localLive?.state === 'waiting_daily_reset') continue;
-      items.push({ where: 'local', id: 'q-' + it.id, rawId: it.id, name: it.name, mode: it.mode,
+      items.push({ where: 'local', id: 'q-' + it.id, rawId: it.id, campaignId: it.campaignId, lifecycle: it.lifecycle, name: it.name, mode: it.mode,
         isFG: it.mode === 'follower_growth', bucket: it.dailyContinuation ? 'running' : 'queued', accounts: (it.profileIds || []).length,
         mine: true, scheduledAt: it.scheduledAt || null, dailyWait: !!it.dailyContinuation,
         resumeAt: it.scheduledAt || null, engineStatus: it.dailyContinuation ? 'waiting_daily_reset' : 'queued' });
@@ -12174,7 +12225,7 @@ async function _renderCampaignsBoardInner() {
       // its log after the running → done transition.
       const endedLogs = (_endedLogs && _endedName && p.name === _endedName) ? _endedLogs : null;
       if (endedLogs) _endedLogs = null; // only the newest matching strip gets it
-      items.push({ where: 'local', id: hid, name: p.name, mode: p.mode,
+      items.push({ where: 'local', id: hid, campaignId: p.campaignId, name: p.name, mode: p.mode,
         isFG: p.mode === 'follower_growth', bucket: 'done', sent: p.totalProcessed || 0,
         total: p.totalProcessed || 0, accounts: (p.profiles || []).length, mine: true,
         bad: stopped, badLabel: 'Stopped', srcSettings: p.settings || null, histIdx,
@@ -12191,7 +12242,7 @@ async function _renderCampaignsBoardInner() {
       fetch('/api/drafts').then(r => { if (!r.ok) throw new Error('Drafts unavailable'); return r.json(); }),
     ]);
     for (const saved of unlistedSavedCampaigns(savedData.configs || [], items, draftData.drafts || [])) {
-      items.push({ id: 'saved-' + encodeURIComponent(saved.name), name: saved.name,
+      items.push({ id: 'saved-' + (saved.campaignId || encodeURIComponent(saved.name)), campaignId: saved.campaignId, name: saved.name,
         where: 'local', mine: true, bucket: 'saved', hasRun: false });
     }
   } catch (err) { console.warn('[board] saved campaigns:', err.message); }
@@ -13130,13 +13181,13 @@ function _bindLiveStatusToCampaign(id, seed = null) {
   stopViewingCloudCampaign();
   const item = _boardItemsById.get(id) || _snItemsById.get(id);
   const name = item?.name || seed?.name || document.getElementById('campaign-name-input')?.value || '';
-  const sameLocal = _localLive && String(_localLive.name || '').trim().toLowerCase() === name.trim().toLowerCase();
+  const sameLocal = sameCampaign(_localLive, { campaignId: item?.campaignId || seed?.campaignId, name });
   const snapshot = item?.bucket === 'saved' ? { name, state: 'draft', hasRun: false, running: false }
     : sameLocal ? _localLive : (item ? statusFromItem(item) : seed);
   _viewingLocalCampaign = {
-    id, name,
+    id, name, campaignId: item?.campaignId || seed?.campaignId,
     status: { ...(snapshot || {}), _cloud: false, runsOn: 'local', queued: false,
-      name, id: sameLocal ? 'local-active' : id,
+      name, campaignId: item?.campaignId || seed?.campaignId, id: sameLocal ? 'local-active' : id,
       running: !!snapshot?.running, state: snapshot?.state || (snapshot?.running ? null : 'done'),
       connectionUnknown: false },
   };
@@ -13151,8 +13202,7 @@ function _bindLiveStatusToCampaign(id, seed = null) {
 function localCampaignViewStatus(incoming) {
   if (!_viewingLocalCampaign || location.hash !== '#/new') return incoming;
   const selected = _viewingLocalCampaign;
-  if (!incoming?._cloud && incoming?.name &&
-      incoming.name.trim().toLowerCase() === selected.name.trim().toLowerCase()) {
+  if (!incoming?._cloud && sameCampaign(incoming, selected)) {
     selected.status = { ...incoming, _cloud: false, runsOn: 'local', id: 'local-active' };
   }
   return selected.status;
@@ -13249,7 +13299,7 @@ async function openCampaignForEdit(id) {
 
   let _loaded = false;
   if (displayName && typeof loadCampaignConfigByName === 'function') {
-    try { _loaded = await loadCampaignConfigByName(displayName); } catch (_) { _loaded = false; }
+    try { _loaded = await loadCampaignConfigByName(displayName, _it?.campaignId); } catch (_) { _loaded = false; }
     if (_loaded) {
       // loadCampaignConfigByName writes the name too; re-assert the board's
       // capitalisation so the field reads as the operator named it.
@@ -13399,16 +13449,17 @@ async function restartLocalFromItem(id, fromStart, reviewed = null) {
   try {
     const selected = _viewingLocalCampaign?.id === id ? _viewingLocalCampaign : null;
     const it = _boardItemsById.get(id) || _snItemsById.get(id) || selected;
-    const name = it?.name || '';
+    let name = it?.name || '';
     let s = it?.srcSettings;
     // History cards need not include settings. The named saved configuration
     // is authoritative, just as it is when opening the campaign editor.
     if (name) {
-      const saved = await fetch(`/api/campaign-configs/${encodeURIComponent(name)}`);
+      const saved = await fetch(it?.campaignId ? `/api/campaign-configs/by-id/${encodeURIComponent(it.campaignId)}` : `/api/campaign-configs/${encodeURIComponent(name)}`);
       if (saved.ok) {
         const data = await saved.json();
         if (!data.config || typeof data.config !== 'object') throw new Error('Saved campaign settings could not be read.');
         s = data.config;
+        name = data.name || name;
       } else if (saved.status !== 404) {
         throw new Error(`Could not load saved settings (${saved.status}). Please try again.`);
       }
@@ -13432,7 +13483,7 @@ async function restartLocalFromItem(id, fromStart, reviewed = null) {
     };
     delete payload.resumeContext;
     if (!fromStart) {
-      const live = _localLive?.name === name ? _localLive : selected?.status;
+      const live = sameCampaign(_localLive, { campaignId: s.campaignId || it?.campaignId, name }) ? _localLive : selected?.status;
       payload.resumeContext = { totalProcessed: Number(live?.totalProcessed ?? it?.hist?.totalProcessed ?? it?.hist?.successCount ?? 0) || 0 };
     }
     // Resume uses the same review dialog as a new launch. Continue submits
@@ -15792,6 +15843,7 @@ function updateCockpit(s) {
   // campaign name (the dashboard active row was rendering correctly
   // because it reads from the fetch response directly).
   __cockpit.name = s.name || '';
+  __cockpit.campaignId = s.campaignId || null;
   // v2.59 — mirror totalProcessed too. The wizard Stop→Start resume
   // path (stopCampaign at L3219, wizardStoppedFromContext.totalProcessed)
   // snapshots this off __cockpit, then ships it server-side as
@@ -16333,6 +16385,9 @@ function renderAccountQueue(names, currentName, status, profileIds) {
         const n = parkedHit.skipCount ? `${parkedHit.skipCount} consecutive skips` : 'too many consecutive skips';
         return { label: 'Parked · too many skips', stateClass: 'chip-parked', detail: n };
       }
+      if (r === 'op_credit_limit') {
+        return { label: 'Benched · Suspected OP credits limit reached', stateClass: 'chip-parked', detail: '5 contacts in a row not Open Profile' };
+      }
       return { label: 'Parked', stateClass: 'chip-parked', detail: r || '' };
     }
     if (cooldownHit) {
@@ -16573,6 +16628,7 @@ let _localLive = null;
 
 function _decorateLocalLiveStatus(s) {
   if (!s) return s;
+  if (s.campaignId && !s._cloud) s = withCampaignLifecycle(s);
   const reportedPhase = String(s.currentAction?.phase || '').toLowerCase();
   const hasLiveWork = ['checking', 'introducing', 'sending'].includes(reportedPhase);
   if (!s.running && !s.monitoringCheckInProgress && !hasLiveWork) return s;
@@ -16656,6 +16712,7 @@ function _decorateLocalLiveStatus(s) {
         : weeklyCap ? 'weekly'
         : /throttl|429|rate.?limit/.test(reason) ? 'throttle'
         : /cannot.?open|browser/.test(reason) ? 'browser-error'
+        : /op credit/.test(reason) ? 'op_credit_limit'
         : (a.state || 'stopped');
       return {
         profileId: (s.profileIds || [])[i] || a.email || '',
@@ -18536,6 +18593,7 @@ function collectCurrentConfig() {
     return isNaN(n) ? fallback : n;
   };
   return {
+    campaignId: _openedCampaignId,
     mode: getV('campaign-mode') || 'connect_only',
     sheetUrl: getV('sheet-url').trim(),
     profileIds: [...selectedProfileIds],
@@ -18645,6 +18703,7 @@ function applyPresetConfig(config) {
   // carrying these fields silently lose them on load — backend pacing is now
   // a fixed 6-min per-account turn floor + queue rotation.
   setV('daily-limit', config.dailyLimit ?? 50);
+  setV('daily-limit-input', config.dailyLimit ?? 50);
   setV('message-gap', config.messageGap ?? 60);
   setV('within-batch-min', config.delayMin ?? 30);
   setV('within-batch-max', config.delayMax ?? 60);
@@ -19669,6 +19728,7 @@ function _humanAgoFromTs(ts) {
 function _prettyParkReason(r) {
   switch (r) {
     case 'consecutive_skips': return 'too many skips';
+    case 'op_credit_limit':   return 'suspected OP credits limit';
     case 'session_expired':   return 'session expired';
     default:                  return r || 'parked';
   }
@@ -21172,6 +21232,8 @@ async function editDraft(id) {
     const r = await fetch('/api/drafts/' + encodeURIComponent(id));
     if (r.ok) {
       const d = await r.json();
+      _openedCampaignId = d.campaignId || d.config?.campaignId || null;
+      _openedCampaignName = d.name || '';
       const input = document.getElementById('campaign-name-input');
       if (input && d) input.value = d.name || '';
       // Opening a draft used to set its NAME and nothing else — the draft's own
@@ -21450,6 +21512,9 @@ async function editQueuedCampaign(id) {
   } catch {}
   if (draftId) setActiveDraftId(draftId);
 
+  _openedCampaignId = entry.campaignId || entry.config.campaignId || null;
+  _openedCampaignName = entry.name || '';
+  _editingExistingCampaign = true;
   const nameInput = document.getElementById('campaign-name-input');
   if (nameInput) nameInput.value = entry.name || '';
   if (typeof applyPresetConfig === 'function') applyPresetConfig(entry.config);
@@ -22986,6 +23051,8 @@ window.resumeWithEditFirst = resumeWithEditFirst;
 // in the Dashboard's Drafts section), so the operator can stage multiple
 // campaigns in parallel without losing any.
 async function startNewCampaign() {
+  _openedCampaignId = null;
+  _openedCampaignName = '';
   window.__viewingActiveCampaign = false;
   // v2.160.42: a fresh campaign is type-editable — clear any lock left over from
   // an OPEN-to-edit of an existing campaign.
@@ -23011,6 +23078,7 @@ async function startNewCampaign() {
     });
     if (r.ok) {
       const data = await r.json();
+      _openedCampaignId = data.draft?.campaignId || null;
       setActiveDraftId(data?.draft?.id || '');
     }
   } catch { /* fall through; wizard still works without a draft id */ }
@@ -23549,6 +23617,8 @@ document.addEventListener('click', (e) => {
 });
 
 window.addEventListener('hashchange', applyRoute);
+// The live-campaign bar is only for the editor showing that campaign — re-check it on every route change.
+window.addEventListener('hashchange', () => { try { window.updateEditingBanner?.(); } catch (_) {} });
 document.addEventListener('DOMContentLoaded', applyRoute);
 // Defer the initial sync route so the rest of this module (incl. the
 // Connections state `let`s + helpers below) has finished evaluating before
@@ -26864,7 +26934,10 @@ async function _flushAutosave() {
   if (!id) return;
   // Unbound wizard → we cannot say which campaign this form is, so we must not
   // write it anywhere. Silence beats corrupting a record.
-  const expectKey = _campaignKey(_currentWizardName());
+  // The campaign the form was opened as, not the name box: a rename typed into
+  // the box would otherwise never match the stored draft, every autosave would
+  // be refused, and the draft detached — silently dropping later edits.
+  const expectKey = boundWizardKey() || _campaignKey(_currentWizardName());
   if (!expectKey) return;
   let config = null;
   try { config = (typeof collectCurrentConfig === 'function') ? collectCurrentConfig() : null; }
@@ -26958,8 +27031,29 @@ window.updateEditingBanner = function() {
   // startCampaign), so `id` goes null even though the operator is still in the
   // editor watching a live run. Keep the rail up when a campaign is running /
   // paused / monitoring, and swap its contents to campaign controls.
-  const running = !!(typeof __cockpit !== 'undefined' && __cockpit &&
+  const anyRunning = !!(typeof __cockpit !== 'undefined' && __cockpit &&
     (__cockpit.running || __cockpit.paused || __cockpit.state === 'monitoring'));
+  // The Pause/Stop bar belongs to the running campaign only: show it on the
+  // editor while THAT campaign is open — never on the dashboard, and never
+  // while a different campaign is being edited (that one gets its own launch
+  // pill, or nothing).
+  let openIsRunning = false;
+  const onEditor = (location.hash || '').startsWith('#/new');
+  if (!onEditor) {
+    if (inline) inline.style.display = 'none';
+    if (rail) rail.style.display = 'none';
+    document.body.classList.remove('has-launch-rail');
+    return;
+  }
+  if (anyRunning) {
+    let openedId = null;
+    try { openedId = _openedCampaignId; } catch (_) { /* declared later in the module */ }
+    openIsRunning = sameCampaign(__cockpit, {
+      campaignId: openedId,
+      name: (document.getElementById('campaign-name-input')?.value || '').trim(),
+    });
+  }
+  const running = openIsRunning;
   if (!id && !running) {
     if (inline) inline.style.display = 'none';
     if (rail) rail.style.display = 'none';
@@ -27336,12 +27430,13 @@ window.launchScheduleIt = async function () {
 // Save as draft — autosave already persisted everything; this just closes
 // the wizard and returns to the dashboard. The draft stays in the drafts
 // list and the resume pill will surface it from the dashboard header.
-window.launchSaveAsDraft = function() {
+window.launchSaveAsDraft = async function() {
   _closeLaunchMenu();
   // Ortus Basics 1.0: Save stays put. It used to jump back to the dashboard,
   // which threw away the operator's place in the wizard; the toast is the
-  // confirmation that the selected settings were stored. Autosave already holds
-  // the data, so there is still no backend call to make here.
+  // confirmation that the selected settings were stored. Flush the debounced
+  // autosave first so the draft — what a reload restores from — has them too.
+  await flushAutosaveImmediate();
   if (typeof showCampaignToast === 'function') showCampaignToast('Saved');
 };
 
@@ -27775,6 +27870,7 @@ function _activeProfileChip(name, status) {
     if (r === 'session_expired')  return { label: 'Needs login',         cls: 'is-warn' };
     if (r === 'weekly_limit_429') return { label: 'Weekly limit reached', cls: 'is-warn' };
     if (r === 'consecutive_skips') return { label: 'Parked·skips',       cls: 'is-warn' };
+    if (r === 'op_credit_limit')  return { label: 'OP credits limit?',  cls: 'is-warn' };
     return { label: 'Parked', cls: 'is-warn' };
   }
   if (warningHit) {
@@ -28222,6 +28318,7 @@ function _stageAcctPill(a, isCurrent, counts) {
   else if (benchWord) { cls = 'bad'; text = benchWord; tip = String(a.bench || ''); }
   else if (a.parkReason === 'throttle' || a.parkReason === 'throttle_paused') { cls = 'warn'; text = 'Throttled'; }
   else if (a.parkReason === 'unconfirmed_streak') { cls = 'bad'; text = '5 unconfirmed'; tip = 'Five leads in a row could not be confirmed. Open this account, then choose Retry.'; }
+  else if (a.parkReason === 'op_credit_limit') { cls = 'bad'; text = 'Suspected OP credits limit reached'; tip = 'Five contacts in a row were skipped as not Open Profile, which usually means this account has used up its monthly Open Profile credits. Choose Retry to unbench it.'; }
   else if (a.parked) { cls = 'bad'; text = 'Stopped'; tip = String(a.parkReason || 'Reason recorded in the account details'); }
   // Out of credits having sent NOTHING is a blocked account; out of credits
   // having spent them all is just a finished one. Same number, different news.
@@ -28267,7 +28364,7 @@ function _stageAcctPill(a, isCurrent, counts) {
 // The pill's drawer. Only actions that already exist and act on THIS account:
 // watching its browser, and clearing a bench. Add/remove live in the accounts
 // panel below the card — this doesn't duplicate them.
-function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '') {
+function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '', onCloud = true) {
   const email = escHtml(_acctLabel(a, { full: true }));
   const benched = !!(a.weeklyCap || a.parkReason === 'weekly' || a.parked);
   // A failed acceptance sweep reports the login problem through sweepAction,
@@ -28296,6 +28393,7 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '') {
   // until it rolls over, and asking again only spends strikes.
   if (benched && !a.needsLogin && !weekly) acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Retry — clear the bench</button>`);
   const why = a.parkReason === 'unconfirmed_streak' ? ' · five leads in a row could not be confirmed; open the account, then Retry'
+    : a.parkReason === 'op_credit_limit' ? ' · suspected OP credits limit reached (5 contacts in a row not Open Profile); Retry to unbench'
     : a.parkReason === 'proxy' ? ' · its GoLogin proxy is refusing the browser'
     : a.bench ? ` · ${escHtml(String(a.bench))} — sits out the rest of this run, retries next run`
     : weekly ? ` · LinkedIn weekly invitation cap — resets ${_nextMondayText()}`
@@ -28319,7 +28417,7 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '') {
   return `<div class="stg-drawer"><div class="dh"><b>${email}</b>${st}`
     + `<span class="x" onclick="stageAcctPick(this,'')">✕ close</span></div>`
     + `<div class="dl">${a.dailyCount || 0}/${a.dailyLimit || 0} sent today${why}<br>`
-    + `${isCurrent ? 'Currently driving this campaign on the VM.' : 'Not currently driving anything.'}${lastMonitor}</div>`
+    + `${isCurrent ? (onCloud ? 'Currently driving this campaign on the VM.' : 'Currently driving this campaign on this Mac.') : 'Not currently driving anything.'}${lastMonitor}</div>`
     + (acts.length ? `<div class="acts">${acts.join('')}</div>` : '') + danger + '</div>';
 }
 
@@ -29175,7 +29273,7 @@ function renderLiveStage(root, status) {
     const drawer = _stgFld(root, 'stageDrawer');
     if (drawer) {
       const a = accts.find((x) => x.profileId === sel);
-      drawer.innerHTML = a ? _stageDrawerHtml(cid, a, isCur(a), !!status.live, _removeState) : '';
+      drawer.innerHTML = a ? _stageDrawerHtml(cid, a, isCur(a), !!status.live && !!status._cloud, _removeState, !!status._cloud) : '';
     }
     // Only the stalled state gets advice — during a send there is nothing to fix.
     const fix = _stgFld(root, 'stageFix');
@@ -29803,6 +29901,7 @@ window.renderActiveCard = function(status) {
     }
   }
   status = localCampaignViewStatus(status);
+  if (status.campaignId && !status._cloud) status = withCampaignLifecycle(status);
   if (!String(status.name || '').trim()) {
     status = { ...status, name: _viewingLocalCampaign?.name || window.__localLaunchName || '', _loadingIdentity: true };
   }
@@ -30181,7 +30280,7 @@ window.renderActiveCard = function(status) {
   const done = Number(status.totalProcessed) || 0;
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
   v3SetText('activeName', status.name || 'Loading campaign…');
-  v3SetText('activeEyebrow', status._loadingIdentity ? 'Loading campaign…' : _isPreflight ? (status.hasHandshake === false ? 'Starting the campaign' : 'Phase 0 · Primary handshake')
+  v3SetText('activeEyebrow', status.campaignId && !status._cloud ? campaignLifecycle(status).label : status._loadingIdentity ? 'Loading campaign…' : _isPreflight ? (status.hasHandshake === false ? 'Starting the campaign' : 'Phase 0 · Primary handshake')
     : isMonitoring
       ? (status.monitoringCheckInProgress ? 'Monitoring' : 'Paused · Monitoring')
       : (status._paused || status.paused ? 'Paused' : 'Running'));
@@ -32536,7 +32635,7 @@ function renderLiveConsole(s) {
   // server state intact, but don't present it as this draft's activity.
   if (isOnNewCampaignView() && !_launchCheckPending) {
     const name = (document.getElementById('campaign-name-input')?.value || '').trim();
-    if (!name || name.toLowerCase() !== String(s?.name || '').trim().toLowerCase()) {
+    if (!name || !sameCampaign(s, { campaignId: _openedCampaignId, name })) {
       s = { name, running: false, state: 'draft', logs: [], profileNames: [],
         currentAction: { label: 'Not started yet' } };
     }
@@ -34336,24 +34435,26 @@ async function saveCampaignConfigByName(name) {
   try {
     const r = await fetch('/api/campaign-configs', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: n, config: collectCurrentConfig() }),
+      body: JSON.stringify({ name: n, campaignId: _openedCampaignId, config: collectCurrentConfig() }),
     });
     const d = await r.json().catch(() => ({}));
-    if (d.ok) { _openedCampaignName = n; await refreshKnownCampaignNames(); }
+    if (d.ok) { _openedCampaignId = d.saved.campaignId; _openedCampaignName = n; await refreshKnownCampaignNames(); }
     return !!d.ok;
   } catch (_) { return false; }
 }
 
 /** Put a saved campaign's settings back into the wizard. */
 let _openedCampaignName = '';
-async function loadCampaignConfigByName(name) {
+let _openedCampaignId = null;
+async function loadCampaignConfigByName(name, campaignId = null) {
   const n = String(name || '').trim();
   if (!n) return false;
   try {
-    const r = await fetch(`/api/campaign-configs/${encodeURIComponent(n)}`);
+    const r = await fetch(campaignId ? `/api/campaign-configs/by-id/${encodeURIComponent(campaignId)}` : `/api/campaign-configs/${encodeURIComponent(n)}`);
     if (!r.ok) return false;
     const d = await r.json();
     if (!d.ok || !d.config) return false;
+    _openedCampaignId = d.campaignId || d.config.campaignId || null;
     _openedCampaignName = d.name || n;
     const nameEl = document.getElementById('campaign-name-input');
     if (nameEl) nameEl.value = _openedCampaignName;
@@ -34389,7 +34490,7 @@ if (typeof window !== 'undefined') {
         try {
           const rr = await fetch('/api/campaign-configs/rename', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from: opened, to: name }),
+            body: JSON.stringify({ from: opened, to: name, campaignId: _openedCampaignId }),
           });
           if (rr.ok) {
             _openedCampaignName = name;
@@ -34411,7 +34512,7 @@ if (typeof window !== 'undefined') {
       // The name IS the campaign's identity, so saving or starting under an
       // existing name UPDATES that campaign — which is what Save means.
       if (name) {
-        await saveCampaignConfigByName(name);
+        if (!await saveCampaignConfigByName(name)) { showCampaignToast('Could not save this campaign. Please retry.'); return; }
         // saveCampaignConfigByName adds the name to _knownCampaignNames.
         // Mark as "editing own campaign" so the inline dedup check in the
         // original function recognises this name as its own, not a clash.
@@ -34432,6 +34533,7 @@ if (typeof window !== 'undefined') {
   const _origApplyPresetConfig = applyPresetConfig;
   let _restoring = false;                    // loadCampaignConfigByName calls back in
   applyPresetConfig = function(config) {
+    if (config?.campaignId) _openedCampaignId = config.campaignId;
     const out = _origApplyPresetConfig.call(this, config);
     // Every path that opens a campaign lands here, so this is where the wizard
     // learns which campaign it is now editing. Without it the binding would
@@ -34446,7 +34548,7 @@ if (typeof window !== 'undefined') {
     const name = (document.getElementById('campaign-name-input')?.value || '').trim();
     if (!hasSheet && name) {
       _restoring = true;
-      Promise.resolve(loadCampaignConfigByName(name))
+      Promise.resolve(loadCampaignConfigByName(name, config?.campaignId || _openedCampaignId))
         .catch(() => {})
         .finally(() => { _restoring = false; });
     } else if (name) {

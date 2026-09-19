@@ -1,3 +1,5 @@
+import { ensureCampaignIdentity } from './campaign-configs.js';
+import { campaignLifecycle } from '../public/js/campaign-lifecycle.mjs';
 /**
  * Campaign orchestrator — v17.
  *
@@ -161,6 +163,7 @@ export function prettyParkReason(reason) {
     case 'session_expired':   return 'logged out / session expired';
     case 'weekly_limit_429':  return 'weekly invite limit reached';
     case 'consecutive_skips': return 'too many consecutive skips / failures';
+    case 'op_credit_limit':   return 'suspected OP credits limit reached';
     default:                  return reason || 'parked';
   }
 }
@@ -479,7 +482,7 @@ export function normalizeSkipReason(msg) {
   if (lower.includes('not yet connected')) return 'Skipped: Not yet connected';
   if (lower.includes('not confirmed connected')) return 'Skipped: Not confirmed connected';
   if (lower.includes('linkedin error toast') || lower.includes('linkedin_error_toast')) return 'Skipped: LinkedIn error toast';
-  if (lower.includes('not open profile') || lower.includes('not_open_profile')) return 'Skipped: Not Open Profile';
+  if (lower.includes('not open profile') || lower.includes('not_open_profile')) return 'Skipped: contact is either not Open Profile or the sending account has reached its monthly OP credit limit';
   if (lower.includes('rate_limited') || lower.includes('rate-limit')) return 'Skipped: Rate limited';
   if (lower.includes('lead_timeout_watchdog') || lower.includes('lead timeout')) return 'Skipped: Lead timed out';
   if (lower.includes('no modal appeared')) return 'Skipped: Connect modal did not appear';
@@ -547,7 +550,7 @@ const MISS_BY_DETAIL = [
   [/not found|404/, 'That LinkedIn profile no longer exists.'],
   [/legacy sales nav/, 'The sheet has an old Sales Navigator address for them, which cannot be opened.'],
   [/email required/, 'LinkedIn wanted their email address before it would connect.'],
-  [/not open profile/, 'They are not open to messages from outside their network.'],
+  [/not open profile/, 'Either they are not an Open Profile, or this account has used up its monthly Open Profile credits.'],
   [/not yet connected|not confirmed connected/, 'They have not accepted the invitation yet.'],
   [/wrong person/, 'The connect window opened on somebody else, so nothing was sent.'],
   [/connect button|modal/, 'LinkedIn did not offer a connect button on their profile.'],
@@ -570,6 +573,7 @@ export function missReason(slug, detail) {
 const PARK_LINES = [
   [/session expired/, NEEDS_LOGIN_LINE],
   [/weekly/, WEEKLY_LINE],
+  [/op credit/, 'Suspected OP credits limit reached — five contacts in a row were not Open Profile. Choose Try again to unbench it.'],
   [/note credits/, 'This account has run out of invitations that carry a note.'],
   [/not premium/, 'The note was longer than a non-Premium account is allowed to send.'],
   [/inmail/, 'This account has no InMail credits left.'],
@@ -1207,7 +1211,7 @@ export function log(msg) {
   // size-based at campaign start (rotateCampaignLogIfBig), so this hot-path
   // append stays cheap (no statSync per line).
   try {
-    appendFileSync(CAMPAIGN_LOG_FILE, line + '\n');
+    appendFileSync(CAMPAIGN_LOG_FILE, line + ` [campaignId=${campaign.campaignId || ''}] [runId=${campaign.executionId || ''}]` + '\n');
   } catch { /* never let logging take down the campaign */ }
 }
 
@@ -2067,9 +2071,12 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 10, delayMax = 20, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [] }) {
-  clearRuntimeInterruption();
+export async function startCampaign({ campaignId = null, profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 10, delayMax = 20, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, excludedUrls = [] }) {
   if (campaign.running) throw new Error('Campaign already running');
+  const identity = ensureCampaignIdentity({ campaignId, name, config: { profileIds, sheetUrl, templates, mode } });
+  campaignId = identity.campaignId;
+  name = identity.name;
+  clearRuntimeInterruption();
   campaign.executionId = `local-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
   campaign._abortController = new AbortController();
   campaign.dailyResetNeeded = false;
@@ -2096,8 +2103,9 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
 
   // v2.14.x: snapshot for restoreCampaign(). Captured BEFORE anything can
   // throw, so even a campaign that fails preflight is recoverable.
+  campaign.campaignId = campaignId;
   _lastRunSettings = {
-    profileIds, sheetUrl, sheetGid, templates, dailyLimit, mode, messageOpenProfiles,
+    campaignId, profileIds, sheetUrl, sheetGid, templates, dailyLimit, mode, messageOpenProfiles,
     delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency,
     name, acceptanceTrackingDays, preflightCheckStatus, createdBy,
     senderColumn, allLeadsConnected, checkIntervalMinutes, autoChecksEnabled,
@@ -2627,7 +2635,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       return { ok: false };
     });
     if (!prep.ok) {
-      log('  ⚠ prepareSheet didn\'t confirm — falling back to legacy ensureTrackingColumns');
+      log(`  ⚠ prepareSheet didn't confirm${prep.reason ? ` (${prep.reason})` : ''} — falling back to legacy ensureTrackingColumns`);
       await ensureTrackingColumns(sheetUrl, mode).catch(err => {
         log(`⚠ Could not ensure tracking columns: ${err.message}`);
       });
@@ -3384,6 +3392,11 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // SAME sender indicate an unhealthy account and park that sender.
     const consecutiveUnconfirmed = new Map();
     const UNCONFIRMED_PARK_THRESHOLD = 5;
+    // Open Profile sends: a run of "not Open Profile" skips on one account is more
+    // likely its monthly OP credits running out than five non-OP leads in a row.
+    // Bench it (Retry un-benches) instead of burning the rest of the sheet.
+    const consecutiveNotOp = new Map();
+    const NOT_OP_BENCH_THRESHOLD = 5;
     const bumpUnconfirmed = (profileId, kind) => {
       const previous = consecutiveUnconfirmed.get(profileId);
       const next = { kind, count: previous && previous.kind === kind ? previous.count + 1 : 1 };
@@ -3424,6 +3437,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
       weeklyLimited.delete(profileId);
       consecutiveSkips.set(profileId, 0);
       consecutiveUnconfirmed.delete(profileId);
+      consecutiveNotOp.delete(profileId);
       consecutive429s.set(profileId, 0);
       cooldowns429.set(profileId, 0);
       campaign._cooldown429.delete(profileId);
@@ -4681,6 +4695,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             }
             consecutiveSkips.set(profileId, 0);
             consecutiveUnconfirmed.delete(profileId);
+            consecutiveNotOp.delete(profileId);
             consecutive429s.set(profileId, 0);
             cooldowns429.set(profileId, 0);
             campaign._cooldown429.delete(profileId);
@@ -5023,6 +5038,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
             } else {
               consecutiveUnconfirmed.delete(profileId);
             }
+            if (!errorMsg.includes('NOT_OPEN_PROFILE')) consecutiveNotOp.delete(profileId);
 
             if (errorMsg.includes('WEEKLY_LIMIT')) {
               log(`  ⚠ WEEKLY LIMIT reached for ${pName}. Removing from rotation.`);
@@ -5152,7 +5168,16 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
                 auditAction: normalizeSkipReason('LinkedIn error toast'),
               }, linkedinColumn);
             } else if (errorMsg.includes('NOT_OPEN_PROFILE')) {
-              log('  ✗ Not an Open Profile — will skip in future runs.');
+              log(`  ✗ Skipped — ${data.firstName || 'this contact'} is either not an Open Profile, or ${pName} has reached its monthly OP credit limit.`);
+              const _notOp = (consecutiveNotOp.get(profileId) || 0) + 1;
+              consecutiveNotOp.set(profileId, _notOp);
+              if (_notOp >= NOT_OP_BENCH_THRESHOLD && !weeklyLimited.has(profileId)) {
+                log(`  ⚠ ${pName}: ${_notOp} contacts in a row skipped as not Open Profile — suspected OP credits limit reached. Benching this account; choose Retry to unbench it.`);
+                weeklyLimited.add(profileId);
+                recordProfileEnd(profileId, pName, 'Suspected OP credits limit reached');
+                campaign.parkedProfiles.push({ profileId, pName, parkedAt: Date.now(), reason: 'op_credit_limit', skipCount: _notOp });
+                pushSoftWarning(campaign, { profileId, pName, kind: 'op_credit_limit', message: 'Suspected OP credits limit reached' });
+              }
               state.processed[url] = { profileId, profileName: pName, action: 'not_open_profile', date: now };
               await saveState(state);
               await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
@@ -5726,6 +5751,8 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // Save campaign history (D-10)
     try {
       await appendHistory({
+        campaignId: campaign.campaignId,
+        logIdentityVersion: 1,
         runId: campaign.executionId,
         executionId: campaign.executionId,
         date: new Date().toISOString(),
@@ -5773,6 +5800,7 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
         // typed into the wizard), and the file is in the user-only data
         // dir. Future privacy hardening can hash/encrypt these later.
         settings: {
+          campaignId: campaign.campaignId,
           profileIds: Array.isArray(profileIds) ? [...profileIds] : [],
           sheetUrl: sheetUrl || '',
           // Lead-source guard: persist the chosen tab so Re-run reads the
@@ -6504,6 +6532,7 @@ export function recordRuntimeInterruption(reason = 'unexpected-exit', extra = {}
   if (!active || campaign.runsOn === 'vm') return { ok: true, recorded: false };
   const phase = campaign.state === 'monitoring' ? 'monitoring' : 'sending';
   const value = writeRuntimeInterruption({
+    permanentCampaignId: campaign.campaignId,
     reason,
     phase,
     name: campaign.name || '',
@@ -6566,6 +6595,8 @@ export function getCampaignStatus() {
     || String(campaign.name || '').trim());
 
   return {
+    campaignId: interrupted ? (interruption.permanentCampaignId || null) : campaign.campaignId,
+    lifecycle: campaignLifecycle({ ...campaign, interrupted, stopping: campaign.running && campaign._abort }),
     // The per-account panel, and the three live fields the sending banner reads.
     // Until now only the cloud engine produced them, so a run on this Mac could
     // never say who was being contacted from which account.

@@ -1,3 +1,4 @@
+import { getConfigById } from './campaign-configs.js';
 // Helpers backing the /api/history/:idx/* routes (v0.3 dashboard).
 //
 // Kept thin and pure so the routes stay declarative and unit tests can
@@ -46,6 +47,7 @@ export async function relaunchHistoryEntry(idx) {
   }
   const config = {
     ...entry.settings,
+    campaignId: undefined,
     name: (entry.name || 'Campaign') + ' (rerun)',
     mode: entry.mode || entry.settings.mode,
   };
@@ -71,6 +73,7 @@ export async function archiveHistoryEntry(idx) {
 // only `?includeArchived=false` activates the filter.
 export async function listHistory({ includeArchived = true } = {}) {
   const all = await readHistory();
+  for (const row of all) { const current = getConfigById(row.campaignId); if (current) row.name = current.name; }
   if (includeArchived) return all;
   return all.filter((e) => !e.archived);
 }
@@ -96,6 +99,17 @@ export async function readCampaignLog(idx, { limit = 500 } = {}) {
     return { ok: true, name, lines: [], total: 0 };
   }
   const all = text.split('\n');
+  if (entry.campaignId && (entry.runId || entry.executionId)) {
+    const identityTag = `[campaignId=${entry.campaignId}]`;
+    const runTag = `[runId=${entry.runId || entry.executionId}]`;
+    const exact = all.filter(line => line.includes(identityTag) && line.includes(runTag));
+    // New runs carry IDs in every persisted log line. Never substitute another
+    // campaign's output when an exact run has no lines (e.g. rotated log).
+    if (entry.logIdentityVersion === 1 || exact.length || all.some(line => line.includes(identityTag))) {
+      return { ok: true, campaignId: entry.campaignId, name, lines: exact.slice(-limit).map(line => line.replace(/ \[campaignId=[^\]]*\] \[runId=[^\]]*\]$/, '')), total: exact.length };
+    }
+  }
+
   // Primary: slice by the campaign's time window — entry.date is the END
   // timestamp and entry.duration the run length in seconds. Per-lead log
   // lines never contain the campaign name, so the legacy name filter

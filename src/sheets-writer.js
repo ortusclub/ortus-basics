@@ -116,7 +116,7 @@ async function _postOnce(url, body) {
         console.warn('[sheets-writer] Apps Script returned login page — redeployment may be needed');
         return { error: 'Authentication error — redeploy the Apps Script' };
       }
-      return { raw: text };
+      return { raw: text, status: res.status };
     }
   } catch (err) {
     return { error: err.message };
@@ -227,10 +227,13 @@ export async function prepareSheet(sheetUrl, mode) {
     return { ok: true, added: result.added || [], hidden: result.hidden || [], shown: result.shown || [] };
   }
 
-  if (result?.error) {
-    console.warn(`[sheets-writer] prepareSheet failed: ${result.error}`);
-  }
-  return { ok: false, added: [], hidden: [], shown: [] };
+  // Say WHY it didn't confirm — a non-JSON reply (Google error page) used to be
+  // dropped silently, leaving only "didn't confirm" in the campaign log.
+  const reason = result?.error
+    || (result?.raw !== undefined ? `non-JSON reply (HTTP ${result.status}): ${String(result.raw).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200)}` : '')
+    || (result ? `unexpected reply: ${JSON.stringify(result).slice(0, 200)}` : 'no reply');
+  console.warn(`[sheets-writer] prepareSheet failed: ${reason}`);
+  return { ok: false, added: [], hidden: [], shown: [], reason };
 }
 
 /**

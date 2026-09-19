@@ -1,3 +1,4 @@
+import { ensureCampaignIdentity, getConfigById } from './campaign-configs.js';
 /**
  * Campaign queue — sequential FIFO scheduler.
  *
@@ -37,12 +38,18 @@ async function persist() {
 }
 
 export async function getQueue() {
-  return [...(await load())];
+  return (await load()).map(e => {
+    const current = getConfigById(e.campaignId || e.config?.campaignId);
+    return current ? { ...e, name: current.name, config: { ...e.config, name: current.name } } : { ...e };
+  });
 }
 
 export async function addToQueue(config, owner, { scheduledAt = null } = {}) {
   await load();
+  const identity = ensureCampaignIdentity({ campaignId: config?.campaignId, name: config?.name, config });
+  config = { ...config, ...identity };
   const entry = {
+    campaignId: identity.campaignId,
     id: 'q_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
     queuedAt: Date.now(),
     name: (config && config.name) || '',
@@ -83,6 +90,7 @@ export async function updateQueueEntry(id, patch) {
   await load();
   const idx = cache.findIndex((e) => e.id === id);
   if (idx === -1) return null;
+  if (patch.config?.campaignId && patch.config.campaignId !== cache[idx].campaignId) throw new Error('Cannot change a queued campaign identity');
   if (patch.name !== undefined) cache[idx].name = patch.name;
   if (patch.scheduledAt !== undefined) cache[idx].scheduledAt = patch.scheduledAt;
   if (patch.config !== undefined) {

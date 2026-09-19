@@ -1,3 +1,6 @@
+import { ensureCampaignIdentity, getConfigById } from './src/campaign-configs.js';
+import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
+import { campaignLifecycle } from './public/js/campaign-lifecycle.mjs';
 import 'dotenv/config';
 
 // ── Startup env validation (D-06) ──────────────────────────────────
@@ -1195,6 +1198,7 @@ function blockIfNoOperatorEmail(context, notifyTo) {
 
 // runs with exactly the same shape as a directly-launched one.
 function buildCampaignConfig(body) {
+  const identity = ensureCampaignIdentity({ campaignId: body?.campaignId, name: body?.name, config: body });
   const { profileIds, sheetUrl, templates, dailyLimit, mode, messageOpenProfiles,
           delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency, name,
           acceptanceTrackingDays, preflightCheckStatus, checkIntervalMinutes,
@@ -1229,6 +1233,7 @@ function buildCampaignConfig(body) {
     if ((profileIds?.length || 0) >= 5) concurrencyClean = n;
   }
   return {
+    campaignId: identity.campaignId,
     profileIds,
     benchedProfileIds: Array.isArray(benchedProfileIds) ? benchedProfileIds.filter((x) => typeof x === 'string') : [],
     sheetUrl,
@@ -1251,7 +1256,7 @@ function buildCampaignConfig(body) {
       : false,
     senderFirstNames: senderFirstNames || {},
     concurrency: concurrencyClean,
-    name: typeof name === 'string' ? name : '',
+    name: identity.name,
     acceptanceTrackingDays: Math.max(0, Math.min(30, Number(acceptanceTrackingDays) || 0)),
     checkIntervalMinutes: clampCadenceMinutes(checkIntervalMinutes),
     // v2.112: default-on; only false when the operator explicitly turned it off.
@@ -3324,8 +3329,10 @@ app.get('/api/queue', async (_req, res) => {
     // Strip large/sensitive fields the UI doesn't need (templates can be big).
     const summary = queue.map(e => ({
       id: e.id,
-      name: e.name,
+      name: getConfigById(e.campaignId || e.config?.campaignId)?.name || e.name,
       queuedAt: e.queuedAt,
+      campaignId: e.campaignId || e.config?.campaignId,
+      lifecycle: campaignLifecycle({ queued: true, scheduledAt: e.scheduledAt }),
       mode: e.config?.mode || '',
       profileIds: e.config?.profileIds || [],
       sheetUrl: e.config?.sheetUrl || '',
@@ -7969,6 +7976,7 @@ function registerSchedule(schedule) {
     preventSleep(`schedule:${schedule.name}`);
     try {
       await startCampaign({
+        campaignId: schedule.campaignId, name: schedule.name,
         profileIds: schedule.profileIds,
         sheetUrl: schedule.sheetUrl,
         templates: schedule.templates || {},
@@ -8037,8 +8045,9 @@ app.post('/api/schedules', async (req, res) => {
       id = `sched_${Date.now()}`;
     }
     const existing = all.findIndex(s => s.id === id);
+    const identity = ensureCampaignIdentity({ campaignId: existing >= 0 ? all[existing].campaignId : req.body.campaignId, name, config: req.body });
     const schedule = {
-      id, name, cron: cronExpr, profileIds, sheetUrl,
+      campaignId: identity.campaignId, id, name: identity.name, cron: cronExpr, profileIds, sheetUrl,
       mode: mode || 'connect_only', templates: templates || {},
       dailyLimit: dailyLimit || 50,
       delayMin, delayMax,
@@ -8421,15 +8430,24 @@ app.get('/api/campaign-configs', async (_req, res) => {
 app.delete('/api/campaign-configs/:name', async (req, res) => {
   try {
     const { deleteConfig, normaliseName } = await import('./src/campaign-configs.js');
-    const key = normaliseName(req.params.name);
+    const entry = req.query.campaignId ? getConfigById(String(req.query.campaignId)) : null;
+    if (req.query.campaignId && !entry) return res.status(404).json({ error: 'Campaign not found.' });
+    const key = normaliseName(entry?.name || req.params.name);
+    const matches = row => entry ? row.campaignId === entry.campaignId : normaliseName(row.name) === key;
     const queue = await getQueue();
-    if (((campaign.running || campaign.state === 'monitoring') && normaliseName(campaign.name) === key)
-        || queue.some(entry => normaliseName(entry.name) === key)) {
+    if (((campaign.running || campaign.state === 'monitoring') && matches(campaign))
+        || queue.some(matches)) {
       return res.status(409).json({ ok: false, error: 'Stop or remove this campaign from the queue before deleting its saved settings.' });
     }
-    if (!deleteConfig(req.params.name)) return res.status(404).json({ ok: false, error: 'Saved campaign not found.' });
+    if (!deleteConfig(req.params.name, entry?.campaignId)) return res.status(404).json({ ok: false, error: 'Saved campaign not found.' });
     res.json({ ok: true });
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
+app.get('/api/campaign-configs/by-id/:campaignId', (req, res) => {
+  const entry = getConfigById(req.params.campaignId);
+  if (!entry) return res.status(404).json({ ok: false, error: 'Campaign not found.' });
+  res.json({ ok: true, ...entry });
 });
 
 app.get('/api/campaign-configs/:name', async (req, res) => {
@@ -8455,7 +8473,7 @@ app.post('/api/campaign-configs/rename', async (req, res) => {
     if (!from || !to) return res.status(400).json({ error: 'from and to are required' });
 
     const { renameConfig } = await import('./src/campaign-configs.js');
-    const moved = renameConfig(from, to);
+    const moved = renameConfig(from, to, req.body?.campaignId);
     // 'missing' just means this campaign had no saved settings yet — the board
     // rename below is still worth doing. A clash is fatal: two campaigns must
     // not collapse into one record.
@@ -8474,7 +8492,7 @@ app.post('/api/campaign-configs/rename', async (req, res) => {
       if (Array.isArray(history)) {
         const key = (v) => String(v || '').trim().toLowerCase();
         for (const entry of history) {
-          if (entry && key(entry.name) === key(from)) { entry.name = to; historyRenamed += 1; }
+          if (entry && (entry.campaignId ? entry.campaignId === moved.campaignId : key(entry.name) === key(from))) { entry.name = to; historyRenamed += 1; }
         }
         if (historyRenamed) await writeFile(HISTORY_PATH, JSON.stringify(history, null, 2), 'utf-8');
       }
@@ -8487,7 +8505,7 @@ app.post('/api/campaign-configs/rename', async (req, res) => {
     let draftsRenamed = 0;
     try {
       const { renameDrafts } = await import('./src/drafts.js');
-      draftsRenamed = await renameDrafts(from, to);
+      draftsRenamed = await renameDrafts(from, to, moved.campaignId);
     } catch (err) {
       console.warn('[rename] draft rename failed:', err.message);
     }
@@ -8503,12 +8521,12 @@ app.post('/api/campaign-configs/rename', async (req, res) => {
 
     // A campaign running right now carries its name in memory too.
     try {
-      if (campaign && String(campaign.name || '').trim().toLowerCase() === from.toLowerCase()) {
+      if (campaign && (campaign.campaignId ? campaign.campaignId === moved.campaignId : String(campaign.name || '').trim().toLowerCase() === from.toLowerCase())) {
         setCampaignName(to);
       }
     } catch (_) { /* nothing running */ }
 
-    res.json({ ok: true, name: to, settingsMoved: !!moved.ok, historyRenamed, draftsRenamed, snapshotsRenamed });
+    res.json({ ok: true, campaignId: moved.campaignId, name: to, settingsMoved: !!moved.ok, historyRenamed, draftsRenamed, snapshotsRenamed });
   } catch (err) {
     console.error('[campaign-configs] rename failed:', err);
     res.status(500).json({ error: err.message });
@@ -8522,10 +8540,10 @@ app.post('/api/campaign-configs', async (req, res) => {
     if (!String(name || '').trim()) {
       return res.status(400).json({ ok: false, error: 'A campaign needs a name before its settings can be saved.' });
     }
-    res.json({ ok: true, saved: saveConfig(name, config) });
+    res.json({ ok: true, saved: saveConfig(name, config, { campaignId: req.body?.campaignId || config?.campaignId, listed: true }) });
   } catch (err) {
     console.error('[campaign-configs] save failed:', err);
-    res.status(500).json({ ok: false, error: err.message });
+    res.status(err.status || 500).json({ ok: false, error: err.message });
   }
 });
 
@@ -8575,6 +8593,8 @@ app.post('/api/credentials', async (req, res) => {
 // ---------------------------------------------------------------------------
 // Start server
 // ---------------------------------------------------------------------------
+migrateCampaignIdentities();
+
 app.listen(PORT, '127.0.0.1', async () => {
   console.log(`\n  ✦ Ortus Basics — Version ${APP_VERSION}`);
   console.log(`  ✦ build: v${APP_VERSION}`);
