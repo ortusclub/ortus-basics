@@ -254,7 +254,15 @@ export function shouldCloseBetweenBatches({ waitMs, closeGapMin }) {
  * @param {number}  ctx.now                   - epoch ms (current time — injected for testability)
  * @returns {boolean}
  */
+/** Ortus Basics: a connection check NEVER starts on its own. It runs only when
+ *  the operator asks for one (Check connections / Check now, or choosing the
+ *  Check Status campaign type). This switches off the two checks that used to
+ *  piggy-back on a running campaign: the idle bulk-check between turns and the
+ *  in-batch sweep after a send. */
+export const AUTOMATIC_CHECKS_ENABLED = false;
+
 export function shouldFireIdleBulkCheck(ctx) {
+  if (!AUTOMATIC_CHECKS_ENABLED) return false;
   // v2.62: connect_and_message (CC+DM) shares the same connect-then-
   // followup loop shape as CC+IC, so idle bulk-checks apply equally.
   if (ctx.mode !== 'connect_and_introduce' && ctx.mode !== 'connect_and_message') return false;
@@ -4720,7 +4728,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
             // The Connected column flip in bulk-check is what triggers the
             // phase-2 follow-up (intro DM for CC+IC, plain DM for CC+DM).
             // Manual /api/bulk-check-now bypasses both (operator override).
-            if ((mode === 'connect_and_introduce' || mode === 'connect_and_message') && result.action === 'connection_sent') {
+            if (AUTOMATIC_CHECKS_ENABLED && (mode === 'connect_and_introduce' || mode === 'connect_and_message') && result.action === 'connection_sent') {
               try {
                 const _campaignStartMs = campaign.startedAt ? Date.parse(campaign.startedAt) : Date.now();
                 const _campaignAgeMs = Date.now() - _campaignStartMs;

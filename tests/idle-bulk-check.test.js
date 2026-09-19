@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldFireIdleBulkCheck } from '../src/campaign.js';
+import { shouldFireIdleBulkCheck, AUTOMATIC_CHECKS_ENABLED } from '../src/campaign.js';
+import { readFileSync } from 'node:fs';
 
 // The between-checks interval is now the operator cadence, passed in as
 // intervalMs. The first-hour age gate (campaignStartTime) is unchanged.
@@ -16,8 +17,9 @@ const baseInput = () => ({
   now: Date.now(),
 });
 
-test('fires when all gates pass', () => {
-  assert.equal(shouldFireIdleBulkCheck(baseInput()), true);
+test('never fires on its own, even when every gate passes — checks are manual only', () => {
+  assert.equal(AUTOMATIC_CHECKS_ENABLED, false);
+  assert.equal(shouldFireIdleBulkCheck(baseInput()), false);
 });
 
 test('skips when mode is not a connect-then-followup mode', () => {
@@ -26,8 +28,8 @@ test('skips when mode is not a connect-then-followup mode', () => {
   assert.equal(shouldFireIdleBulkCheck({ ...baseInput(), mode: 'introduce_back' }), false);
 });
 
-test('fires when mode is connect_and_message', () => {
-  assert.equal(shouldFireIdleBulkCheck({ ...baseInput(), mode: 'connect_and_message' }), true);
+test('never fires on its own for connect_and_message either', () => {
+  assert.equal(shouldFireIdleBulkCheck({ ...baseInput(), mode: 'connect_and_message' }), false);
 });
 
 test('skips when campaign uptime < 60 min (first-hour blackout)', () => {
@@ -58,8 +60,13 @@ test('HONORS the operator cadence: a 6h pick is NOT due at 2h', () => {
   assert.equal(shouldFireIdleBulkCheck(input), false);
 });
 
-test('fires when the operator interval elapses exactly (boundary)', () => {
+test('an elapsed operator interval does not start a check on its own', () => {
   const t = Date.now();
   const input = { ...baseInput(), now: t, intervalMs: ONE_HOUR, lastBulkCheckAt: t - ONE_HOUR };
-  assert.equal(shouldFireIdleBulkCheck(input), true);
+  assert.equal(shouldFireIdleBulkCheck(input), false);
+});
+
+test('the in-batch sweep after a send is behind the same manual-only switch', () => {
+  const src = readFileSync(new URL('../src/campaign.js', import.meta.url), 'utf8');
+  assert.match(src, /if \(AUTOMATIC_CHECKS_ENABLED && \(mode === 'connect_and_introduce' \|\| mode === 'connect_and_message'\) && result\.action === 'connection_sent'\)/);
 });
