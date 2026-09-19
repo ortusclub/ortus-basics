@@ -29,3 +29,9 @@ test('five not-Open-Profile skips in a row bench the sender; anything else break
   const unpark = src.slice(src.indexOf('campaign._unparkProfile = (profileId) => {'), src.indexOf('campaign._unparkProfile = (profileId) => {') + 500);
   assert.match(unpark, /consecutiveNotOp\.delete\(profileId\)/);
 });
+
+test('a 429 on an account that has reached nobody this run parks it as weekly-capped at once', () => {
+  const src = readFileSync(new URL('../src/campaign.js', import.meta.url), 'utf8');
+  assert.match(src, /\(c429 >= HTTP_429_PARK_THRESHOLD \|\| _reachedSoFar === 0\) && !weeklyLimited\.has\(profileId\)/);
+  assert.equal(normalizeSkipReason('VOYAGER_REJECTED: HTTP 429 — too many'), 'Skipped: Likely weekly invitation limit reached (HTTP 429) — confirming…');
+});

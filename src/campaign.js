@@ -471,7 +471,7 @@ export function normalizeSkipReason(msg) {
   // Other statuses (400/403/etc.) are rare — keep the code visible for diagnostics.
   if (lower.includes('voyager_rejected')) {
     const statusMatch = s.match(/HTTP\s+(\d+)/i);
-    if (statusMatch && statusMatch[1] === '429') return 'Skipped: Rate-limited (HTTP 429) — confirming…';
+    if (statusMatch && statusMatch[1] === '429') return 'Skipped: Likely weekly invitation limit reached (HTTP 429) — confirming…';
     return statusMatch ? `Skipped: LinkedIn rejected (HTTP ${statusMatch[1]})` : 'Skipped: LinkedIn rejected';
   }
   // v2.112.x — note longer than LinkedIn's free 200-char custom-invite cap: the
@@ -543,6 +543,7 @@ const MISS_BY_SLUG = {
 // Order matters: the first match wins, so the specific cases come first.
 const MISS_BY_DETAIL = [
   [/session expired|login page/, NEEDS_LOGIN_LINE],
+  [/likely weekly/, 'LinkedIn refused this invitation (HTTP 429). Most likely this account has reached its weekly invitation limit.'],
   [/weekly/, WEEKLY_LINE],
   [/429|rate.?limit/, SLOW_DOWN_LINE],
   [/inmail credits/, 'This account has no InMail credits left.'],
@@ -4958,9 +4959,13 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
             if (is429) {
               const c429 = (consecutive429s.get(profileId) || 0) + 1;
               consecutive429s.set(profileId, c429);
-              if (c429 >= HTTP_429_PARK_THRESHOLD && !weeklyLimited.has(profileId)) {
+              // An account that has reached NOBODY this run and gets a 429 is at its
+              // weekly cap: 24 of 24 such cases in the field logs (2026-09-19) never
+              // sent again that run. Don't spend a second invite confirming it.
+              const _reachedSoFar = ((campaign._reachedByProfile || {})[profileId] || []).length;
+              if ((c429 >= HTTP_429_PARK_THRESHOLD || _reachedSoFar === 0) && !weeklyLimited.has(profileId)) {
                 const episodesSoFar = cooldowns429.get(profileId) || 0;
-                const _reached = ((campaign._reachedByProfile || {})[profileId] || []).length;
+                const _reached = _reachedSoFar;
                 const { action, waitMs } = decide429({
                   consecutive429s: c429,
                   cooldownsSoFar: episodesSoFar,
@@ -4984,7 +4989,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
                 } else {
                   // action === 'park': 3rd episode, treat as real weekly cap
                   const _capWhy = _reached === 0
-                    ? `every invite refused (HTTP 429) and nobody reached this run`
+                    ? `its ${c429 === 1 ? 'first invite was' : 'invites were all'} refused (HTTP 429) and nobody reached this run`
                     : `${HTTP_429_PARK_THRESHOLD} consecutive HTTP 429s (3rd cooldown episode)`;
                   log(`  ⚠ ${pName} has hit its WEEKLY INVITATION LIMIT — ${_capWhy}. It sends nothing more until LinkedIn resets it; the rest of its leads go to the other accounts.`);
                   weeklyLimited.add(profileId);

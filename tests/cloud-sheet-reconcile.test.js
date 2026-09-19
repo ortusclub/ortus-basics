@@ -90,7 +90,7 @@ const ENGINE_ERROR_CASES = [
   ['Landed on /checkpoint/challenge',                                'Skipped: Session expired'],
   ['Email required to connect',                                      'Skipped: Email required'],
   ['Send not confirmed after click',                                 'Skipped: Send not confirmed'],
-  ['HTTP 429 Too Many Requests',                                     'Skipped: Rate-limited (HTTP 429) — confirming…'],
+  ['HTTP 429 Too Many Requests',                                     'Skipped: Likely weekly invitation limit reached (HTTP 429) — confirming…'],
   ['Request was throttled',                                          'Skipped: Rate limited'],
   ['Note too long for a non-premium account (200 char limit)',       'Skipped: Profile not premium, custom notes limit'],
   ['Weekly invitation limit reached',                                'Skipped: Weekly limit reached'],
