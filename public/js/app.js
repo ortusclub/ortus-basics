@@ -3447,6 +3447,7 @@ function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
   const _icNote = document.getElementById('ic-beta-note');
   if (_icNote) _icNote.style.display = mode === 'introduce_back' ? '' : 'none';
+  document.querySelectorAll('.ccic-primary-note').forEach((el) => { el.style.display = mode === 'connect_and_introduce' ? '' : 'none'; });
   // Default Follower Growth to the Cloud VM. FG-on-cloud is the intended path — a
   // local FG run opens one GoLogin browser tab per account. Reset the local-pin on
   // the transition INTO follower_growth, then apply the cloud default.
