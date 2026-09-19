@@ -100,6 +100,14 @@ async function startServer() {
   serverProcess.once('exit', (code, signal) => {
     serverProcess = null;
     if (shuttingDown) return;
+    // 76 = the backend asked for the whole app to quit so the update helper can
+    // swap the bundle and relaunch (see /api/update-install in server.js).
+    if (code === 76) {
+      console.log('[main] Backend requested quit for update — quitting.');
+      app.isQuitting = true;
+      app.quit();
+      return;
+    }
     const delay = code === 75 ? 400 : 1500;
     console.warn(`[main] Campaign backend exited (code=${code}, signal=${signal || 'none'}); restarting in ${delay}ms.`);
     setTimeout(() => startServer().catch((err) => console.error('[main] backend restart failed:', err.message)), delay);

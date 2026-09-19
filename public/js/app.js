@@ -28429,6 +28429,10 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '', onCloud = tr
   // No Retry on a weekly cap. It's a window, not a cooldown — nothing changes
   // until it rolls over, and asking again only spends strikes.
   if (benched && !a.needsLogin && !weekly) acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Retry — clear the bench</button>`);
+  // On this Mac the weekly cap is INFERRED from HTTP 429s (one is enough when the
+  // account has reached nobody), so it can be wrong. Let the operator overrule
+  // it — but say what it costs if the cap is real.
+  if (benched && !a.needsLogin && weekly && !onCloud) acts.push(`<button type="button" title="If the weekly limit is real, LinkedIn refuses the next invite and the account is benched again." onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Try again on the next round</button>`);
   // A campaign on this Mac: the operator can take an account out (bench — it can
   // come back) or remove it from the campaign for good. Cloud campaigns keep the
   // engine's own remove control below.

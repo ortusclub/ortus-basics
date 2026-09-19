@@ -593,6 +593,17 @@ for i in $(seq 1 120); do
   pgrep -f "$APP/Contents/MacOS/" >/dev/null || break
   sleep 0.5
 done
+# Never swap the bundle underneath a still-running app: it keeps showing the old
+# version and "relaunch" only re-focuses it. Ask it to quit, then insist.
+if pgrep -f "$APP/Contents/MacOS/" >/dev/null; then
+  echo "[updater] app still running after 60s — asking it to quit"
+  osascript -e 'tell application "${pkg.productName}" to quit' >/dev/null 2>&1
+  for i in $(seq 1 40); do pgrep -f "$APP/Contents/MacOS/" >/dev/null || break; sleep 0.5; done
+  if pgrep -f "$APP/Contents/MacOS/" >/dev/null; then
+    echo "[updater] still running — terminating"; pkill -TERM -f "$APP/Contents/MacOS/"; sleep 3
+  fi
+fi
+cd /tmp 2>/dev/null
 sleep 1
 MNT="$(mktemp -d /tmp/ortus-mnt.XXXXXX)"
 if ! hdiutil attach "$DMG" -nobrowse -noautoopen -mountpoint "$MNT" >/dev/null 2>&1; then
@@ -661,11 +672,12 @@ echo "[updater] could not relaunch — the update IS installed; open Ortus Basic
   // Respond first, then quit so the helper can swap + relaunch. Quitting needs
   // app.isQuitting=true to bypass the tray "hide on close" behavior.
   res.json({ ok: true, relaunching: true });
-  if (process.versions && process.versions.electron) {
-    import('electron')
-      .then(({ app }) => { app.isQuitting = true; setTimeout(() => app.quit(), 400); })
-      .catch(() => {});
-  }
+  // This server is a CHILD of the Electron main process (ELECTRON_RUN_AS_NODE),
+  // so it has no `app` to quit — the old import('electron') here silently did
+  // nothing, the app never quit, and the helper swapped the bundle underneath a
+  // still-running old version (operator, 2026-09-19). Exit with the code main.js
+  // reads as "quit the whole app for an update".
+  if (process.env.ORTUS_ELECTRON_MODE === '1') setTimeout(() => process.exit(76), 400);
 });
 
 // v2.112: expose the detached install-helper log so a failed update is
