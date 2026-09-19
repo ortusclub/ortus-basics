@@ -226,7 +226,7 @@ async function runAutoIntros({ store, campaign, account, page, connectedUrls, te
   // ── send loop ──
   const leads = await store.getCampaignLeads(campaign.id);
   const byUrl = new Map(leads.map((l) => [l.lead_url, l]));
-  const introTitle = templates.introTitle || "Introduction: {first name} <> {intro name}";
+  const introTitle = templates.introTitle || "Introduction: {firstName} <> {primaryFirstName}";
   const senderFirst = (templates.senderFirstNames || {})[account] || "";
   const _send = sendIntro || _vendoredSend(v);
   const _capture = captureAvatar || _captureProfileAvatarToken;

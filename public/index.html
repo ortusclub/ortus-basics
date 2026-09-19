@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=1.7.2" />
-  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=1.7.2" />
+  <link rel="stylesheet" href="/css/style.css?v=1.7.25" />
+  <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.14" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -168,40 +168,6 @@
       <div id="cloud-offline-banner" hidden></div>
       <div class="sn-qmeta" id="campaigns-qmeta" style="text-align:right;margin:0 2px 4px">—</div>
       <div id="campaigns-board" class="sn-board"><div class="sn-empty">Loading campaigns…</div></div>
-
-      <!-- ── TEAM STATUS (feature ⑩ — ADMIN-ONLY, sketch team-status-A) ──
-           Hidden by default and NEVER revealed for non-admins: the section
-           stays [hidden] until /api/me confirms admin AND /api/team-status
-           (itself 403 for non-admins) returns rows. Rendered by
-           renderTeamStatus() on the 5s dashboard poll, refetched every 30s. -->
-      <section id="team-status-section" class="dashboard-section" hidden>
-        <div class="team-head">
-          <h2 class="team-title">Team</h2>
-          <span class="team-admin-badge">Admin only</span>
-          <span class="team-sub" id="team-status-sub">—</span>
-          <button type="button" class="team-refresh" onclick="refreshTeamStatus()">↻ Refresh</button>
-        </div>
-        <div class="team-card">
-          <table class="team-table">
-            <thead>
-              <tr>
-                <th>Operator</th>
-                <th>Status</th>
-                <th>Campaign</th>
-                <th>Accounts in use</th>
-                <th>Started</th>
-                <th>Today's sends</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody id="team-status-body"></tbody>
-          </table>
-        </div>
-        <div id="team-conf-strip"></div>
-        <div class="team-foot">Cloud campaigns per owner (engine list) + this machine's local activity.
-          Other operators' LOCAL campaigns are not visible from here — cloud is the only cross-machine source.
-          Synced every 30s.</div>
-      </section>
 
       <!-- ── ACTIVE (Variant J) ──────────────────────────────────── -->
       <section class="vj-card" id="active-card" aria-labelledby="sect-active">
@@ -1098,16 +1064,16 @@
                      launch-config snapshots. Filled by primaryRecallOnInput(). -->
                 <div id="primary-person-recall" class="pp-recall" role="listbox" hidden></div>
               </div>
-              <div class="intro-config-hint">Used as the <code>{primary name}</code> placeholder in the intro DM body.</div>
+              <div class="intro-config-hint">Used as the <code>{primaryFirstName}</code> placeholder in the intro DM body.</div>
             </div>
             <!-- v2.78: re-shown per operator request — the primary's profile URL
                  is needed for the "is the account connected to the primary?" check
-                 and for the {primary url} placeholder. -->
+                 and for the {primaryUrl} placeholder. -->
             <div class="intro-config-field">
               <label for="primary-person-url" class="intro-config-label">LinkedIn profile URL <span style="text-transform:none;letter-spacing:0;color:var(--red,#f85149)">*</span></label>
               <input type="text" id="primary-person-url" class="intro-config-input" placeholder="https://www.linkedin.com/in/..." oninput="savePrimaryPersonFields()">
               <div id="primary-person-url-error" class="intro-config-error" hidden></div>
-              <div class="intro-config-hint">The primary person's profile. Used to check each account is connected to them, and for the <code>{primary url}</code> placeholder.</div>
+              <div class="intro-config-hint">The primary person's profile. Used to check each account is connected to them, and for the <code>{primaryUrl}</code> placeholder.</div>
             </div>
           </div>
 
@@ -2064,10 +2030,20 @@
           <div class="browse-secondary">
             <div id="passover-banner" class="passover-banner"></div>
             <div class="browse-bulk-row">
+              <button type="button" class="bulk-pill" onclick="openAccountPaste()">Paste accounts</button>
               <button class="bulk-pill" onclick="selectAllVisible()">Select all visible</button>
               <button class="bulk-pill" onclick="deselectAll()">Deselect all</button>
             </div>
           </div>
+
+          <details class="account-paste" id="account-paste-panel">
+            <summary>Paste a list of accounts</summary>
+            <label for="account-paste-list">Account emails</label>
+            <p id="account-paste-hint">Paste one email per line, or separate with commas or spaces. Matches are added in list order; existing selections stay selected.</p>
+            <textarea id="account-paste-list" rows="5" spellcheck="false" autocapitalize="off" aria-describedby="account-paste-hint" placeholder="gelioc@ortus.solutions&#10;gabrielc@ortus.solutions"></textarea>
+            <button type="button" class="bulk-pill" onclick="selectPastedAccounts()">Select matching accounts</button>
+            <p id="account-paste-status" role="status" aria-live="polite"></p>
+          </details>
 
           <!-- Ortus Basics 1.0: Local Browser tile removed. -->
           <div id="guardrail-alert" class="guardrail-alert hidden"></div>
@@ -2722,9 +2698,9 @@
          driven by applyTemplateVisibility (mode-aware). -->
     <div id="intro-title-block" class="section tpl-section" style="display:none">
       <h2 data-edit="h2-intro-title">Group Conversation Title</h2>
-      <input type="text" id="intro-title" value="Introduction: {first name} <> {intro name}" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
+      <input type="text" id="intro-title" value="Introduction: {firstName} <> {primaryFirstName}" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
       <div class="placeholder-tags" data-target="intro-title" style="margin-top:10px"></div>
-      <div style="font-size:11px; color:var(--gray); margin-top:4px">Click a chip to insert at the cursor. Available: <code>{first name}</code>, <code>{intro name}</code>, <code>{intro first name}</code>, <code>{intro last name}</code>, plus any sheet column.</div>
+      <div style="font-size:11px; color:var(--gray); margin-top:4px">Click a chip to insert at the cursor. Available: <code>{firstName}</code>, <code>{primaryFirstName}</code>, <code>{primaryLastName}</code>, <code>{primaryFullName}</code>, plus any sheet column.</div>
     </div>
 
     <!-- ── Intro DM Body (connect_and_introduce) ── -->
@@ -2732,7 +2708,7 @@
       <h2 data-edit="h2-intro-dm">Group Conversation Body</h2>
       <!-- v2.102: set expectations — this is the opener, not the whole pitch. -->
       <div style="font-size:11px; color:var(--gray); margin-top:-4px; margin-bottom:8px">Keep it short — this is just the opener that creates the group. The bulk of the message goes in the <b>First Follow-up</b> below.</div>
-      <textarea id="primary-intro-body" rows="5" placeholder="Hey {first name}, thanks for connecting! I'd love to introduce you to {primary name} — they're..." oninput="savePrimaryPersonFields()"></textarea>
+      <textarea id="primary-intro-body" rows="5" placeholder="Hey {firstName}, thanks for connecting! I'd love to introduce you to {primaryFirstName} — they're..." oninput="savePrimaryPersonFields()"></textarea>
       <div class="placeholder-tags" data-target="primary-intro-body"></div>
     </div>
 
@@ -2741,7 +2717,7 @@
          (driven by onModeChange + toggleFollowUpFields). -->
     <div class="section tpl-section" id="tpl-followup-section" style="display:none">
       <h2 data-edit="h2-followup">First Follow-up Message <small>sent in the group thread — all queued follow-ups go together, after the last intro</small></h2>
-      <textarea id="follow-up-body" rows="4" placeholder="Hi {first name}, great to be connected…" oninput="savePrimaryPersonFields()"></textarea>
+      <textarea id="follow-up-body" rows="4" placeholder="Hi {firstName}, great to be connected…" oninput="savePrimaryPersonFields()"></textarea>
       <div class="placeholder-tags" data-target="follow-up-body"></div>
     </div>
 
@@ -3005,6 +2981,7 @@
             <button type="button" id="btn-queue" class="btn btn-secondary" onclick="window.launchQueueIt()" title="Stage this campaign to run after the current one">Queue it</button>
             <button type="button" id="btn-schedule" class="btn btn-secondary" onclick="window.launchScheduleIt()" title="Schedule for a specific date and time">Schedule it</button>
             <button type="button" id="btn-save-draft" class="btn btn-secondary" onclick="window.launchSaveButton()" title="Save the current configuration">Save</button>
+            <button type="button" id="btn-duplicate-campaign" class="btn btn-secondary" onclick="window.duplicateWizardCampaign()">Duplicate campaign</button>
             <!-- Ortus Basics 1.0: run the acceptance check straight from the
                  wizard, without starting a campaign first. Connect + Introduce
                  Back only — it is the mode whose intros depend on acceptances.
@@ -3962,7 +3939,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=1.7.2"></script>
+<script type="module" src="/js/app.js?v=1.7.25"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before
@@ -4119,31 +4096,27 @@
       <span class="t-pass" id="pf-tally-passed">✓ <span id="pf-count-passed">0</span> passed</span>
     </div>
 
-    <div class="pf-group pf-blockers">
-      <div class="pf-group-head">❌ Blockers <span class="n" id="pf-blockers-n"></span>
-        <span style="margin-left:auto;font-size:0.62rem;letter-spacing:0.06em;color:var(--gray);cursor:pointer" id="pf-manage-bl">Manage blocklist →</span>
-      </div>
-      <div class="pf-rows" id="pf-blockers"></div>
-    </div>
-
-    <div class="pf-group pf-warnings">
-      <div class="pf-group-head">⚠ Warnings <span class="n" id="pf-warnings-n"></span></div>
-      <div class="pf-rows" id="pf-warnings"></div>
-    </div>
-
-    <div class="pf-group pf-passed collapsed" id="grp-pass">
-      <div class="pf-group-head" id="pf-pass-toggle">
-        <span class="caret">▾</span> ✓ Passed checks
-        <span class="n" id="pf-passed-n"></span>
-      </div>
-      <div class="pf-rows" id="pf-passed"></div>
+    <div class="pf-findings">
+      <details class="pf-group pf-blockers">
+        <summary class="pf-group-head">❌ Blockers <span class="n" id="pf-blockers-n"></span><span class="pf-expand-label"></span></summary>
+        <button type="button" class="modal-cancel-link" id="pf-manage-bl">Manage blocklist →</button>
+        <div class="pf-rows" id="pf-blockers"></div>
+      </details>
+      <details class="pf-group pf-warnings">
+        <summary class="pf-group-head">⚠ Warnings <span class="n" id="pf-warnings-n"></span><span class="pf-expand-label"></span></summary>
+        <div class="pf-rows" id="pf-warnings"></div>
+      </details>
+      <details class="pf-group pf-passed" id="grp-pass">
+        <summary class="pf-group-head">✓ Passed checks <span class="n" id="pf-passed-n"></span><span class="pf-expand-label"></span></summary>
+        <div class="pf-rows" id="pf-passed"></div>
+      </details>
     </div>
 
     <div class="pf-actions">
       <button class="btn btn-secondary btn-sm" id="pf-fix">Fix on sheet</button>
       <button class="btn btn-primary" id="pf-exclude">Exclude all flagged &amp; launch</button>
       <span class="spacer"></span>
-      <button class="btn btn-secondary btn-sm" id="pf-anyway">Launch anyway</button>
+      <button class="btn btn-secondary btn-sm" id="pf-anyway">Continue anyway</button>
       <button class="btn btn-secondary btn-sm" id="pf-cancel">Cancel</button>
       <div class="pf-count-note"><b>Exclude all flagged &amp; launch</b> stamps every flagged row (including blocklisted) in the Stage column and skips them for this run — nothing is deleted from the sheet. <b>Keep flagged, launch anyway</b> sends to the flagged rows too; blocklisted rows are always excluded and can never be launched.</div>
     </div>

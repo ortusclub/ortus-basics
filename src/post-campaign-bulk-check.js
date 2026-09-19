@@ -306,7 +306,7 @@ async function tick() {
                 primaryName: entry.primaryName,
                 primaryIntroBody: entry.primaryIntroBody,
                 primaryUrl: entry.primaryUrl || '',
-                introTitle: entry.introTitle || 'Introduction: {first name} <> {intro name}',
+                introTitle: entry.introTitle || 'Introduction: {firstName} <> {primaryFirstName}',
                 autoAcceptPrimary: entry.autoAcceptPrimary,
                 followUpEnabled: entry.followUpEnabled,
                 followUpBody: entry.followUpBody,

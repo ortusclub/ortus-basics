@@ -23,6 +23,7 @@ export function computePillState(s) {
   const errCount = Array.isArray(s.errors) ? s.errors.length : 0;
   const parkedCount = Array.isArray(s.parked) ? s.parked.length : 0;
   const throttleActive = !!(s.throttle && s.throttle.active);
+  const isChecking = !!s.monitoringCheckInProgress;
   const isPaused = !!s.paused;
   const isMonitoring = s.state === 'monitoring';
 
@@ -31,7 +32,11 @@ export function computePillState(s) {
   let pulse = false;
   let labelSuffix = modeShort;
 
-  if (isPaused) {
+  if (isChecking) {
+    dot = 'green';
+    pulse = true;
+    labelSuffix = 'checking';
+  } else if (isPaused) {
     dot = 'gray';
     pulse = false;
     labelSuffix = 'paused';
@@ -51,7 +56,8 @@ export function computePillState(s) {
   // (→ 'idle') during ACTIVE sending — only flipping to 'monitoring'/'done'
   // later. Derive a truthful display state so the console never reads
   // "STATE · IDLE" while a campaign is actually running.
-  const displayState = isPaused ? 'paused'
+  const displayState = isChecking ? 'checking'
+    : isPaused ? 'paused'
     : isMonitoring ? 'monitoring'
     : s.running ? 'running'
     : (s.state || 'idle');

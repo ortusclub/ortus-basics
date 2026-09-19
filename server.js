@@ -7141,14 +7141,30 @@ function _draftNameCollision(name) {
   return null;
 }
 
+const _draftNamesBeingCreated = new Set();
+
 app.post('/api/drafts', async (req, res) => {
+  const { name, config, uniqueName } = req.body || {};
+  const key = String(name || '').trim().toLowerCase();
+  let reserved = false;
   try {
-    const { name, config } = req.body || {};
+    if (uniqueName || key) {
+      if (!key) return res.status(400).json({ message: 'Enter a campaign name.' });
+      const conflict = () => res.status(409).json({ error: 'name_exists', message: `A campaign named "${String(name).trim()}" already exists. Please choose a different name.` });
+      if (_draftNamesBeingCreated.has(key)) return conflict();
+      _draftNamesBeingCreated.add(key);
+      reserved = true;
+      const { listConfigs } = await import('./src/campaign-configs.js');
+      const [drafts, history, queue, schedules] = await Promise.all([getDrafts(), listHistory({ includeArchived: true }), getQueue(), loadSchedules()]);
+      const existing = [...drafts, ...history, ...queue, ...schedules, ...listConfigs(), campaign];
+      if (existing.some(item => String(item?.name || '').trim().toLowerCase() === key)) return conflict();
+    }
     const collision = _draftNameCollision(name);
     if (collision) return res.status(collision.status).json(collision.body);
     const entry = await addDraft({ name, config });
     res.json({ ok: true, draft: entry });
   } catch (err) { res.status(500).json({ error: err.message }); }
+  finally { if (reserved) _draftNamesBeingCreated.delete(key); }
 });
 
 app.patch('/api/drafts/:id', async (req, res) => {
@@ -8402,6 +8418,20 @@ app.get('/api/campaign-configs', async (_req, res) => {
   } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
 });
 
+app.delete('/api/campaign-configs/:name', async (req, res) => {
+  try {
+    const { deleteConfig, normaliseName } = await import('./src/campaign-configs.js');
+    const key = normaliseName(req.params.name);
+    const queue = await getQueue();
+    if (((campaign.running || campaign.state === 'monitoring') && normaliseName(campaign.name) === key)
+        || queue.some(entry => normaliseName(entry.name) === key)) {
+      return res.status(409).json({ ok: false, error: 'Stop or remove this campaign from the queue before deleting its saved settings.' });
+    }
+    if (!deleteConfig(req.params.name)) return res.status(404).json({ ok: false, error: 'Saved campaign not found.' });
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ ok: false, error: err.message }); }
+});
+
 app.get('/api/campaign-configs/:name', async (req, res) => {
   try {
     const { getConfig } = await import('./src/campaign-configs.js');
@@ -8879,7 +8909,7 @@ app.post('/api/preview-intro-dm', async (req, res) => {
 
     const resolvedBody  = personalizeTemplate(introBody, data);
     const resolvedTitle = personalizeTemplate(
-      introTitle || 'Introduction: {first name} <> {intro name}',
+      introTitle || 'Introduction: {firstName} <> {primaryFirstName}',
       data
     );
 

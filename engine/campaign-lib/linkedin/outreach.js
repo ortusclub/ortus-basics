@@ -158,7 +158,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           'primary_url': '',
         };
         const body  = personalizeTemplate(templates.followUpMessage, introData);
-        const title = personalizeTemplate(templates.introTitle || 'Introduction: {first name} <> {intro name}', introData);
+        const title = personalizeTemplate(templates.introTitle || 'Introduction: {firstName} <> {primaryFirstName}', introData);
 
         // Build lead full name from the sheet row (tolerant of casing /
         // underscore / space variants of the column header).
@@ -787,6 +787,10 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
             const introLast  = introTokens.slice(1).join(' ');
             const introData = {
               ...data,
+              primaryFullName: templates.introName,
+              primaryFirstName: introFirst,
+              primaryLastName: introLast,
+              primaryUrl: templates.introUrl || '',
               // Full name — back-compat, unchanged behaviour.
               'intro name': templates.introName,
               'introName': templates.introName,
@@ -800,7 +804,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
               'intro_last_name': introLast,
             };
             const body  = personalizeTemplate(templates.followUpMessage, introData);
-            const title = personalizeTemplate(templates.introTitle || 'Introduction: {first name} <> {intro name}', introData);
+            const title = personalizeTemplate(templates.introTitle || 'Introduction: {firstName} <> {primaryFirstName}', introData);
 
             // v2.58.x — Standalone Introduction Campaign uses the
             // "clean compose" DOM path (sendIntroViaCleanCompose) which

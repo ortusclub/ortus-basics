@@ -237,7 +237,7 @@ export function vjCardFields(status = {}) {
   // eyebrow is a SEPARATE renderer and was still echoing the raw status.
   const isWaiting = !isMonitor && !isDone && !isQueued && !s.bad
     && !!(s.currentAction && s.currentAction.phase === 'waiting');
-  const eyebrow = isInterrupted ? 'Stopped · This Mac unavailable'
+  const eyebrow = s._loadingIdentity ? 'Loading campaign…' : isInterrupted ? 'Stopped · This Mac unavailable'
     : isStopping ? 'Stopping…'
     : s.bad ? (s.badLabel || 'Stopped')
     : isMonitor ? 'Monitoring'
@@ -254,7 +254,7 @@ export function vjCardFields(status = {}) {
     : (s.paused ? 'Paused' : 'Sending');
   return {
     isMonitor, isDone, isQueued, isWaiting, isInterrupted,
-    name: s.name || '(unnamed)',
+    name: s.name || 'Loading campaign…',
     eyebrow, pct, done, total, accountsCount, accepted, sendingLbl,
   };
 }
@@ -271,6 +271,13 @@ function _esc(v) {
     .replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
+export function hasLocalCampaignRun(s = {}) {
+  if (s.state === 'draft' || s.hasRun === false) return false;
+  return !!(s.hist || s.startedAt || s.running || s.interrupted
+    || s.state === 'monitoring' || s.endNotice || Number(s.totalProcessed) > 0
+    || Number(s.totalTargets) > 0);
+}
+
 export function vjCardControlsFor(status = {}) {
   const s = status || {};
   const cloud = !!s._cloud;
@@ -282,7 +289,10 @@ export function vjCardControlsFor(status = {}) {
   // as running:false + engineStatus. Normalize that distinction here so sharing
   // the renderer does not accidentally give a cancelled campaign live controls.
   const terminalEngine = ['completed', 'cancelled', 'error', 'failed', 'stopped'].includes(String(s.engineStatus || '').toLowerCase());
-  const done = s.state === 'done' || (!s.running && terminalEngine);
+  const localStopped = !cloud && s.running === false && !monitor
+    && !['queued', 'interrupted', 'waiting_daily_reset', 'needs_review', 'stopping'].includes(s.state)
+    && !!(s.sheetUrl || s.endNotice || Number(s.totalTargets) > 0);
+  const done = s.state === 'done' || (!s.running && terminalEngine) || localStopped;
   const queued = s.state === 'queued';
   const interrupted = s.state === 'interrupted' || !!s.interrupted;
   const dailyWait = s.state === 'waiting_daily_reset';
@@ -314,6 +324,23 @@ export function vjCardControlsFor(status = {}) {
     pause: null, stop: null, restart: null, copy: null,
     resumeSending: null, deleteForever: null, bulk: null, monAuto: null, extra: [],
   };
+
+  if (!cloud && !queued && !s.running && !s.monitoringCheckInProgress && !hasLocalCampaignRun(s)) {
+    c.extra.push({ tip: 'Start campaign', kind: 'play',
+      onclick: 'window.showCampaignStart()' });
+    return c;
+  }
+
+  if (localStopped && s.monitoringCheckInProgress) {
+    c.stop = { tip: 'Stop check', onclick: 'stopSoloCheck(this)' };
+    return c;
+  }
+
+  if (localStopped && (!id || id === 'local-active' || id === 'legacy-singleton')) {
+    c.extra.push({ tip: 'Resume campaign', kind: 'play', once: true,
+      onclick: "window.openCampaignResumeDecision('local-active','sending','local',this)" });
+    return c;
+  }
 
   if (interrupted) {
     const interruptedPhase = s.interruption?.phase || (s.monitoringPhase ? 'monitoring' : 'sending');

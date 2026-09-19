@@ -78,7 +78,7 @@ const MODES = {
       introMode: true,
       introName: cfg.primaryName || "",
       introUrl: cfg.primaryUrl || "",
-      introTitle: cfg.introTitle || "Introduction: {first name} <> {intro name}",
+      introTitle: cfg.introTitle || "Introduction: {firstName} <> {primaryFirstName}",
       data: personalization(lead, senderFirst),
     }),
     done: new Set(["message_sent", "already_processed"]),

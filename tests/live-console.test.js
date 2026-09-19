@@ -130,3 +130,15 @@ test('shouldShowConsole: always visible (v2.72 — log always on display)', () =
   assert.equal(shouldShowConsole({ running: false, paused: false, state: 'idle', hasRoster: false }), true);
   assert.equal(shouldShowConsole({}), true);
 });
+
+
+test('a manual check on a stopped or paused campaign remains live with its log tail', () => {
+  for (const paused of [false, true]) {
+    const pill = computePillState({ running: false, state: 'done', paused,
+      monitoringCheckInProgress: true, logs: ['Opening account', 'Checking acceptances'] });
+    assert.equal(pill.state, 'checking');
+    assert.equal(pill.dot, 'green');
+    assert.equal(pill.pulse, true);
+    assert.deepEqual(pill.logs, ['Opening account', 'Checking acceptances']);
+  }
+});

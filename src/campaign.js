@@ -1989,7 +1989,7 @@ export function normalizeTemplates(templates = {}, mode = '') {
     // we OR the flag here as a final safety net.
     introMode: !!templates.introMode || mode === 'introduce_back',
     introName: (templates.introName || '').trim(),
-    introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
+    introTitle: templates.introTitle || 'Introduction: {firstName} <> {primaryFirstName}',
     // v2.62: CC+DM (connect_and_message) phase-2 body. Plain 1:1 DM sent
     // after acceptance, no primary person involved. runAutoDms reads
     // tpl.ccDmBody when mode === 'connect_and_message'.
@@ -3049,10 +3049,6 @@ export async function startCampaign({ profileIds, benchedProfileIds = [], sheetU
     // back-to-back, then either parks on about:blank (short gap) or closes + re-opens
     // next batch (long gap, D-13). Session break is gone (D-04). batchesPerHour sets
     // the target between-batch spacing (D-03).
-
-    if (profileIds.length > 3) {
-      log(`⚠ RAM warning: up to ${profileIds.length} browsers may be open simultaneously. 4 is fine, 10+ may slow your machine.`);
-    }
 
     // Campaign-scoped session cache, replaces activeSessions array.
     const sessions = new Map(); // profileId → { profileId, pName, browser, page, warmedUp }

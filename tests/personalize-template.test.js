@@ -88,3 +88,10 @@ test('findUnresolvedPlaceholders returns [] when everything resolves', () => {
   const data = { 'First Name': 'Elijah' };
   assert.deepEqual(findUnresolvedPlaceholders('Hi {first name}', data), []);
 });
+
+
+test('consistent camelCase intro title and group body resolve with legacy column aliases', () => {
+  const data = { 'First Name': 'Gelioc', 'primary first name': 'Sam', 'primary last name': 'Adcock', 'primary full name': 'Sam Adcock' };
+  assert.equal(personalizeTemplate('Introduction: {firstName} <> {primaryFirstName}', data), 'Introduction: Gelioc <> Sam');
+  assert.equal(personalizeTemplate('Hi {firstName}, meet {primaryFirstName} ({primaryFullName}).', data), 'Hi Gelioc, meet Sam (Sam Adcock).');
+});

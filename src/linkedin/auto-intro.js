@@ -520,7 +520,7 @@ export async function runAutoIntros({
     introName: primaryName,
     followUpMessage: primaryIntroBody,
     introUrl: primaryUrl,
-    introTitle: templates.introTitle || 'Introduction: {first name} <> {intro name}',
+    introTitle: templates.introTitle || 'Introduction: {firstName} <> {primaryFirstName}',
   };
 
   // Campaign-level: did this campaign send a connection note? If so the lead has a

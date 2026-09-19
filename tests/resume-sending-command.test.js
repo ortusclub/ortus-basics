@@ -6,13 +6,15 @@ const APP = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8'
 const SERVER = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
 const CLIENT = readFileSync(new URL('../src/campaigns-client.js', import.meta.url), 'utf8');
 
-test('dashboard and campaign-card Resume Sending share the explicit sending command', () => {
-  const decision = APP.slice(APP.indexOf('window.openCampaignResumeDecision'), APP.indexOf('function _activeCardCloudId'));
-  assert.match(decision, /restartCloudCampaignUI\(id, false, undefined, true\)/);
+test('Ortus Basics resume always targets this Mac', () => {
+  const decision = APP.slice(APP.indexOf('window.openCampaignResumeDecision ='), APP.indexOf('function _activeCardCloudId'));
+  assert.match(decision, /current = 'local'/);
+  assert.match(decision, /okLabel: 'Continue on this Mac', cancelLabel: 'Cancel'/);
+  assert.doesNotMatch(decision, /restartCloudCampaignUI|pauseCloudCampaignUI|Continue on Cloud|otherLabel/);
 });
 
 test('monitoring Resume asks whether to start sending or acceptance checking', () => {
-  const decision = APP.slice(APP.indexOf('window.openCampaignResumeDecision'), APP.indexOf('function _activeCardCloudId'));
+  const decision = APP.slice(APP.indexOf('window.openCampaignResumeDecision ='), APP.indexOf('function _activeCardCloudId'));
   assert.match(decision, /What should resume now\?/);
   assert.match(decision, /okLabel: 'Resume sending now'/);
   assert.match(decision, /cancelLabel: 'Resume acceptance checking now'/);

@@ -363,3 +363,24 @@ test('statusFromItem carries pending through to the card', () => {
   assert.equal(s.pending, 793,
     'without this the control matrix cannot tell a stalled campaign from a finished one');
 });
+
+
+test('stopped native campaign offers a labelled local resume, and only stop-check during a sweep', () => {
+  const status = { running: false, state: null, sheetUrl: 'https://example.test/sheet', totalTargets: 100, totalProcessed: 2 };
+  const stopped = vjCardControlsFor(status);
+  assert.equal(stopped.pause, null);
+  assert.equal(stopped.stop, null);
+  assert.equal(stopped.extra[0].tip, 'Resume campaign');
+  assert.match(stopped.extra[0].onclick, /openCampaignResumeDecision/);
+  const checking = vjCardControlsFor({ ...status, monitoringCheckInProgress: true });
+  assert.equal(checking.stop.tip, 'Stop check');
+  assert.equal(checking.extra.length, 0);
+});
+
+test('fresh local campaign with saved sheet settings offers Start instead of Resume', () => {
+  const controls = vjCardControlsFor({ running: false, sheetUrl: 'saved-sheet', name: 'Sam III', state: 'draft' });
+  assert.equal(controls.extra[0].tip, 'Start campaign');
+  assert.equal(controls.extra[0].onclick, 'window.showCampaignStart()');
+  assert.equal(controls.pause, null);
+  assert.equal(controls.stop, null);
+});
