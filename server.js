@@ -31,7 +31,7 @@ import { spawn } from 'node:child_process';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 
-import { startCampaign, stopCampaign, stopCampaignBackgroundTracking, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, SINGLETON_CAMPAIGN_ID, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin, nextCheckLogLine } from './src/campaign.js';
+import { startCampaign, stopCampaign, stopCampaignBackgroundTracking, pauseCampaign, resumeCampaign, preemptCurrentLead, restoreCampaign, getCampaignStatus, getLastRunSettings, setCampaignName, retryParkedProfile, campaign, extractLinkedInUrl, log as campaignLog, startMonitoringWatcher, stopMonitoringWatcher, stopMonitoring, resumeMonitoringFromDisk, adoptMonitoring, SINGLETON_CAMPAIGN_ID, setBulkCheckInProgress, addActiveBulkCheck, removeActiveBulkCheck, forceCloseActiveBulkChecks, setProfileSkip, removeProfileFromCampaign, setLiveTemplates, setLiveDailyLimit, setLiveCadence, confirmLogin, nextCheckLogLine } from './src/campaign.js';
 import { getQueue, addToQueue, removeFromQueue, moveInQueue, reorderQueue, updateQueueEntry, popNextReady } from './src/campaign-queue.js';
 import { computeSheetDiff, computeAccountDiff, computeSettingsDiff, summarizeResumeChanges } from './src/resume-diff.js';
 // Sales Nav Scrape — control-panel client to the GKE scraper engine. The app
@@ -5425,12 +5425,18 @@ let _manualSweepAbort = false;
 app.post('/api/campaign/profile-skip', (req, res) => {
   const { profileId, skip } = req.body || {};
   if (!profileId) return res.status(400).json({ error: 'profileId required' });
-  if (skip) {
-    return res.status(400).json({
-      error: 'Accounts cannot be benched mid-campaign. Stop the campaign, remove the account, and start it again.',
-    });
-  }
-  const result = setProfileSkip(profileId, false);
+  // Benching mid-run is back (operator, 2026-09-19): the account finishes the
+  // lead it is on, then sits out until un-benched.
+  const result = setProfileSkip(profileId, !!skip);
+  res.json(result);
+});
+
+// Take an account out of the running campaign for good. Body: { profileId }.
+app.post('/api/campaign/profile-remove', (req, res) => {
+  const { profileId } = req.body || {};
+  if (!profileId) return res.status(400).json({ error: 'profileId required' });
+  const result = removeProfileFromCampaign(profileId);
+  if (!result.ok) return res.status(409).json({ error: result.reason });
   res.json(result);
 });
 

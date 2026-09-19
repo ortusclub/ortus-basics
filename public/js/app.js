@@ -9294,11 +9294,11 @@ async function unbenchCloudAccount(campaignId, profileId, btn, quiet) {
   // local engine (same unpark "Try again" uses, without relaunching the browser).
   if (['local-active', 'legacy-singleton'].includes(String(campaignId)) || (!_viewingCloudId && _localLive)) {
     try {
-      const r = await fetch(`/api/campaign/profile/${encodeURIComponent(profileId)}/retry`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ open: false }),
+      const r = await fetch('/api/campaign/profile-skip', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profileId, skip: false }),
       });
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+      if (!r.ok || j.ok === false) throw new Error(j.error || j.reason || `HTTP ${r.status}`);
       if (!quiet) showCampaignToast(`▶ ${j.profileName || 'Account'} un-benched — it rejoins on its next turn.`, 6000);
     } catch (e) {
       showCampaignToast('Could not un-bench this account: ' + e.message, 6000);
@@ -9322,6 +9322,42 @@ async function unbenchCloudAccount(campaignId, profileId, btn, quiet) {
   }
 }
 window.unbenchCloudAccount = unbenchCloudAccount;
+
+// Bench / un-bench an account in the campaign running on this Mac.
+async function benchLocalAccount(profileId, skip, btn) {
+  if (!profileId) return;
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/campaign/profile-skip', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profileId, skip: !!skip }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || j.ok === false) throw new Error(j.error || j.reason || `HTTP ${r.status}`);
+    showCampaignToast(skip ? '⏭ Account benched — it finishes the lead it is on, then sits out. Retry brings it back.' : '▶ Account un-benched — it rejoins on its next turn.', 6000);
+  } catch (e) {
+    showCampaignToast(`Could not ${skip ? 'bench' : 'un-bench'} this account: ${e.message}`, 6000);
+    if (btn) btn.disabled = false;
+  }
+}
+window.benchLocalAccount = benchLocalAccount;
+
+async function removeLocalAccount(profileId, btn) {
+  if (!profileId) return;
+  if (!confirm('Remove this account from the campaign?\n\nIt stops sending, leaves the account list, and is taken out of the saved campaign settings. Its remaining leads go to the other accounts.')) return;
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/campaign/profile-remove', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ profileId }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`);
+    showCampaignToast(`🗑 ${j.profileName || 'Account'} removed from this campaign.`, 6000);
+  } catch (e) {
+    showCampaignToast('Could not remove this account: ' + e.message, 7000);
+    if (btn) btn.disabled = false;
+  }
+}
+window.removeLocalAccount = removeLocalAccount;
 
 // "Check primary" on one account. The engine opens that account on the VM,
 // looks at whether it is connected to the campaign's primary person, and sends
@@ -28393,6 +28429,14 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '', onCloud = tr
   // No Retry on a weekly cap. It's a window, not a cooldown — nothing changes
   // until it rolls over, and asking again only spends strikes.
   if (benched && !a.needsLogin && !weekly) acts.push(`<button type="button" onclick="unbenchCloudAccount('${escHtml(cid)}','${escHtml(a.profileId || '')}',this)">Retry — clear the bench</button>`);
+  // A campaign on this Mac: the operator can take an account out (bench — it can
+  // come back) or remove it from the campaign for good. Cloud campaigns keep the
+  // engine's own remove control below.
+  if (!onCloud && a.profileId) {
+    const _pid = escHtml(a.profileId);
+    if (!benched) acts.push(`<button type="button" onclick="benchLocalAccount('${_pid}',true,this)">Bench this account</button>`);
+    acts.push(`<button type="button" style="color:var(--red)" onclick="removeLocalAccount('${_pid}',this)">Remove from campaign</button>`);
+  }
   const why = a.parkReason === 'unconfirmed_streak' ? ' · five leads in a row could not be confirmed; open the account, then Retry'
     : a.parkReason === 'op_credit_limit' ? ' · suspected OP credits limit reached (5 contacts in a row not Open Profile); Retry to unbench'
     : a.parkReason === 'proxy' ? ' · its GoLogin proxy is refusing the browser'

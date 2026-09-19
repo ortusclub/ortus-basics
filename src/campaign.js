@@ -1,4 +1,4 @@
-import { ensureCampaignIdentity } from './campaign-configs.js';
+import { ensureCampaignIdentity, getConfigById, saveConfig } from './campaign-configs.js';
 import { campaignLifecycle } from '../public/js/campaign-lifecycle.mjs';
 /**
  * Campaign orchestrator — v17.
@@ -2154,6 +2154,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
   clearSkips(); // reset skip ledger for this run
   // v2.78: seed the rotation benches from any accounts pre-benched in the wizard.
   campaign._skippedProfiles = new Set(Array.isArray(benchedProfileIds) ? benchedProfileIds : []);
+  campaign._removedProfiles = new Set();
   campaign._restrictedProfiles = new Map();
   campaign._primaryConn = new Map();      // v2.78: fresh per-run primary-connection status
   // v2.52.0: capture this loop's generation. Any prior loop still in flight
@@ -6117,19 +6118,47 @@ export function setProfileSkip(profileId, skip) {
     campaign._skippedProfiles.delete(profileId);
     // If it was auto-parked (weekly cap / no invites / skips), clear that too
     // so the same toggle forces it back into rotation.
-    const wasParked = (campaign.parkedProfiles || []).some((p) => p.profileId === profileId);
-    if (wasParked && campaign.running) retryParkedProfile(profileId);
+    if (campaign.running) retryParkedProfile(profileId);
     else { if (typeof campaign._requeueProfile === 'function') campaign._requeueProfile(profileId); log(`▶ ${pName} re-enabled — back in the rotation.`); }
   }
   _persistRunSettings();
   return { ok: true, skipped: [...campaign._skippedProfiles] };
 }
 
+/**
+ * Take an account OUT of this campaign for good: it stops sending (after the
+ * lead it is on), disappears from the account list, and is dropped from the
+ * campaign's saved settings so a restart does not bring it back. Its unsent
+ * leads go to the other accounts. Never the last sending account.
+ */
+export function removeProfileFromCampaign(profileId) {
+  if (!profileId) return { ok: false, reason: 'no-profile' };
+  const ids = campaign.profileIds || [];
+  const idx = ids.indexOf(profileId);
+  if (idx < 0) return { ok: false, reason: 'This account is not in the campaign.' };
+  const removed = campaign._removedProfiles || (campaign._removedProfiles = new Set());
+  const stillIn = ids.filter((id) => id !== profileId && !removed.has(id) && !campaign._skippedProfiles?.has(id));
+  if (!stillIn.length) return { ok: false, reason: 'This is the last sending account — a campaign needs at least one. Stop the campaign instead.' };
+  const pName = (campaign.profileNames || [])[idx] || profileId;
+  if (!campaign._skippedProfiles) campaign._skippedProfiles = new Set();
+  campaign._skippedProfiles.add(profileId);
+  removed.add(profileId);
+  log(`🗑 ${pName} removed from this campaign — its remaining leads go to the other accounts.`);
+  _persistRunSettings();
+  try {
+    const saved = campaign.campaignId ? getConfigById(campaign.campaignId) : null;
+    if (saved && Array.isArray(saved.config?.profileIds)) {
+      saveConfig(saved.name, { ...saved.config, profileIds: saved.config.profileIds.filter((id) => id !== profileId) }, { campaignId: saved.campaignId });
+    }
+  } catch (err) { log(`  ⚠ Could not update the saved settings: ${err.message}`); }
+  return { ok: true, profileName: pName };
+}
+
 // v2.112: keep the restore snapshot current so a mid-run bench / added account survives an
 // app restart. Best-effort, atomic (same path as start). No-op if no snapshot yet.
 function _persistRunSettings() {
   if (!_lastRunSettings) return;
-  _lastRunSettings.profileIds = (campaign.profileIds || []).slice();
+  _lastRunSettings.profileIds = (campaign.profileIds || []).filter((id) => !campaign._removedProfiles?.has(id));
   _lastRunSettings.benchedProfileIds = [...(campaign._skippedProfiles || [])];
   try { writeLastRun(LAST_RUN_FILE, _lastRunSettings); } catch { /* non-fatal */ }
 }
@@ -6431,11 +6460,12 @@ function _mmss(ms) {
  * dailyLimit is its whole day.
  */
 function buildAccountPanel() {
-  const ids = (campaign.profileIds && campaign.profileIds.length)
+  let ids = (campaign.profileIds && campaign.profileIds.length)
     ? campaign.profileIds.slice()
     : (campaign.participatingProfileIds || []).slice();
   const health = campaign.accountHealth || {};
   for (const pid of Object.keys(health)) if (!ids.includes(pid)) ids.push(pid);
+  if (campaign._removedProfiles?.size) ids = ids.filter((id) => !campaign._removedProfiles.has(id));
   if (!ids.length) return [];
 
   const names = campaign.profileNames || [];
