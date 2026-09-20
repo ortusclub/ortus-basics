@@ -1190,6 +1190,18 @@
                   <div class="tr-help" id="pause-on-throttle-help"><b>Off:</b> the account keeps sending through throttling. Faster, but risks more skips and pushes the account toward restriction. Turn on to protect accounts.</div>
                 </div>
               </div>
+
+              <!-- "Free for all Friday" — Connect + Introduce Back only (toggled in onModeChange). -->
+              <div class="throttle-row" id="weekly-cutoff-row" style="display:none">
+                <label class="alpha-toggle" title="Stop this campaign just before LinkedIn's weekly invitation limit resets">
+                  <input type="checkbox" id="stop-before-weekly-reset" onchange="syncWeeklyCutoffHelp(); wizardDirtyOnInput()" />
+                  <span class="alpha-toggle-track"></span>
+                </label>
+                <div class="tr-text">
+                  <div class="tr-label">Free for all Friday — stop before the weekly limit resets</div>
+                  <div class="tr-help" id="weekly-cutoff-help"></div>
+                </div>
+              </div>
             </div>
           </details>
 

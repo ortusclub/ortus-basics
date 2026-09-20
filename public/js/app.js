@@ -3447,6 +3447,7 @@ function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
   const _icNote = document.getElementById('ic-beta-note');
   if (_icNote) _icNote.style.display = mode === 'introduce_back' ? '' : 'none';
+  { const _wcr = document.getElementById('weekly-cutoff-row'); if (_wcr) _wcr.style.display = mode === 'connect_and_introduce' ? '' : 'none'; if (typeof syncWeeklyCutoffHelp === 'function') syncWeeklyCutoffHelp(); }
   document.querySelectorAll('.ccic-primary-note').forEach((el) => { el.style.display = mode === 'connect_and_introduce' ? '' : 'none'; });
   // Default Follower Growth to the Cloud VM. FG-on-cloud is the intended path — a
   // local FG run opens one GoLogin browser tab per account. Reset the local-pin on
@@ -6220,6 +6221,32 @@ function checkDelayDanger() {
 }
 
 // Task 4 (2026-06-19): B2 pause-on-throttle help text update.
+// "Free for all Friday": next Monday 00:00 California time, shown in the
+// operator's own clock. Mirrors src/weekly-reset-cutoff.js (15 min before).
+function _nextWeeklyResetLocal() {
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hourCycle: 'h23', weekday: 'short', hour: 'numeric', minute: 'numeric' });
+  const read = (ms) => { const o = {}; for (const p of fmt.formatToParts(new Date(ms))) o[p.type] = p.value; return o; };
+  // Walk forward a minute at a time from now until California reads Mon 00:00 (≤ 7 days).
+  let t = Math.ceil(Date.now() / 60000) * 60000;
+  for (let i = 0; i < 7 * 24 * 60 + 2; i++, t += 60000) {
+    const p = read(t);
+    if (p.weekday === 'Mon' && +p.hour === 0 && +p.minute === 0) return new Date(t);
+  }
+  return null;
+}
+function syncWeeklyCutoffHelp() {
+  const tog = document.getElementById('stop-before-weekly-reset');
+  const help = document.getElementById('weekly-cutoff-help');
+  if (!tog || !help) return;
+  const reset = _nextWeeklyResetLocal();
+  const stopAt = reset ? new Date(reset.getTime() - 15 * 60000) : null;
+  const when = stopAt ? stopAt.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'just before Monday 00:00 California time';
+  help.innerHTML = tog.checked
+    ? `<b>On:</b> this campaign stops itself at <b>${escHtml(when)}</b> your time — 15 minutes before LinkedIn's weekly invitation limit resets (Monday 00:00 California time). Use up this week's invitations without touching next week's. Leads left over stay queued.`
+    : `<b>Off:</b> the campaign keeps sending past the weekly reset, so it will start using next week's invitations. Turn on to stop at <b>${escHtml(when)}</b> your time.`;
+}
+window.syncWeeklyCutoffHelp = syncWeeklyCutoffHelp;
+
 function syncPauseOnThrottleHelp() {
   const tog = document.getElementById('pause-on-throttle');
   const help = document.getElementById('pause-on-throttle-help');
@@ -7167,6 +7194,8 @@ async function startCampaign(opts = {}) {
     // Task 4 (2026-06-19): pause the account when LinkedIn returns 429.
     // Default true (ON) — operator can disable in Advanced section.
     pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked === true,
+    // "Free for all Friday" — only offered (and only sent) for Connect + Introduce Back.
+    stopBeforeWeeklyReset: document.getElementById('campaign-mode')?.value === 'connect_and_introduce' && document.getElementById('stop-before-weekly-reset')?.checked === true,
   };
 
   // v2.58.x — IC preflight: catch "no sender column" / "no matching profile"
@@ -18646,6 +18675,7 @@ function collectCurrentConfig() {
     delayMin: getN('within-batch-min', 30),
     delayMax: getN('within-batch-max', 60),
     pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked === true,
+    stopBeforeWeeklyReset: document.getElementById('stop-before-weekly-reset')?.checked === true,
     messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked,
     addNote: localStorage.getItem('ortus-add-note') === '1',
     linkedinColumn: getV('linkedin-col-select'),
@@ -18752,6 +18782,9 @@ function applyPresetConfig(config) {
     const _pot = document.getElementById('pause-on-throttle');
     if (_pot) _pot.checked = config.pauseOnThrottle === true;
     if (typeof syncPauseOnThrottleHelp === 'function') syncPauseOnThrottleHelp();
+    const _swr = document.getElementById('stop-before-weekly-reset');
+    if (_swr) _swr.checked = config.stopBeforeWeeklyReset === true;
+    if (typeof syncWeeklyCutoffHelp === 'function') syncWeeklyCutoffHelp();
   }
   if (typeof checkDelayDanger === 'function') checkDelayDanger();
   // Render the sheet preview, THEN restore the column mapping. previewSheet()
