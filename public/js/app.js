@@ -11181,7 +11181,8 @@ function _stripOverflow() {
 
 const _DB_PARK_LABELS = { // mirrors prettyParkReason in src/campaign.js
   session_expired:   'logged out / session expired',
-  weekly_limit_429:  'weekly invite limit reached',
+  weekly_limit_429:  'suspected weekly invite limit (HTTP 429)',
+  suspected_weekly_limit: 'suspected weekly invite limit (HTTP 429)',
   consecutive_skips: 'too many consecutive skips / failures',
   op_credit_limit:   'suspected OP credits limit reached',
   challenge:         'LinkedIn checkpoint — needs a human',
@@ -16759,6 +16760,7 @@ function _decorateLocalLiveStatus(s) {
         parked: ['benched', 'stopped', 'cannot-open', 'needs-login', 'identity-restricted'].includes(a.state),
         needsLogin,
         weeklyCap,
+        weeklySuspected: !!a.weeklySuspected,
         parkReason,
       };
     });
@@ -27905,7 +27907,7 @@ function _activeProfileChip(name, status) {
   if (parkedHit) {
     const r = parkedHit.reason;
     if (r === 'session_expired')  return { label: 'Needs login',         cls: 'is-warn' };
-    if (r === 'weekly_limit_429') return { label: 'Weekly limit reached', cls: 'is-warn' };
+    if (r === 'weekly_limit_429' || r === 'suspected_weekly_limit') return { label: 'Suspected weekly limit', cls: 'is-warn' };
     if (r === 'consecutive_skips') return { label: 'Parked·skips',       cls: 'is-warn' };
     if (r === 'op_credit_limit')  return { label: 'OP credits limit?',  cls: 'is-warn' };
     return { label: 'Parked', cls: 'is-warn' };
@@ -28351,6 +28353,7 @@ function _stageAcctPill(a, isCurrent, counts) {
   else if (a.sweepChecked) { cls = ''; text = '0 accepted'; tip = 'Checked successfully during the latest acceptance sweep.'; }
   else if (a.needsLogin) { cls = 'bad'; text = 'Logged out'; tipExact = true; tip = 'This account is signed out of LinkedIn. Log back in, then tell the campaign — it rejoins on the next round.'; }
   else if (a.parkReason === 'proxy') { cls = 'bad'; text = 'Proxy refused'; }
+  else if (a.weeklySuspected) { cls = 'bad'; text = 'Suspected weekly limit'; tipExact = true; tip = 'LinkedIn refused this account\'s invite, which is nearly always the weekly invitation limit. Open it and choose "Try again on the next round" to test.'; }
   else if (a.weeklyCap || a.parkReason === 'weekly') { cls = 'bad'; text = 'Weekly limit reached'; tipExact = true; tip = `LinkedIn's weekly invitation limit. This account sends nothing more until it resets ${_nextMondayText()}.`; }
   else if (benchWord) { cls = 'bad'; text = benchWord; tip = String(a.bench || ''); }
   else if (a.parkReason === 'throttle' || a.parkReason === 'throttle_paused') { cls = 'warn'; text = 'Throttled'; }
@@ -28445,6 +28448,7 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '', onCloud = tr
     : a.parkReason === 'op_credit_limit' ? ' · suspected OP credits limit reached (5 contacts in a row not Open Profile); Retry to unbench'
     : a.parkReason === 'proxy' ? ' · its GoLogin proxy is refusing the browser'
     : a.bench ? ` · ${escHtml(String(a.bench))} — sits out the rest of this run, retries next run`
+    : (weekly && a.weeklySuspected) ? ` · suspected weekly invitation limit — LinkedIn refused its invite. If it is the limit, it resets ${_nextMondayText()}`
     : weekly ? ` · LinkedIn weekly invitation cap — resets ${_nextMondayText()}`
     : a.parkReason === 'throttle' ? ' · rate-limited, backing off' : '';
   const lastMonitor = a.lastMonitorSuccessAt && !Number.isNaN(new Date(a.lastMonitorSuccessAt).getTime())
@@ -29284,6 +29288,7 @@ function renderLiveStage(root, status) {
     // account's pill read "Stopped" with the reason only in a tooltip.
     needsLogin: !!a.needsLogin,
     weeklyCap: !!a.weeklyCap,
+    weeklySuspected: !!a.weeklySuspected,
     parked: /stopped|benched|identity-restricted/.test(String(a.state || '').toLowerCase()),
     parkReason: /identity-restricted/.test(String(a.state || '').toLowerCase()) ? 'identity restricted' : '',
   }));

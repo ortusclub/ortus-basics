@@ -502,6 +502,10 @@ export function acctRowState(a = {}, { isCCIC = false, nextMonday = 'Monday' } =
   // Parked by 3 consecutive proxy 407s: the VM cannot open this profile's
   // browser at all. Distinct from a throttle, because waiting will not fix it.
   else if (a.parkReason === 'proxy') { pills.push(['bad', 'Proxy refused']); status = 'The VM cannot open this profile — fix its proxy in GoLogin, then try again'; }
+  else if (weekly && a.weeklySuspected) {
+    pills.push(['bad', 'Suspected weekly limit']);
+    status = `Stopped — suspected weekly invitation limit (LinkedIn refused its invite). If it is the limit, it resets ${nextMonday}`;
+  }
   else if (weekly) {
     // The pill gets the date, the drawer gets the countdown. "Stopped until
     // Monday 7 Sept (in 5 days)" is a sentence, and a sentence in a pill is

@@ -164,6 +164,7 @@ export function prettyParkReason(reason) {
     case 'weekly_limit_429':  return 'weekly invite limit reached';
     case 'consecutive_skips': return 'too many consecutive skips / failures';
     case 'op_credit_limit':   return 'suspected OP credits limit reached';
+    case 'suspected_weekly_limit': return 'suspected weekly invitation limit (HTTP 429)';
     default:                  return reason || 'parked';
   }
 }
@@ -581,6 +582,7 @@ export function missReason(slug, detail) {
 // words. Rewritten here so the card never prints them raw.
 const PARK_LINES = [
   [/session expired/, NEEDS_LOGIN_LINE],
+  [/suspected weekly|weekly.*429/, 'Suspected weekly invitation limit — LinkedIn refused its invite, which is nearly always the weekly limit. Try again on the next round to test it.'],
   [/weekly/, WEEKLY_LINE],
   [/op credit/, 'Suspected OP credits limit reached — five contacts in a row were not Open Profile. Choose Try again to unbench it.'],
   [/note credits/, 'This account has run out of invitations that carry a note.'],
@@ -4875,14 +4877,20 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
               const _tBase = Math.floor((delayMin + delayMax) / 2) * 1000;
               const _tWaitMs = degradationBackoffMs(_tBase, _tStreak, { jitter: true, maxMult: DEGRADE_MAX_MULT, maxMs: DEGRADE_MAX_WAIT_MS });
               if (campaign.pauseOnThrottle) {
-                log(`  ⏸ ${pName}: throttled by LinkedIn — pausing account (pauseOnThrottle ON), others continue. (${errorMsg})`);
+                // A 429 on a connect is the weekly invitation cap ~9 times in 10
+                // (field logs, 2026-09-19) — say so instead of a bare "throttled",
+                // which left 37 accounts reading just "Stopped".
+                const _is429 = /HTTP\s*429/i.test(errorMsg);
+                log(_is429
+                  ? `  ⏸ ${pName}: LinkedIn refused its invite (HTTP 429) — SUSPECTED WEEKLY INVITATION LIMIT. Pausing this account, others continue. Use "Try again on the next round" to test it.`
+                  : `  ⏸ ${pName}: throttled by LinkedIn — pausing account (pauseOnThrottle ON), others continue. (${errorMsg})`);
                 weeklyLimited.add(profileId);
-                recordProfileEnd(profileId, pName, 'Paused — LinkedIn throttling (resumes next run)');
+                recordProfileEnd(profileId, pName, _is429 ? 'Suspected weekly invitation limit (HTTP 429)' : 'Paused — LinkedIn throttling (resumes next run)');
                 campaign.parkedProfiles.push({
                   profileId,
                   pName,
                   parkedAt: Date.now(),
-                  reason: 'throttle_paused',
+                  reason: _is429 ? 'suspected_weekly_limit' : 'throttle_paused',
                 });
                 pushSoftWarning(campaign, {
                   profileId,
@@ -6547,6 +6555,8 @@ function buildAccountPanel() {
       state,
       live,
       weeklyCap,
+      // Inferred from HTTP 429s rather than stated by LinkedIn — the UI says "suspected".
+      weeklySuspected: weeklyCap && /429|suspected/.test(_why),
       needsLogin,
       batchDone: turn.done == null ? null : turn.done,
       batchSize: turn.size == null ? null : turn.size,

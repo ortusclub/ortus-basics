@@ -35,3 +35,14 @@ test('a 429 on an account that has reached nobody this run parks it as weekly-ca
   assert.match(src, /\(c429 >= HTTP_429_PARK_THRESHOLD \|\| _reachedSoFar === 0\) && !weeklyLimited\.has\(profileId\)/);
   assert.equal(normalizeSkipReason('VOYAGER_REJECTED: HTTP 429 — too many'), 'Skipped: Likely weekly invitation limit reached (HTTP 429) — confirming…');
 });
+
+test('an account paused on an HTTP 429 reads as a SUSPECTED weekly limit, not a bare "Stopped"', () => {
+  const src = readFileSync(new URL('../src/campaign.js', import.meta.url), 'utf8');
+  assert.match(src, /_is429 \? 'Suspected weekly invitation limit \(HTTP 429\)' : 'Paused — LinkedIn throttling/);
+  assert.match(src, /reason: _is429 \? 'suspected_weekly_limit' : 'throttle_paused'/);
+  assert.match(parkSentence('Suspected weekly invitation limit (HTTP 429)'), /^Suspected weekly invitation limit/);
+  assert.match(parkSentence('Weekly invitation limit reached (2× HTTP 429)'), /^Suspected weekly invitation limit/);
+  // LinkedIn's own "weekly limit" message is certain, not suspected.
+  assert.equal(parkSentence('Weekly invitation limit hit (~100/week)'), 'This account has used up its invitations for the week.');
+  assert.equal(prettyParkReason('suspected_weekly_limit'), 'suspected weekly invitation limit (HTTP 429)');
+});

@@ -114,7 +114,9 @@ test('every miss is explained as a sentence, never as a reason key', () => {
 test('a park reason is rewritten, so no raw internal wording reaches the card', () => {
   const s = parkSentence('Weekly invitation limit reached (2× HTTP 429)');
   assert.ok(!/HTTP|429/.test(s));
-  assert.match(s, /invitations for the week/);
+  // Inferred from refused invites, so it says "suspected" — LinkedIn's own message stays certain.
+  assert.match(s, /^Suspected weekly invitation limit/);
+  assert.match(parkSentence('Weekly invitation limit hit (~100/week)'), /invitations for the week/);
   assert.match(parkSentence('Session expired — log in again'), /logged in again in GoLogin/);
   assert.equal(parkSentence(''), '');
   assert.match(parkSentence('unconfirmed_streak'), /Five leads in a row could not be confirmed/);
