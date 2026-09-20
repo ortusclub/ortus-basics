@@ -3447,6 +3447,7 @@ function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
   const _icNote = document.getElementById('ic-beta-note');
   if (_icNote) _icNote.style.display = mode === 'introduce_back' ? '' : 'none';
+  { const _mcr = document.getElementById('monthly-cutoff-row'); if (_mcr) _mcr.style.display = ['open_profile_only', 'inmail_only'].includes(mode) ? '' : 'none'; if (typeof syncMonthlyCutoffHelp === 'function') syncMonthlyCutoffHelp(); }
   { const _wcr = document.getElementById('weekly-cutoff-row'); if (_wcr) _wcr.style.display = mode === 'connect_and_introduce' ? '' : 'none'; if (typeof syncWeeklyCutoffHelp === 'function') syncWeeklyCutoffHelp(); }
   document.querySelectorAll('.ccic-primary-note').forEach((el) => { el.style.display = mode === 'connect_and_introduce' ? '' : 'none'; });
   // Default Follower Growth to the Cloud VM. FG-on-cloud is the intended path — a
@@ -6247,6 +6248,21 @@ function syncWeeklyCutoffHelp() {
 }
 window.syncWeeklyCutoffHelp = syncWeeklyCutoffHelp;
 
+// "Free for all 25th": LinkedIn renews monthly message allowances on the 1st at
+// 00:00 UTC. Mirrors src/weekly-reset-cutoff.js (15 min before).
+function syncMonthlyCutoffHelp() {
+  const tog = document.getElementById('stop-before-monthly-reset');
+  const help = document.getElementById('monthly-cutoff-help');
+  if (!tog || !help) return;
+  const now = new Date();
+  const stopAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1) - 15 * 60000);
+  const when = stopAt.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  help.innerHTML = tog.checked
+    ? `<b>On:</b> this campaign stops itself at <b>${escHtml(when)}</b> your time — 15 minutes before LinkedIn renews the monthly message allowance (the 1st of the month at 00:00 UTC). Use up this month's credits without touching next month's. Leads left over stay queued.`
+    : `<b>Off:</b> the campaign keeps sending past the change of month, so it will start using next month's credits. Turn on to stop at <b>${escHtml(when)}</b> your time.`;
+}
+window.syncMonthlyCutoffHelp = syncMonthlyCutoffHelp;
+
 function syncPauseOnThrottleHelp() {
   const tog = document.getElementById('pause-on-throttle');
   const help = document.getElementById('pause-on-throttle-help');
@@ -7196,6 +7212,8 @@ async function startCampaign(opts = {}) {
     pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked === true,
     // "Free for all Friday" — only offered (and only sent) for Connect + Introduce Back.
     stopBeforeWeeklyReset: document.getElementById('campaign-mode')?.value === 'connect_and_introduce' && document.getElementById('stop-before-weekly-reset')?.checked === true,
+    // "Free for all 25th" — only offered (and only sent) for the credit-based message types.
+    stopBeforeMonthlyReset: ['open_profile_only', 'inmail_only'].includes(document.getElementById('campaign-mode')?.value) && document.getElementById('stop-before-monthly-reset')?.checked === true,
   };
 
   // v2.58.x — IC preflight: catch "no sender column" / "no matching profile"
@@ -18676,6 +18694,7 @@ function collectCurrentConfig() {
     delayMax: getN('within-batch-max', 60),
     pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked === true,
     stopBeforeWeeklyReset: document.getElementById('stop-before-weekly-reset')?.checked === true,
+    stopBeforeMonthlyReset: document.getElementById('stop-before-monthly-reset')?.checked === true,
     messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked,
     addNote: localStorage.getItem('ortus-add-note') === '1',
     linkedinColumn: getV('linkedin-col-select'),
@@ -18785,6 +18804,9 @@ function applyPresetConfig(config) {
     const _swr = document.getElementById('stop-before-weekly-reset');
     if (_swr) _swr.checked = config.stopBeforeWeeklyReset === true;
     if (typeof syncWeeklyCutoffHelp === 'function') syncWeeklyCutoffHelp();
+    const _smr = document.getElementById('stop-before-monthly-reset');
+    if (_smr) _smr.checked = config.stopBeforeMonthlyReset === true;
+    if (typeof syncMonthlyCutoffHelp === 'function') syncMonthlyCutoffHelp();
   }
   if (typeof checkDelayDanger === 'function') checkDelayDanger();
   // Render the sheet preview, THEN restore the column mapping. previewSheet()

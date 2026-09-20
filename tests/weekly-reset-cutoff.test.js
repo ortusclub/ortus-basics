@@ -43,3 +43,24 @@ test('the engine takes the option, records the cutoff, and stops at a lead bound
   const app = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
   assert.ok(!/stopBeforeWeeklyReset: mode ===/.test(app), 'launch payload must not reference an undefined `mode`');
 });
+
+test('the monthly allowance renews on the 1st at 00:00 UTC; the campaign stops 15 minutes before', async () => {
+  const { nextMonthlyResetMs, monthlyCutoffMs } = await import('../src/weekly-reset-cutoff.js');
+  assert.equal(iso(nextMonthlyResetMs(Date.parse('2026-09-20T10:00:00Z'))), '2026-10-01T00:00:00.000Z');
+  assert.equal(iso(monthlyCutoffMs(Date.parse('2026-09-20T10:00:00Z'))), '2026-09-30T23:45:00.000Z');
+  // December rolls into January of the next year.
+  assert.equal(iso(monthlyCutoffMs(Date.parse('2026-12-25T10:00:00Z'))), '2026-12-31T23:45:00.000Z');
+  // February, leap year.
+  assert.equal(iso(monthlyCutoffMs(Date.parse('2028-02-10T00:00:00Z'))), '2028-02-29T23:45:00.000Z');
+  // Started inside the last 15 minutes of the month → end of NEXT month.
+  assert.equal(iso(monthlyCutoffMs(Date.parse('2026-09-30T23:50:00Z'))), '2026-10-31T23:45:00.000Z');
+});
+
+test('the engine and launch payload carry the monthly option, opt-in only', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../src/campaign.js', import.meta.url), 'utf8');
+  assert.match(src, /campaign\.monthlyCutoffAt = stopBeforeMonthlyReset \?/);
+  assert.match(src, /stopCampaign\(\{ reason: 'monthly-reset-cutoff' \}\)/);
+  const server = readFileSync(new URL('../server.js', import.meta.url), 'utf8');
+  assert.match(server, /stopBeforeMonthlyReset: stopBeforeMonthlyReset === true/);
+});

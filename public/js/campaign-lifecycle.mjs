@@ -7,7 +7,7 @@ export function campaignLifecycle(s = {}) {
   let status;
   if (s.stopping || (s.running && s._abort) || ['stopping','pausing'].includes(raw)) status = 'stopping';
   else if ((raw === 'monitoring' || s.monitoring || s.monitoringPhase) && !s.fullStop && !s._skipCleanup) status = 'monitoring';
-  else if (s.interrupted || raw === 'interrupted' || (!s.running && (s.fullStop || reason === 'operator-stopped' || reason === 'stopped' || reason === 'campaign-stop-timeout' || reason === 'weekly-reset-cutoff'))) status = 'stopped';
+  else if (s.interrupted || raw === 'interrupted' || (!s.running && (s.fullStop || reason === 'operator-stopped' || reason === 'stopped' || reason === 'campaign-stop-timeout' || reason === 'weekly-reset-cutoff' || reason === 'monthly-reset-cutoff'))) status = 'stopped';
   else if (raw === 'waiting_daily_reset' || s.dailyWait) status = 'waiting';
   else if (raw === 'paused' || ((s.running || s.bucket === 'running') && (s.paused || s._paused || s.pauseRequested))) status = 'paused';
   else if (s.running || raw === 'running') status = 'running';

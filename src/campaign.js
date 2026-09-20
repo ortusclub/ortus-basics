@@ -1,6 +1,6 @@
 import { ensureCampaignIdentity, getConfigById, saveConfig } from './campaign-configs.js';
 import { campaignLifecycle } from '../public/js/campaign-lifecycle.mjs';
-import { weeklyCutoffMs, nextWeeklyResetMs } from './weekly-reset-cutoff.js';
+import { weeklyCutoffMs, nextWeeklyResetMs, monthlyCutoffMs, nextMonthlyResetMs } from './weekly-reset-cutoff.js';
 /**
  * Campaign orchestrator — v17.
  *
@@ -2083,7 +2083,7 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ campaignId = null, profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 10, delayMax = 20, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, stopBeforeWeeklyReset = false, excludedUrls = [] }) {
+export async function startCampaign({ campaignId = null, profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 10, delayMax = 20, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, stopBeforeWeeklyReset = false, stopBeforeMonthlyReset = false, excludedUrls = [] }) {
   if (campaign.running) throw new Error('Campaign already running');
   const identity = ensureCampaignIdentity({ campaignId, name, config: { profileIds, sheetUrl, templates, mode } });
   campaignId = identity.campaignId;
@@ -2120,7 +2120,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     campaignId, profileIds, sheetUrl, sheetGid, templates, dailyLimit, mode, messageOpenProfiles,
     delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency,
     name, acceptanceTrackingDays, preflightCheckStatus, createdBy,
-    senderColumn, allLeadsConnected, checkIntervalMinutes, autoChecksEnabled, stopBeforeWeeklyReset,
+    senderColumn, allLeadsConnected, checkIntervalMinutes, autoChecksEnabled, stopBeforeWeeklyReset, stopBeforeMonthlyReset,
     // Persist excludedUrls so restoreCampaign re-applies the same hard exclusions.
     excludedUrls: Array.isArray(excludedUrls) ? excludedUrls.slice() : [],
     benchedProfileIds: Array.isArray(benchedProfileIds) ? benchedProfileIds.slice() : [],
@@ -2284,6 +2284,8 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
   // "Free for all Friday": stop sending just before LinkedIn's weekly invitation
   // allowance resets, so this run never spends next week's invites.
   campaign.weeklyCutoffAt = stopBeforeWeeklyReset ? new Date(weeklyCutoffMs(Date.now())).toISOString() : null;
+  // "Free for all 25th": the same idea for the MONTHLY message allowances (1st of the month, UTC).
+  campaign.monthlyCutoffAt = stopBeforeMonthlyReset ? new Date(monthlyCutoffMs(Date.now())).toISOString() : null;
   campaign.dailyLimit = dailyLimit;
   // The per-account panel's own state, keyed by profile id. Reset per run:
   //   accountHealth  — what the last monitoring sweep learned about an account
@@ -2362,6 +2364,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     log(`Profiles: ${profileIds.length} selected`);
     const _NO_LIMIT_MODES = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only']);
     log(`Campaign limit per account: ${_NO_LIMIT_MODES.has(mode) ? 'unlimited (fast-mode)' : dailyLimit}`);
+    if (campaign.monthlyCutoffAt) log(`Free for all 25th: ON — this campaign stops itself at ${new Date(campaign.monthlyCutoffAt).toLocaleString()} (15 min before LinkedIn's monthly message allowance renews, the 1st at 00:00 UTC).`);
     if (campaign.weeklyCutoffAt) log(`Free for all Friday: ON — this campaign stops itself at ${new Date(campaign.weeklyCutoffAt).toLocaleString()} (15 min before LinkedIn's weekly invitation limit resets, Monday 00:00 California time).`);
     if (!_NO_LIMIT_MODES.has(mode)) {
       log(`  (set in launch wizard — adjust under "Campaign limit per account" before next run if this isn't what you expected)`);
@@ -5375,7 +5378,17 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     // "Free for all Friday" — true once the cutoff has passed; stops the campaign
     // (once) at a lead boundary, never mid-lead.
     function weeklyCutoffReached() {
-      if (!campaign.weeklyCutoffAt || campaign._abort) return false;
+      if (campaign._abort) return false;
+      if (campaign.monthlyCutoffAt) {
+        const mCutoff = Date.parse(campaign.monthlyCutoffAt);
+        if (Number.isFinite(mCutoff) && Date.now() >= mCutoff) {
+          const mReset = new Date(nextMonthlyResetMs(mCutoff)).toLocaleString();
+          log(`🛑 Free for all 25th — stopping before LinkedIn's monthly message allowance renews (${mReset}, the 1st at 00:00 UTC). Nothing more is sent, so next month's credits are untouched. Remaining leads stay queued.`);
+          stopCampaign({ reason: 'monthly-reset-cutoff' });
+          return true;
+        }
+      }
+      if (!campaign.weeklyCutoffAt) return false;
       const cutoff = Date.parse(campaign.weeklyCutoffAt);
       if (!Number.isFinite(cutoff) || Date.now() < cutoff) return false;
       const reset = new Date(nextWeeklyResetMs(cutoff)).toLocaleString();
@@ -6729,6 +6742,7 @@ export function getCampaignStatus() {
     checkIntervalBaseMinutes: campaign.checkIntervalMinutes || null,
     // "Free for all Friday": when this run stops itself, or null when the option is off.
     weeklyCutoffAt: campaign.weeklyCutoffAt || null,
+    monthlyCutoffAt: campaign.monthlyCutoffAt || null,
     emptyCheckStreak: Math.max(0, Number(campaign.emptyCheckStreak) || 0),
     // Which side owns this campaign, and when it last changed hands. Stamped by
     // the handover routes in server.js (and by launchCampaign for any run that

@@ -1202,6 +1202,18 @@
                   <div class="tr-help" id="weekly-cutoff-help"></div>
                 </div>
               </div>
+
+              <!-- "Free for all 25th" — Open Profile / InMail campaigns only (toggled in onModeChange). -->
+              <div class="throttle-row" id="monthly-cutoff-row" style="display:none">
+                <label class="alpha-toggle" title="Stop this campaign just before LinkedIn's monthly message allowance renews">
+                  <input type="checkbox" id="stop-before-monthly-reset" onchange="syncMonthlyCutoffHelp(); wizardDirtyOnInput()" />
+                  <span class="alpha-toggle-track"></span>
+                </label>
+                <div class="tr-text">
+                  <div class="tr-label">Free for all 25th — stop before the monthly credits renew</div>
+                  <div class="tr-help" id="monthly-cutoff-help"></div>
+                </div>
+              </div>
             </div>
           </details>
 

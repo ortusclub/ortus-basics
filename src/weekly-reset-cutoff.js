@@ -57,3 +57,23 @@ export function weeklyCutoffMs(nowMs) {
   // Started inside the last 15 minutes: that window is already gone — aim for next week's.
   return cutoff > nowMs ? cutoff : nextWeeklyResetMs(reset + 1000) - STOP_BEFORE_RESET_MS;
 }
+
+/**
+ * "Free for all 25th" — LinkedIn's MONTHLY message allowances (Sales Navigator
+ * InMail credits, free Open Profile messages) renew on the first day of every
+ * calendar month, and LinkedIn calculates the month in UTC (Recruiter Help:
+ * "Coordinated Universal Time (UTC) is used for calculating a month"; Sales
+ * Navigator Help: "renew on the first day of every month, regardless of your
+ * billing cycle"). So the reset is the 1st at 00:00 UTC — no DST to handle.
+ */
+export function nextMonthlyResetMs(nowMs) {
+  const d = new Date(nowMs);
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 1, 0, 0, 0);
+}
+
+/** When a message campaign started at `nowMs` must stop sending. */
+export function monthlyCutoffMs(nowMs) {
+  const cutoff = nextMonthlyResetMs(nowMs) - STOP_BEFORE_RESET_MS;
+  // Started inside the last 15 minutes of the month: aim for the end of NEXT month.
+  return cutoff > nowMs ? cutoff : nextMonthlyResetMs(nextMonthlyResetMs(nowMs) + 1000) - STOP_BEFORE_RESET_MS;
+}

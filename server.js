@@ -1233,7 +1233,7 @@ function buildCampaignConfig(body) {
           multiTab,
           // Fix B Task 3: pause the campaign when a 429/throttle is detected.
           // Defaults to true when absent or undefined so legacy clients opt-in automatically.
-          pauseOnThrottle: pauseOnThrottleRaw, stopBeforeWeeklyReset } = body || {};
+          pauseOnThrottle: pauseOnThrottleRaw, stopBeforeWeeklyReset, stopBeforeMonthlyReset } = body || {};
   const pauseOnThrottle = pauseOnThrottleRaw === false ? false : true;
   // Coerce sheetGid to digits only; fall back to extracting from the URL.
   const sheetGid = sheetGidRaw != null
@@ -1292,6 +1292,8 @@ function buildCampaignConfig(body) {
     pauseOnThrottle,
     // "Free for all Friday" — opt-in only.
     stopBeforeWeeklyReset: stopBeforeWeeklyReset === true,
+    // "Free for all 25th" — opt-in only.
+    stopBeforeMonthlyReset: stopBeforeMonthlyReset === true,
     // Pre-flight hard exclusions (blocklist URLs): set by the /api/campaign/start gate.
     excludedUrls: Array.isArray(body._preflightExcludedUrls) ? body._preflightExcludedUrls : [],
   };
