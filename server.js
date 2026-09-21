@@ -7990,7 +7990,9 @@ function registerSchedule(schedule) {
       ? notifyEmail(schedule.createdBy, payload)
       : notifyAll(payload);
 
-    notify({
+    // Not when it is about to be queued behind a running campaign — that path
+    // sends its own "queued" notice instead of a false "running now".
+    if (!campaign.running) notify({
       title: 'Campaign started',
       body: `${schedule.name} is running now on ${schedule.profileIds.length} account(s).`,
       link: '/',
@@ -8000,6 +8002,25 @@ function registerSchedule(schedule) {
       // A schedule made from the wizard carries the whole launch — run exactly
       // that, under the campaign's own permanent id, so nothing is cloned and no
       // setting (primary person, intro message, stop options…) is dropped.
+      // Something is already running → join the queue instead of failing with
+      // "Campaign already running" (operator, 2026-09-21). Same rule as pressing
+      // Start while busy; the queue starts it when the current campaign finishes.
+      if (campaign.running) {
+        const queuedConfig = schedule.launchBody
+          ? buildCampaignConfig({ ...schedule.launchBody, campaignId: schedule.campaignId, name: schedule.name })
+          : buildCampaignConfig({ campaignId: schedule.campaignId, name: schedule.name, profileIds: schedule.profileIds,
+              sheetUrl: schedule.sheetUrl, templates: schedule.templates || {}, dailyLimit: schedule.dailyLimit || 50,
+              mode: schedule.mode || 'connect_only', delayMin: schedule.delayMin, delayMax: schedule.delayMax,
+              pauseOnThrottle: schedule.pauseOnThrottle });
+        await addToQueue(queuedConfig, schedule.createdBy || null);
+        const busyWith = campaign.name || 'another campaign';
+        campaignLog(`🗓 Scheduled campaign "${schedule.name}" is due, but "${busyWith}" is running — added to the queue. It starts when that one finishes.`);
+        const allS = await loadSchedules();
+        const sq = allS.find(x => x.id === schedule.id);
+        if (sq) { sq.lastRun = new Date().toISOString(); await saveSchedules(allS); }
+        notify({ title: 'Scheduled campaign queued', body: `${schedule.name} was due while "${busyWith}" is running — it is queued and starts next.`, link: '/' }).catch(() => {});
+        return;
+      }
       if (schedule.launchBody) {
         const fullConfig = buildCampaignConfig({ ...schedule.launchBody, campaignId: schedule.campaignId, name: schedule.name });
         fullConfig.createdBy = schedule.createdBy || null;

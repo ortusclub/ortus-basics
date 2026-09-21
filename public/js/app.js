@@ -11203,6 +11203,47 @@ function renderUnifiedStrip(it) {
 // Draft strip — a saved-but-not-launched wizard config, surfaced on the board
 // inside "Your campaigns" under the DRAFTS rail (railhead CSS uppercases the
 // label). Slim collapsed-style strip: Open → wizard (editDraft), 🗑 → delete.
+// One scheduled run, on the dashboard's SCHEDULED rail. `sch` is a /api/schedules
+// row; `next` its next fire time. Open goes to the campaign it belongs to.
+function renderScheduledStrip(sch, next, openId) {
+  const name = sch.name || '(unnamed campaign)';
+  const when = next ? next.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'no upcoming run';
+  // A cron with a fixed day AND month fires once a year — i.e. the one-off date the operator picked.
+  const f = String(sch.cron || '').split(/\s+/);
+  const repeats = f.length === 5 && (f[2] === '*' || f[3] === '*');
+  const accts = (sch.profileIds || []).length;
+  const open = openId
+    ? `<button class="mini solid" onclick="openCampaignForEdit('${escHtml(openId)}')">Open</button>` : '';
+  return `
+  <div class="sn-strip done sn-collapsed" data-cid="sched:${escHtml(sch.id)}">
+    <div class="sn-compact">
+    <div class="sn-top"><span class="sn-type">Campaign · ${escHtml(dashboardModeLabel(sch.mode))}</span><span class="sn-you">You</span>
+      <span class="sn-status"><span class="dot q"></span> Scheduled</span></div>
+    <div class="sn-name">${escHtml(name)}</div>
+    <div class="sn-flow">Starts <b>${escHtml(when)}</b>${repeats ? ' · repeats' : ''} · ${accts} account${accts === 1 ? '' : 's'} · runs on this Mac while the app is open · queues if another campaign is running</div>
+    <div class="sn-foot"><div class="right">`
+    + `<button type="button" class="dock-btn danger" data-tip="Cancel this schedule" aria-label="Cancel this schedule" onclick="cancelScheduleStrip('${escHtml(sch.id)}', this)">${V3_SVG_TRASH || V3_SVG_XMARK}</button>`
+    + open
+    + `</div></div>
+    </div>
+  </div>`;
+}
+async function cancelScheduleStrip(id, btn) {
+  if (!confirm('Cancel this scheduled run?\n\nThe campaign itself and its settings are kept.')) return;
+  if (btn) btn.disabled = true;
+  try {
+    const r = await fetch('/api/schedules/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    await refreshLocalSchedules();
+    showCampaignToast('Schedule cancelled.');
+    renderCampaignsBoard();
+  } catch (e) {
+    showCampaignToast('Could not cancel the schedule: ' + e.message, 6000);
+    if (btn) btn.disabled = false;
+  }
+}
+window.cancelScheduleStrip = cancelScheduleStrip;
+
 function renderDraftStrip(d) {
   const name = d.name || '(unnamed draft)';
   const created = (typeof dashboardFormatDate === 'function' && dashboardFormatDate(d.createdAt)) || '';
@@ -11623,7 +11664,8 @@ function _renderBoardSection(key, title, secItems, opts = {}) {
   const body = rail('Running', running)
     + rail('Paused', paused)
     + rail('Queued', idle)
-    + rail('Saved campaigns', secItems.filter(x => x.bucket === 'saved'))
+    + (opts.scheduledHtml ? `<div class="sn-railhead">Scheduled <span class="sn-railcount">${opts.scheduledCount || ''}</span></div>` + opts.scheduledHtml : '')
+    + rail('Saved campaigns', secItems.filter(x => x.bucket === 'saved' && !(opts.scheduledCampaignIds && opts.scheduledCampaignIds.has(x.campaignId))))
     + draftsRail
     + subGroup('done', 'Done', done, clearBtn("clearBoardCat('finished')", done.length))
     + subGroup('cancelled', 'Stopped', cancelled, clearBtn("clearBoardCat('cancelled')", cancelled.length));
@@ -12412,6 +12454,21 @@ async function _renderCampaignsBoardInner() {
     catch (e) { try { console.error('[board] draft strip render failed for', d && d.id, e); } catch { /* */ } }
   }
   const _draftOpts = _draftsHtml ? { draftsHtml: _draftsHtml, draftsCount: _draftRows.length } : {};
+
+  // Scheduled runs (this Mac's node-cron schedules). Like drafts, they are not
+  // board items, so they arrive pre-rendered; soonest first.
+  try {
+    const _sch = (await refreshLocalSchedules()).filter((x) => x.enabled !== false)
+      .map((x) => ({ sch: x, next: _cronNextRun(x.cron) })).filter((x) => x.next)
+      .sort((a, b) => a.next - b.next);
+    if (_sch.length && _campaignsTypeFilter === 'All') {
+      const byCampaign = new Map(items.filter((x) => x.campaignId).map((x) => [x.campaignId, x.id]));
+      _draftOpts.scheduledHtml = _sch.map(({ sch, next }) => renderScheduledStrip(sch, next, byCampaign.get(sch.campaignId) || '')).join('');
+      _draftOpts.scheduledCount = _sch.length;
+      // A campaign shown under Scheduled should not ALSO sit under Saved campaigns.
+      _draftOpts.scheduledCampaignIds = new Set(_sch.map((x) => x.sch.campaignId).filter(Boolean));
+    }
+  } catch (e) { try { console.warn('[board] scheduled rail:', e.message); } catch { /* */ } }
 
   // ── Board layout ──────────────────────────────────────────────────────────
   // Admins get three minimisable sections (Your / Other users / Admin = Follower

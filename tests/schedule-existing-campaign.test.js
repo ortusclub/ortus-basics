@@ -41,3 +41,18 @@ test('the Live Status card says Scheduled (with when) for the campaign open in t
   assert.match(app, /v3SetText\('activeEyebrow', `Scheduled · starts \$\{_when\}/);
   assert.match(app, /v3SetText\('sendingLbl', 'Scheduled'\);/);
 });
+
+test('a schedule that comes due while a campaign is running joins the queue instead of failing', () => {
+  const fire = server.slice(server.indexOf('// Main fire'), server.indexOf('const status = getCampaignStatus();', server.indexOf('// Main fire')));
+  const busy = fire.indexOf('if (campaign.running) {');
+  assert.ok(busy > -1 && busy < fire.indexOf('await startCampaign(fullConfig);'), 'the busy check must come before any start');
+  assert.match(fire, /await addToQueue\(queuedConfig, schedule\.createdBy \|\| null\);/);
+  assert.match(fire, /if \(!campaign\.running\) notify\(\{\s+title: 'Campaign started'/);
+});
+
+test('the dashboard has a Scheduled rail, and a scheduled campaign is not repeated under Saved', () => {
+  assert.match(app, /Scheduled <span class=\\"sn-railcount\\">/);
+  assert.match(app, /x\.bucket === 'saved' && !\(opts\.scheduledCampaignIds && opts\.scheduledCampaignIds\.has\(x\.campaignId\)\)/);
+  assert.match(app, /function renderScheduledStrip\(sch, next, openId\)/);
+  assert.match(app, /fetch\('\/api\/schedules\/' \+ encodeURIComponent\(id\), \{ method: 'DELETE' \}\)/);
+});
