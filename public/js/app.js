@@ -14981,6 +14981,7 @@ async function submitStartCampaign(body, opts = {}) {
         }),
       });
       const j = await r.json().catch(() => ({}));
+      if (r.ok) { try { await refreshLocalSchedules(); } catch (_) { /* card catches up on the next poll */ } }
       showCampaignToast(r.ok ? 'Scheduled ✓ — it will run with all of this campaign\'s settings.' : `Schedule failed: ${j.error || r.statusText}`, 5000);
     } catch (err) {
       console.error('[schedule]', err);
@@ -27912,6 +27913,69 @@ function v3ModeBadge(mode) {
   return V3_MODE_BADGE[mode] || String(mode).slice(0, 4).toUpperCase();
 }
 
+// ── Local schedules, for the Live Status card ────────────────────────────────
+// Next time a 5-field cron expression fires (local time, like node-cron), or null.
+function _cronNextRun(expr, from = new Date()) {
+  const f = String(expr || '').trim().split(/\s+/);
+  if (f.length !== 5) return null;
+  const parse = (field, lo, hi) => {
+    const out = new Set();
+    for (const part of field.split(',')) {
+      const [range, stepRaw] = part.split('/');
+      const step = Math.max(1, parseInt(stepRaw, 10) || 1);
+      let a = lo, b = hi;
+      if (range !== '*') { const [x, y] = range.split('-'); a = parseInt(x, 10); b = y === undefined ? a : parseInt(y, 10); }
+      if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
+      for (let v = a; v <= b; v += step) out.add(v);
+    }
+    return out;
+  };
+  const mins = parse(f[0], 0, 59), hrs = parse(f[1], 0, 23), dom = parse(f[2], 1, 31), mon = parse(f[3], 1, 12), dowRaw = parse(f[4], 0, 7);
+  if (!mins || !hrs || !dom || !mon || !dowRaw) return null;
+  const dow = new Set([...dowRaw].map((d) => d % 7));
+  const domAny = f[2] === '*', dowAny = f[4] === '*';
+  const d = new Date(from.getTime()); d.setSeconds(0, 0); d.setMinutes(d.getMinutes() + 1);
+  for (let day = 0; day < 370; day++) {
+    const dayOk = mon.has(d.getMonth() + 1) && (domAny && dowAny ? true
+      : domAny ? dow.has(d.getDay()) : dowAny ? dom.has(d.getDate()) : (dom.has(d.getDate()) || dow.has(d.getDay())));
+    if (dayOk) {
+      for (let h = d.getHours(); h < 24; h++) {
+        if (!hrs.has(h)) continue;
+        for (let m = (h === d.getHours() ? d.getMinutes() : 0); m < 60; m++) {
+          if (mins.has(m)) { const r = new Date(d.getTime()); r.setHours(h, m, 0, 0); return r; }
+        }
+      }
+    }
+    d.setDate(d.getDate() + 1); d.setHours(0, 0, 0, 0);
+  }
+  return null;
+}
+let _localSchedules = [];
+async function refreshLocalSchedules() {
+  try { const r = await fetch('/api/schedules'); if (r.ok) { const j = await r.json(); if (Array.isArray(j)) _localSchedules = j; } } catch (_) { /* keep the last list */ }
+  return _localSchedules;
+}
+setInterval(refreshLocalSchedules, 30000);
+refreshLocalSchedules();
+/** The enabled schedule (with its next run) for the campaign open in the editor, or null. */
+function _scheduleForOpenCampaign() {
+  if (!(location.hash || '').startsWith('#/new')) return null;
+  let openedId = null; try { openedId = _openedCampaignId; } catch (_) { /* declared later */ }
+  const name = (document.getElementById('campaign-name-input')?.value || '').trim().toLowerCase();
+  let best = null; let count = 0;
+  for (const sch of _localSchedules) {
+    if (sch.enabled === false) continue;
+    const mine = openedId ? sch.campaignId === openedId : (name && String(sch.name || '').trim().toLowerCase() === name);
+    if (!mine) continue;
+    const next = _cronNextRun(sch.cron);
+    if (!next) continue;
+    count += 1;
+    if (!best || next < best.next) best = { sch, next };
+  }
+  if (best) best.count = count;
+  return best;
+}
+
 function v3SetText(id, text) {
   const el = document.getElementById(id);
   if (el) el.textContent = text;
@@ -30267,9 +30331,18 @@ window.renderActiveCard = function(status) {
       v3SetText('activeEyebrow', `☁︎ Running in the cloud${qNote}`);
       v3SetText('sendingLbl', 'Cloud');
     } else {
-      v3SetText('activeName', 'No campaign running');
-      v3SetText('activeEyebrow', 'No campaign running');
-      v3SetText('sendingLbl', 'Idle');
+      // The campaign open in the editor has a schedule → say so, with when.
+      const _sched = _scheduleForOpenCampaign();
+      if (_sched) {
+        const _when = _sched.next.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        v3SetText('activeName', _sched.sch.name || 'Scheduled campaign');
+        v3SetText('activeEyebrow', `Scheduled · starts ${_when}${_sched.count > 1 ? ` · +${_sched.count - 1} more scheduled` : ''}`);
+        v3SetText('sendingLbl', 'Scheduled');
+      } else {
+        v3SetText('activeName', 'No campaign running');
+        v3SetText('activeEyebrow', 'No campaign running');
+        v3SetText('sendingLbl', 'Idle');
+      }
     }
     v3SetText('activePct', '0');
     v3SetText('activeSent', '0');
