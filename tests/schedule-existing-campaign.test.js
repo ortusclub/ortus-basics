@@ -51,7 +51,7 @@ test('a schedule that comes due while a campaign is running joins the queue inst
 });
 
 test('the dashboard has a Scheduled rail, and a scheduled campaign is not repeated under Saved', () => {
-  assert.match(app, /Scheduled <span class=\\"sn-railcount\\">/);
+  assert.match(app, /Scheduled <span class="sn-railcount">/);
   assert.match(app, /x\.bucket === 'saved' && !\(opts\.scheduledCampaignIds && opts\.scheduledCampaignIds\.has\(x\.campaignId\)\)/);
   assert.match(app, /function renderScheduledStrip\(sch, next, openId\)/);
   assert.match(app, /fetch\('\/api\/schedules\/' \+ encodeURIComponent\(id\), \{ method: 'DELETE' \}\)/);
