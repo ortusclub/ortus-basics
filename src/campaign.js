@@ -2365,7 +2365,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     const _NO_LIMIT_MODES = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only']);
     log(`Campaign limit per account: ${_NO_LIMIT_MODES.has(mode) ? 'unlimited (fast-mode)' : dailyLimit}`);
     if (campaign.monthlyCutoffAt) log(`Free for all 25th: ON — this campaign stops itself at ${new Date(campaign.monthlyCutoffAt).toLocaleString()} (15 min before LinkedIn's monthly message allowance renews, the 1st at 00:00 UTC).`);
-    if (campaign.weeklyCutoffAt) log(`Free for all Friday: ON — this campaign stops itself at ${new Date(campaign.weeklyCutoffAt).toLocaleString()} (15 min before LinkedIn's weekly invitation limit resets, Monday 00:00 California time).`);
+    if (campaign.weeklyCutoffAt) log(`Free for all Friday: ON — this campaign stops itself at ${new Date(campaign.weeklyCutoffAt).toLocaleString()} (Sunday 12:00 California time — ahead of LinkedIn's weekly invitation limit resetting).`);
     if (!_NO_LIMIT_MODES.has(mode)) {
       log(`  (set in launch wizard — adjust under "Campaign limit per account" before next run if this isn't what you expected)`);
     }
@@ -5392,7 +5392,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       const cutoff = Date.parse(campaign.weeklyCutoffAt);
       if (!Number.isFinite(cutoff) || Date.now() < cutoff) return false;
       const reset = new Date(nextWeeklyResetMs(cutoff)).toLocaleString();
-      log(`🛑 Free for all Friday — stopping before LinkedIn's weekly invitation limit resets (${reset}). Nothing more is sent, so next week's invitations are untouched. Remaining leads stay queued.`);
+      log(`🛑 Free for all Friday — it is Sunday midday California time, so this campaign is stopping well before LinkedIn's weekly invitation limit resets (${reset}). Nothing more is sent, so next week's invitations are untouched. Remaining leads stay queued.`);
       stopCampaign({ reason: 'weekly-reset-cutoff' });
       return true;
     }

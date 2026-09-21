@@ -6222,16 +6222,16 @@ function checkDelayDanger() {
 }
 
 // Task 4 (2026-06-19): B2 pause-on-throttle help text update.
-// "Free for all Friday": next Monday 00:00 California time, shown in the
-// operator's own clock. Mirrors src/weekly-reset-cutoff.js (15 min before).
+// "Free for all Friday": next Sunday 12:00 California time, shown in the
+// operator's own clock. Mirrors weeklyCutoffMs in src/weekly-reset-cutoff.js.
 function _nextWeeklyResetLocal() {
   const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hourCycle: 'h23', weekday: 'short', hour: 'numeric', minute: 'numeric' });
   const read = (ms) => { const o = {}; for (const p of fmt.formatToParts(new Date(ms))) o[p.type] = p.value; return o; };
-  // Walk forward a minute at a time from now until California reads Mon 00:00 (≤ 7 days).
+  // Walk forward a minute at a time from now until California reads Sun 12:00 (≤ 7 days).
   let t = Math.ceil(Date.now() / 60000) * 60000;
   for (let i = 0; i < 7 * 24 * 60 + 2; i++, t += 60000) {
     const p = read(t);
-    if (p.weekday === 'Mon' && +p.hour === 0 && +p.minute === 0) return new Date(t);
+    if (p.weekday === 'Sun' && +p.hour === 12 && +p.minute === 0) return new Date(t);
   }
   return null;
 }
@@ -6240,10 +6240,10 @@ function syncWeeklyCutoffHelp() {
   const help = document.getElementById('weekly-cutoff-help');
   if (!tog || !help) return;
   const reset = _nextWeeklyResetLocal();
-  const stopAt = reset ? new Date(reset.getTime() - 15 * 60000) : null;
-  const when = stopAt ? stopAt.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'just before Monday 00:00 California time';
+  const stopAt = reset;
+  const when = stopAt ? stopAt.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Sunday 12:00 California time';
   help.innerHTML = tog.checked
-    ? `<b>On:</b> this campaign stops itself at <b>${escHtml(when)}</b> your time — 15 minutes before LinkedIn's weekly invitation limit resets (Monday 00:00 California time). Use up this week's invitations without touching next week's. Leads left over stay queued.`
+    ? `<b>On:</b> this campaign stops itself at <b>${escHtml(when)}</b> your time — Sunday midday California time, ahead of LinkedIn's weekly invitation limit resetting. Use up this week's invitations without touching next week's. Leads left over stay queued.`
     : `<b>Off:</b> the campaign keeps sending past the weekly reset, so it will start using next week's invitations. Turn on to stop at <b>${escHtml(when)}</b> your time.`;
 }
 window.syncWeeklyCutoffHelp = syncWeeklyCutoffHelp;

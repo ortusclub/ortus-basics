@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { nextWeeklyResetMs, weeklyCutoffMs, STOP_BEFORE_RESET_MS } from '../src/weekly-reset-cutoff.js';
+import { nextWeeklyResetMs, weeklyCutoffMs } from '../src/weekly-reset-cutoff.js';
 
 const iso = (ms) => new Date(ms).toISOString();
 
@@ -21,14 +21,19 @@ test('Monday morning UTC is still "before the reset" while it is Sunday night in
   assert.equal(iso(nextWeeklyResetMs(Date.parse('2026-09-21T07:00:01Z'))), '2026-09-28T07:00:00.000Z');
 });
 
-test('the campaign stops 15 minutes before the reset', () => {
-  const now = Date.parse('2026-09-20T10:00:00Z');
-  assert.equal(weeklyCutoffMs(now), nextWeeklyResetMs(now) - STOP_BEFORE_RESET_MS);
-  assert.equal(iso(weeklyCutoffMs(now)), '2026-09-21T06:45:00.000Z');
+test('Free for all Friday stops at Sunday 12:00 California time', () => {
+  // Summer (PDT): Sunday 27 Sept 12:00 = 19:00 UTC
+  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-09-23T10:00:00Z'))), '2026-09-27T19:00:00.000Z');
+  // Winter (PST): Sunday 13 Dec 12:00 = 20:00 UTC
+  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-12-10T12:00:00Z'))), '2026-12-13T20:00:00.000Z');
+  // The Sunday the clocks go back (1 Nov 2026): midday is already PST → 20:00 UTC
+  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-10-30T12:00:00Z'))), '2026-11-01T20:00:00.000Z');
 });
 
-test('started inside the last 15 minutes, it aims for next week rather than stopping at once', () => {
-  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-09-21T06:50:00Z'))), '2026-09-28T06:45:00.000Z');
+test('started on Sunday afternoon, it aims for next Sunday rather than stopping at once', () => {
+  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-09-27T19:00:01Z'))), '2026-10-04T19:00:00.000Z');
+  // Sunday morning California time still stops that same midday.
+  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-09-27T16:00:00Z'))), '2026-09-27T19:00:00.000Z');
 });
 
 test('the engine takes the option, records the cutoff, and stops at a lead boundary', async () => {
