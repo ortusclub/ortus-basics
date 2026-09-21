@@ -7997,7 +7997,14 @@ function registerSchedule(schedule) {
     }).catch(() => {});
     preventSleep(`schedule:${schedule.name}`);
     try {
-      await startCampaign({
+      // A schedule made from the wizard carries the whole launch — run exactly
+      // that, under the campaign's own permanent id, so nothing is cloned and no
+      // setting (primary person, intro message, stop options…) is dropped.
+      if (schedule.launchBody) {
+        const fullConfig = buildCampaignConfig({ ...schedule.launchBody, campaignId: schedule.campaignId, name: schedule.name });
+        fullConfig.createdBy = schedule.createdBy || null;
+        await startCampaign(fullConfig);
+      } else await startCampaign({
         campaignId: schedule.campaignId, name: schedule.name,
         profileIds: schedule.profileIds,
         sheetUrl: schedule.sheetUrl,
@@ -8074,6 +8081,10 @@ app.post('/api/schedules', async (req, res) => {
       dailyLimit: dailyLimit || 50,
       delayMin, delayMax,
       enabled: enabled !== false, lastRun: null,
+      // The FULL launch the wizard would have sent to /api/campaign/start (primary
+      // person, intro message, sender names, sheet tab, stop options…). The thin
+      // fields above are kept for the schedules panel and as a fallback.
+      launchBody: (req.body.launchBody && typeof req.body.launchBody === 'object') ? req.body.launchBody : (existing >= 0 ? all[existing].launchBody : undefined),
       // P-06 fix (2.8.18): never trust req.body.createdBy — that lets a
       // logged-in user spoof schedule ownership and redirect notification
       // emails to other operators. createdBy is always derived from req.user

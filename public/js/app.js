@@ -14969,6 +14969,25 @@ async function submitStartCampaign(body, opts = {}) {
   // queues and never auto-drains. The regular Start path is unchanged: it
   // hits /api/campaign/start which fires immediately if idle, queues if a
   // campaign is already running.
+  if (opts.scheduleCron) {
+    try {
+      const r = await fetch('/api/schedules', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: opts.scheduleName || body.name, cron: opts.scheduleCron, campaignId: body.campaignId,
+          profileIds: body.profileIds, sheetUrl: body.sheetUrl, mode: body.mode, templates: body.templates,
+          dailyLimit: body.dailyLimit, delayMin: body.delayMin, delayMax: body.delayMax, enabled: true,
+          launchBody: body,
+        }),
+      });
+      const j = await r.json().catch(() => ({}));
+      showCampaignToast(r.ok ? 'Scheduled ✓ — it will run with all of this campaign\'s settings.' : `Schedule failed: ${j.error || r.statusText}`, 5000);
+    } catch (err) {
+      console.error('[schedule]', err);
+      showCampaignToast('Schedule failed: ' + err.message, 5000);
+    }
+    return;
+  }
   const url = opts.queueOnly ? '/api/campaign/queue-only' : '/api/campaign/start';
   try {
     const res = await fetch(url, {
@@ -27452,7 +27471,8 @@ window.launchScheduleIt = async function () {
   // opened campaign schedules a restart of itself (below), which is a legitimate
   // thing to do with a stopped or finished campaign — nothing gets cloned.
   const _cloudTarget = typeof getRunTarget === 'function' && getRunTarget() === 'cloud';
-  if (!_cloudTarget && _existingCampaignBlocksNewDispatch()) return;
+  // Local schedules attach to the campaign's permanent id (no clone), so an
+  // opened existing campaign may be scheduled.
   _closeLaunchMenu();
   const nameInput = document.getElementById('campaign-name-input');
 
@@ -27479,72 +27499,11 @@ window.launchScheduleIt = async function () {
 
   const result = await openScheduleModal({ defaultName: (nameInput?.value || '').trim() });
   if (!result) return;
-
-  // Validation mirrors saveQuickSchedule's prerequisites.
-  if (!Array.isArray(selectedProfileIds) || selectedProfileIds.length === 0) {
-    if (typeof showCampaignToast === 'function') showCampaignToast('Select at least one GoLogin account first.');
-    return;
-  }
-  const sheetUrl = (document.getElementById('sheet-url')?.value || '').trim();
-  if (!sheetUrl) {
-    if (typeof showCampaignToast === 'function') showCampaignToast('Enter the Google Sheet URL first.');
-    return;
-  }
-  const dailyLimit = parseInt(document.getElementById('daily-limit')?.value, 10) || 50;
-  const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
-
-  // Mirror saveQuickSchedule's delay derivation (message_only uses message-gap,
-  // others use within-batch-min/max).
-  let delayMin; let delayMax;
-  if (mode === 'message_only') {
-    const gap = parseInt(document.getElementById('message-gap')?.value, 10) || 60;
-    delayMin = Math.max(5, Math.round(gap * 0.8));
-    delayMax = Math.max(delayMin + 5, Math.round(gap * 1.3));
-  } else {
-    delayMin = parseInt(document.getElementById('within-batch-min')?.value, 10) || 10;
-    delayMax = parseInt(document.getElementById('within-batch-max')?.value, 10) || 20;
-    if (delayMax < delayMin) [delayMin, delayMax] = [delayMin, delayMin + 5];
-  }
-
-  const templates = {
-    connectionNote: document.getElementById('tpl-note')?.value || '',
-    followUp1: document.getElementById('tpl-followup')?.value || '',
-    inmailSubject: document.getElementById('tpl-inmail-subject')?.value || '',
-    inmailBody: document.getElementById('tpl-inmail-body')?.value || '',
-    openProfileSubject: document.getElementById('tpl-op-subject')?.value || '',
-    openProfileBody: document.getElementById('tpl-op-body')?.value || '',
-    opChannel: document.getElementById('tpl-op-channel')?.value || 'sn_first',
-    opSpendInMail: !!document.getElementById('tpl-op-spend-inmail')?.checked,
-  };
-
-  try { await flushAutosaveImmediate(); } catch {}
-  try {
-    const r = await fetch('/api/schedules', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: result.name,
-        cron: result.cron,
-        profileIds: selectedProfileIds,
-        sheetUrl,
-        mode,
-        templates,
-        dailyLimit,
-        delayMin,
-        delayMax,
-        enabled: true,
-      }),
-    });
-    if (r.ok) {
-      if (typeof showCampaignToast === 'function') showCampaignToast('Scheduled!');
-    } else {
-      const body = await r.json().catch(() => ({}));
-      if (typeof showCampaignToast === 'function') showCampaignToast(`Schedule failed: ${body.error || r.statusText}`);
-    }
-  } catch (err) {
-    console.error('[drafts] schedule:', err);
-    if (typeof showCampaignToast === 'function') showCampaignToast('Schedule failed');
-  }
+  // Build the launch exactly as Start would (every validation, the pre-flight
+  // gate, the full settings) and hand it to the scheduler instead of running it.
+  // The schedule is attached to this campaign's permanent id, so scheduling an
+  // opened campaign schedules THAT campaign — nothing is cloned.
+  return startCampaign({ queueOnly: true, scheduleCron: result.cron, scheduleName: result.name });
 };
 
 // Save as draft — autosave already persisted everything; this just closes
