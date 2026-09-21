@@ -10,17 +10,18 @@
 export const RESET_TIME_ZONE = 'America/Los_Angeles';
 export const RESET_WEEKDAY = 1;            // Monday (0 = Sunday)
 export const STOP_BEFORE_RESET_MS = 15 * 60 * 1000;   // monthly cutoff only
-// Free for all Friday stops at Sunday 12:00 California time (operator, 2026-09-21)
-// — half a day clear of the assumed Monday 00:00 reset, not 15 minutes.
+// Free for all Friday stops when the weekend free-for-all ends: Sunday 12:00
+// Philippine time (operator, 2026-09-21). The window opens Saturday 12:00 PH time.
+export const WEEKLY_STOP_TIME_ZONE = 'Asia/Manila';
 export const WEEKLY_STOP_WEEKDAY = 0;      // Sunday
 export const WEEKLY_STOP_HOUR = 12;        // midday, reset time zone
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 /** Wall-clock parts of an instant in the reset time zone. */
-function zoneParts(ms) {
+function zoneParts(ms, timeZone = RESET_TIME_ZONE) {
   const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: RESET_TIME_ZONE, hourCycle: 'h23', weekday: 'short',
+    timeZone, hourCycle: 'h23', weekday: 'short',
     year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric',
   }).formatToParts(new Date(ms));
   const get = (type) => parts.find((p) => p.type === type)?.value;
@@ -29,10 +30,10 @@ function zoneParts(ms) {
 }
 
 /** The instant (epoch ms) at which the zone's wall clock reads y-m-d hour:00. DST-safe. */
-function zoneMidnightToUtc(year, month, day, hour = 0) {
+function zoneMidnightToUtc(year, month, day, hour = 0, timeZone = RESET_TIME_ZONE) {
   let guess = Date.UTC(year, month - 1, day, hour, 0, 0);
   for (let i = 0; i < 3; i++) {
-    const p = zoneParts(guess);
+    const p = zoneParts(guess, timeZone);
     const shown = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
     const want = Date.UTC(year, month - 1, day, hour, 0, 0);
     if (shown === want) break;
@@ -56,13 +57,13 @@ export function nextWeeklyResetMs(nowMs) {
 
 /** When a campaign started at `nowMs` must stop sending connection requests. */
 export function weeklyCutoffMs(nowMs) {
-  // Next Sunday 12:00 California time strictly after now. Started Sunday
-  // afternoon → that week's midday is gone, so aim for next Sunday's.
-  const p = zoneParts(nowMs);
+  // Next Sunday 12:00 Philippine time strictly after now. Started Sunday
+  // afternoon (PH) → that week's midday is gone, so aim for next Sunday's.
+  const p = zoneParts(nowMs, WEEKLY_STOP_TIME_ZONE);
   for (let add = 0; add <= 7; add++) {
     const d = new Date(Date.UTC(p.year, p.month - 1, p.day + add));
     if (d.getUTCDay() !== WEEKLY_STOP_WEEKDAY) continue;
-    const cutoff = zoneMidnightToUtc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), WEEKLY_STOP_HOUR);
+    const cutoff = zoneMidnightToUtc(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate(), WEEKLY_STOP_HOUR, WEEKLY_STOP_TIME_ZONE);
     if (cutoff > nowMs) return cutoff;
   }
   return nowMs + 7 * 86400000; // unreachable

@@ -1194,17 +1194,17 @@
               <!-- Free-for-all window note — Connect + Introduce Back only (toggled in onModeChange). -->
               <div class="sn-fallback-note" id="free-for-all-note" role="note" style="display:none">
                 <strong>Free for all — every weekend</strong>
-                Starts <b>Saturday 12:00 midday, Philippine time</b> and finishes <b>Sunday 12:00 midday, Pacific time</b>. During the free for all, anybody can use any account for connection campaigns.
+                Starts <b>Saturday 12:00 midday</b> and finishes <b>Sunday 12:00 midday</b>, Philippine time. During the free for all, anybody can use any account for connection campaigns.
                 <span id="free-for-all-local"></span>
               </div>
               <!-- "Free for all Friday" — Connect + Introduce Back only (toggled in onModeChange). -->
               <div class="throttle-row" id="weekly-cutoff-row" style="display:none">
-                <label class="alpha-toggle" title="Stop this campaign just before LinkedIn's weekly invitation limit resets">
+                <label class="alpha-toggle" title="Stop this campaign when the weekend free for all ends (Sunday 12:00 Philippine time)">
                   <input type="checkbox" id="stop-before-weekly-reset" onchange="syncWeeklyCutoffHelp(); wizardDirtyOnInput()" />
                   <span class="alpha-toggle-track"></span>
                 </label>
                 <div class="tr-text">
-                  <div class="tr-label">Free for all Friday — stop before the weekly limit resets</div>
+                  <div class="tr-label">Free for all Friday — stop when the free for all ends</div>
                   <div class="tr-help" id="weekly-cutoff-help"></div>
                 </div>
               </div>

@@ -6223,12 +6223,12 @@ function checkDelayDanger() {
 }
 
 // Task 4 (2026-06-19): B2 pause-on-throttle help text update.
-// "Free for all Friday": next Sunday 12:00 California time, shown in the
+// "Free for all Friday": next Sunday 12:00 Philippine time, shown in the
 // operator's own clock. Mirrors weeklyCutoffMs in src/weekly-reset-cutoff.js.
 function _nextWeeklyResetLocal() {
-  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Los_Angeles', hourCycle: 'h23', weekday: 'short', hour: 'numeric', minute: 'numeric' });
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Manila', hourCycle: 'h23', weekday: 'short', hour: 'numeric', minute: 'numeric' });
   const read = (ms) => { const o = {}; for (const p of fmt.formatToParts(new Date(ms))) o[p.type] = p.value; return o; };
-  // Walk forward a minute at a time from now until California reads Sun 12:00 (≤ 7 days).
+  // Walk forward a minute at a time from now until Manila reads Sun 12:00 (≤ 7 days).
   let t = Math.ceil(Date.now() / 60000) * 60000;
   for (let i = 0; i < 7 * 24 * 60 + 2; i++, t += 60000) {
     const p = read(t);
@@ -6246,11 +6246,11 @@ function _nextZoneTime(timeZone, weekday, hour) {
   }
   return null;
 }
-// The free-for-all window in the reader's own clock: Sat 12:00 Manila → Sun 12:00 California.
+// The free-for-all window in the reader's own clock: Sat 12:00 → Sun 12:00, Philippine time.
 function syncFreeForAllNote() {
   const el = document.getElementById('free-for-all-local');
   if (!el) return;
-  const end = _nextZoneTime('America/Los_Angeles', 'Sun', 12);
+  const end = _nextZoneTime('Asia/Manila', 'Sun', 12);
   if (!end) { el.textContent = ''; return; }
   // The start that belongs to THIS end: the Saturday-midday-Manila just before it.
   let start = _nextZoneTime('Asia/Manila', 'Sat', 12);
@@ -6267,10 +6267,10 @@ function syncWeeklyCutoffHelp() {
   if (!tog || !help) return;
   const reset = _nextWeeklyResetLocal();
   const stopAt = reset;
-  const when = stopAt ? stopAt.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Sunday 12:00 California time';
+  const when = stopAt ? stopAt.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Sunday 12:00 Philippine time';
   help.innerHTML = tog.checked
-    ? `<b>On:</b> this campaign stops itself at <b>${escHtml(when)}</b> your time — Sunday midday California time, ahead of LinkedIn's weekly invitation limit resetting. Use up this week's invitations without touching next week's. Leads left over stay queued.`
-    : `<b>Off:</b> the campaign keeps sending past the weekly reset, so it will start using next week's invitations. Turn on to stop at <b>${escHtml(when)}</b> your time.`;
+    ? `<b>On:</b> this campaign stops itself at <b>${escHtml(when)}</b> your time — Sunday midday Philippine time, when the weekend free for all ends. Leads left over stay queued.`
+    : `<b>Off:</b> the campaign keeps sending after the free for all ends. Turn on to stop at <b>${escHtml(when)}</b> your time.`;
 }
 window.syncWeeklyCutoffHelp = syncWeeklyCutoffHelp;
 

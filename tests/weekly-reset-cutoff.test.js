@@ -21,19 +21,15 @@ test('Monday morning UTC is still "before the reset" while it is Sunday night in
   assert.equal(iso(nextWeeklyResetMs(Date.parse('2026-09-21T07:00:01Z'))), '2026-09-28T07:00:00.000Z');
 });
 
-test('Free for all Friday stops at Sunday 12:00 California time', () => {
-  // Summer (PDT): Sunday 27 Sept 12:00 = 19:00 UTC
-  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-09-23T10:00:00Z'))), '2026-09-27T19:00:00.000Z');
-  // Winter (PST): Sunday 13 Dec 12:00 = 20:00 UTC
-  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-12-10T12:00:00Z'))), '2026-12-13T20:00:00.000Z');
-  // The Sunday the clocks go back (1 Nov 2026): midday is already PST → 20:00 UTC
-  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-10-30T12:00:00Z'))), '2026-11-01T20:00:00.000Z');
+test('Free for all Friday stops at Sunday 12:00 Philippine time (04:00 UTC, no daylight saving)', () => {
+  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-09-23T10:00:00Z'))), '2026-09-27T04:00:00.000Z');
+  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-12-10T12:00:00Z'))), '2026-12-13T04:00:00.000Z');
 });
 
-test('started on Sunday afternoon, it aims for next Sunday rather than stopping at once', () => {
-  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-09-27T19:00:01Z'))), '2026-10-04T19:00:00.000Z');
-  // Sunday morning California time still stops that same midday.
-  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-09-27T16:00:00Z'))), '2026-09-27T19:00:00.000Z');
+test('started after Sunday midday PH time, it aims for next Sunday rather than stopping at once', () => {
+  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-09-27T04:00:01Z'))), '2026-10-04T04:00:00.000Z');
+  // Saturday evening UTC is already Sunday morning in the Philippines → stops that midday.
+  assert.equal(iso(weeklyCutoffMs(Date.parse('2026-09-26T20:00:00Z'))), '2026-09-27T04:00:00.000Z');
 });
 
 test('the engine takes the option, records the cutoff, and stops at a lead boundary', async () => {
