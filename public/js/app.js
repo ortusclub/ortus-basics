@@ -15039,7 +15039,7 @@ async function submitStartCampaign(body, opts = {}) {
       });
       const j = await r.json().catch(() => ({}));
       if (r.ok) { try { await refreshLocalSchedules(); } catch (_) { /* card catches up on the next poll */ } }
-      showCampaignToast(r.ok ? 'Scheduled ✓ — it will run with all of this campaign\'s settings.' : `Schedule failed: ${j.error || r.statusText}`, 5000);
+      showCampaignToast(r.ok ? (j.replaced ? 'Schedule changed ✓ — the previous schedule was replaced.' : 'Scheduled ✓ — it will run with all of this campaign\'s settings.') : `Schedule failed: ${j.error || r.statusText}`, 5000);
     } catch (err) {
       console.error('[schedule]', err);
       showCampaignToast('Schedule failed: ' + err.message, 5000);
@@ -27414,7 +27414,7 @@ window.launchQueueIt = async function() {
 // onceOnly: the VM path. The engine schedules ONE start at an instant, so the
 // weekly-repeat row is hidden and the resolved date+time comes back as `startAt`
 // (a real Date). The local (cron) path is unchanged and still gets `cron`.
-function openScheduleModal({ defaultName = '', onceOnly = false } = {}) {
+function openScheduleModal({ defaultName = '', onceOnly = false, existing = null } = {}) {
   return new Promise((resolve) => {
     const modal = document.getElementById('schedule-modal');
     if (!modal) { resolve(null); return; }
@@ -27441,7 +27441,17 @@ function openScheduleModal({ defaultName = '', onceOnly = false } = {}) {
     const repeatRow = document.getElementById('schedule-modal-repeat');
     if (repeatRow) repeatRow.style.display = onceOnly ? 'none' : '';
     const titleEl = document.getElementById('schedule-modal-title');
-    if (titleEl) titleEl.textContent = onceOnly ? 'Schedule this campaign on the VM' : 'Schedule this campaign';
+    if (titleEl) titleEl.textContent = onceOnly ? 'Schedule this campaign on the VM' : (existing ? 'Change this campaign\'s schedule' : 'Schedule this campaign');
+    // Already scheduled → say so, plainly: saving replaces the schedule, it does not add one.
+    const existingEl = document.getElementById('schedule-modal-existing');
+    if (existingEl) {
+      existingEl.hidden = !existing;
+      if (existing) {
+        const _w = existing.next.toLocaleString(undefined, { weekday: 'long', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+        existingEl.innerHTML = `<strong>This campaign is already scheduled.</strong> It is set to start <b>${escHtml(_w)}</b>${existing.repeats ? ' (repeats)' : ''}. Saving here <b>replaces</b> that schedule with the new time — a campaign has one schedule, not several. Cancel to keep it as it is.`;
+      }
+    }
+    saveBtn.textContent = existing ? 'Change schedule' : 'Schedule';
 
     const computeCron = () => {
       const time = timeInput.value || '09:00';
@@ -27555,7 +27565,12 @@ window.launchScheduleIt = async function () {
     return startCampaign({ startAt: picked.startAt.toISOString() });
   }
 
-  const result = await openScheduleModal({ defaultName: (nameInput?.value || '').trim() });
+  // Already scheduled? Then this is a CHANGE, and the dialog says so.
+  try { await refreshLocalSchedules(); } catch (_) { /* fall back to the cached list */ }
+  const _cur = _scheduleForOpenCampaign();
+  const _curCron = _cur ? String(_cur.sch.cron || '').split(/\s+/) : [];
+  const existing = _cur ? { next: _cur.next, repeats: _curCron.length === 5 && (_curCron[2] === '*' || _curCron[3] === '*') } : null;
+  const result = await openScheduleModal({ defaultName: (nameInput?.value || '').trim(), existing });
   if (!result) return;
   // Build the launch exactly as Start would (every validation, the pre-flight
   // gate, the full settings) and hand it to the scheduler instead of running it.
@@ -28022,7 +28037,8 @@ function _scheduleForOpenCampaign() {
   let best = null; let count = 0;
   for (const sch of _localSchedules) {
     if (sch.enabled === false) continue;
-    const mine = openedId ? sch.campaignId === openedId : (name && String(sch.name || '').trim().toLowerCase() === name);
+    // Id first; the name is the fallback for the moment before the opened id has loaded.
+    const mine = (openedId && sch.campaignId === openedId) || (name && String(sch.name || '').trim().toLowerCase() === name);
     if (!mine) continue;
     const next = _cronNextRun(sch.cron);
     if (!next) continue;

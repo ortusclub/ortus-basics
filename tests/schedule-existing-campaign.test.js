@@ -56,3 +56,17 @@ test('the dashboard has a Scheduled rail, and a scheduled campaign is not repeat
   assert.match(app, /function renderScheduledStrip\(sch, next, openId\)/);
   assert.match(app, /fetch\('\/api\/schedules\/' \+ encodeURIComponent\(id\), \{ method: 'DELETE' \}\)/);
 });
+
+test('a campaign has ONE schedule: scheduling again replaces it, and old duplicates are collapsed at start', () => {
+  assert.match(server, /const mine = all\.filter\(s => s\.campaignId === req\.body\.campaignId\);/);
+  assert.match(server, /replaced = true;/);
+  assert.match(server, /res\.json\(\{ saved: true, replaced, schedule \}\);/);
+  assert.match(server, /Removed \$\{schedules\.length - kept\.length\} duplicate schedule\(s\)/);
+});
+
+test('scheduling an already-scheduled campaign is presented as a CHANGE', () => {
+  assert.match(app, /existing \? 'Change this campaign\\'s schedule' : 'Schedule this campaign'/);
+  assert.match(app, /This campaign is already scheduled\./);
+  assert.match(app, /saveBtn\.textContent = existing \? 'Change schedule' : 'Schedule';/);
+  assert.match(app, /j\.replaced \? 'Schedule changed ✓ — the previous schedule was replaced\.'/);
+});

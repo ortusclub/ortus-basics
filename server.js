@@ -8094,6 +8094,21 @@ app.post('/api/schedules', async (req, res) => {
     } else {
       id = `sched_${Date.now()}`;
     }
+    // One schedule per campaign: scheduling a campaign that already has one
+    // REPLACES it (operator, 2026-09-21) — it used to pile up a new run per press.
+    let replaced = false;
+    if (!req.body.id && req.body.campaignId) {
+      const mine = all.filter(s => s.campaignId === req.body.campaignId);
+      if (mine.length) {
+        replaced = true;
+        id = mine[0].id;                                   // keep the first, overwrite it below
+        for (const extra of mine.slice(1)) {
+          const job = activeJobs.get(extra.id);
+          if (job) { job.main?.stop(); job.prefire?.stop(); activeJobs.delete(extra.id); }
+        }
+        for (let i = all.length - 1; i >= 0; i--) if (all[i].campaignId === req.body.campaignId && all[i].id !== id) all.splice(i, 1);
+      }
+    }
     const existing = all.findIndex(s => s.id === id);
     const identity = ensureCampaignIdentity({ campaignId: existing >= 0 ? all[existing].campaignId : req.body.campaignId, name, config: req.body });
     const schedule = {
@@ -8117,7 +8132,7 @@ app.post('/api/schedules', async (req, res) => {
     else { all.push(schedule); }
     await saveSchedules(all);
     registerSchedule(schedule);
-    res.json({ saved: true, schedule });
+    res.json({ saved: true, replaced, schedule });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -8711,7 +8726,22 @@ app.listen(PORT, '127.0.0.1', async () => {
   startReplyCheckScheduler();
 
   // Load and register saved schedules (D-05)
-  loadSchedules().then(schedules => {
+  loadSchedules().then(async (schedules) => {
+    // One schedule per campaign. Older builds added a run per press, so collapse
+    // any leftovers to the MOST RECENTLY CREATED one (ids are sched_<timestamp>).
+    const newest = new Map();
+    for (const sch of schedules) {
+      if (!sch.campaignId) continue;
+      const stamp = Number(String(sch.id || '').replace(/\D/g, '')) || 0;
+      const cur = newest.get(sch.campaignId);
+      if (!cur || stamp > cur.stamp) newest.set(sch.campaignId, { id: sch.id, stamp });
+    }
+    const kept = schedules.filter((sch) => !sch.campaignId || newest.get(sch.campaignId).id === sch.id);
+    if (kept.length !== schedules.length) {
+      console.log(`[scheduler] Removed ${schedules.length - kept.length} duplicate schedule(s) — one schedule per campaign.`);
+      try { await saveSchedules(kept); } catch (err) { console.warn('[scheduler] could not save de-duplicated schedules:', err.message); }
+      schedules = kept;
+    }
     for (const s of schedules) registerSchedule(s);
     if (schedules.length) console.log(`  ✦ Schedules: ${schedules.filter(s => s.enabled).length} active of ${schedules.length} total`);
   }).catch(err => console.error('Failed to load schedules:', err.message));

@@ -3917,6 +3917,8 @@
     <div class="prompt-modal__backdrop"></div>
     <div class="prompt-modal__card schedule-modal__card" role="dialog" aria-modal="true" aria-labelledby="schedule-modal-title">
       <div class="schedule-modal__title" id="schedule-modal-title">Schedule this campaign</div>
+      <!-- Shown only when this campaign already has a schedule: saving REPLACES it. -->
+      <div class="sn-fallback-note" id="schedule-modal-existing" role="note" hidden style="margin:10px 0 14px"></div>
 
       <label class="schedule-modal__field">
         <span class="schedule-modal__field-label">Name <span class="schedule-modal__optional">(optional)</span></span>
