@@ -3448,6 +3448,7 @@ function onModeChange() {
   const _icNote = document.getElementById('ic-beta-note');
   if (_icNote) _icNote.style.display = mode === 'introduce_back' ? '' : 'none';
   { const _mcr = document.getElementById('monthly-cutoff-row'); if (_mcr) _mcr.style.display = ['open_profile_only', 'inmail_only'].includes(mode) ? '' : 'none'; if (typeof syncMonthlyCutoffHelp === 'function') syncMonthlyCutoffHelp(); }
+  { const _ffa = document.getElementById('free-for-all-note'); if (_ffa) _ffa.style.display = mode === 'connect_and_introduce' ? '' : 'none'; if (typeof syncFreeForAllNote === 'function') syncFreeForAllNote(); }
   { const _wcr = document.getElementById('weekly-cutoff-row'); if (_wcr) _wcr.style.display = mode === 'connect_and_introduce' ? '' : 'none'; if (typeof syncWeeklyCutoffHelp === 'function') syncWeeklyCutoffHelp(); }
   document.querySelectorAll('.ccic-primary-note').forEach((el) => { el.style.display = mode === 'connect_and_introduce' ? '' : 'none'; });
   // Default Follower Growth to the Cloud VM. FG-on-cloud is the intended path — a
@@ -6235,6 +6236,31 @@ function _nextWeeklyResetLocal() {
   }
   return null;
 }
+// Next time a zone's wall clock reads <weekday> <hour>:00, as a Date (≤ 7 days ahead).
+function _nextZoneTime(timeZone, weekday, hour) {
+  const fmt = new Intl.DateTimeFormat('en-US', { timeZone, hourCycle: 'h23', weekday: 'short', hour: 'numeric', minute: 'numeric' });
+  let t = Math.ceil(Date.now() / 60000) * 60000;
+  for (let i = 0; i < 7 * 24 * 60 + 2; i++, t += 60000) {
+    const o = {}; for (const p of fmt.formatToParts(new Date(t))) o[p.type] = p.value;
+    if (o.weekday === weekday && +o.hour === hour && +o.minute === 0) return new Date(t);
+  }
+  return null;
+}
+// The free-for-all window in the reader's own clock: Sat 12:00 Manila → Sun 12:00 California.
+function syncFreeForAllNote() {
+  const el = document.getElementById('free-for-all-local');
+  if (!el) return;
+  const end = _nextZoneTime('America/Los_Angeles', 'Sun', 12);
+  if (!end) { el.textContent = ''; return; }
+  // The start that belongs to THIS end: the Saturday-midday-Manila just before it.
+  let start = _nextZoneTime('Asia/Manila', 'Sat', 12);
+  if (start && start > end) start = new Date(start.getTime() - 7 * 86400000);
+  const f = (d) => d.toLocaleString(undefined, { weekday: 'long', hour: '2-digit', minute: '2-digit' });
+  const live = start && Date.now() >= start.getTime() && Date.now() < end.getTime();
+  el.innerHTML = `<br>In your time: <b>${escHtml(f(start))}</b> to <b>${escHtml(f(end))}</b>.${live ? ' <b>The free for all is on right now.</b>' : ''}`;
+}
+window.syncFreeForAllNote = syncFreeForAllNote;
+
 function syncWeeklyCutoffHelp() {
   const tog = document.getElementById('stop-before-weekly-reset');
   const help = document.getElementById('weekly-cutoff-help');
