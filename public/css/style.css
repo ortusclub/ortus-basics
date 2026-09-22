@@ -8845,6 +8845,7 @@ body.theme-light .alpha-toggle input:checked + .alpha-toggle-track {
   text-transform: uppercase; color: var(--gray);
 }
 #credentials-modal .cred-other-del:hover { color: var(--red, #f85149); }
+#credentials-modal .cred-remove { margin-left: 10px; }
 
 /* Name | token | Add on one 34px line — the three used to be different heights. */
 #credentials-modal .cred-other-add {

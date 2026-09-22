@@ -34483,8 +34483,13 @@ async function renderCredentialsModal() {
     const envNote = c.fromEnvironment
       ? '<div class="cred-note">Currently supplied by the environment (dev launcher). Saving here overrides it.</div>'
       : '';
+    // A saved token can be removed outright — the workspace then contributes
+    // no accounts until a token is pasted again.
+    const removeBtn = c.set
+      ? `<button type="button" class="cred-other-del cred-remove" title="Remove the saved ${escHtml(c.label)} token" onclick="removeCredToken('${escHtml(c.env)}', '${escHtml(c.label)}')">Remove</button>`
+      : '';
     return `<div class="cred-row">
-      <label class="cred-label" for="cred-${escHtml(c.id)}">${escHtml(c.label)} ${state}</label>
+      <label class="cred-label" for="cred-${escHtml(c.id)}">${escHtml(c.label)} ${state} ${removeBtn}</label>
       <input type="password" class="cred-input" id="cred-${escHtml(c.id)}"
              data-env="${escHtml(c.env)}" autocomplete="off" spellcheck="false"
              placeholder="${c.set ? 'Leave blank to keep the saved token' : 'Paste the GoLogin API token'}">
@@ -34548,6 +34553,23 @@ async function addCredOther() {
     await renderCredentialsModal();
     if (typeof loadProfiles === 'function') { try { await loadProfiles(); } catch (_) { /* */ } }
   } catch (e) { show('Could not add: ' + e.message, true); }
+}
+
+async function removeCredToken(env, label) {
+  const msg = document.getElementById('cred-msg');
+  const show = (t, bad) => { if (msg) { msg.textContent = t; msg.className = 'cred-msg' + (bad ? ' is-bad' : ' is-ok'); msg.hidden = false; } };
+  if (!confirm(`Remove the saved ${label} token?\n\nIts accounts disappear from the picker until a token is pasted again. Campaigns already running are not affected.`)) return;
+  try {
+    // An empty value is how the store deletes a token.
+    const r = await fetch('/api/credentials', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [env]: '' }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!d.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    show(`${label} token removed.`, false);
+    await renderCredentialsModal();
+    if (typeof loadProfiles === 'function') { try { await loadProfiles(); } catch (_) { /* */ } }
+  } catch (e) { show('Could not remove: ' + e.message, true); }
 }
 
 async function removeCredOther(id) {
@@ -34618,6 +34640,7 @@ if (typeof window !== 'undefined') {
   window.renderCredentialsModal = renderCredentialsModal;
   window.addCredOther = addCredOther;
   window.removeCredOther = removeCredOther;
+  window.removeCredToken = removeCredToken;
 
   // A fresh install has no tokens and an empty picker explains nothing — open
   // Settings once, unprompted, so the first thing seen is the thing to do.

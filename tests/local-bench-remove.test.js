@@ -42,3 +42,13 @@ test('the last sending account cannot be removed', () => {
   assert.equal(last.ok, false);
   assert.match(last.reason, /last sending account/);
 });
+
+test('a saved workspace token can be removed from Settings (empty value = delete)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const app = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
+  assert.match(app, /async function removeCredToken\(env, label\)/);
+  assert.match(app, /body: JSON\.stringify\(\{ \[env\]: '' \}\)/);
+  assert.match(app, /onclick="removeCredToken\('\$\{escHtml\(c\.env\)\}'/);
+  const store = readFileSync(new URL('../src/gologin-credentials.js', import.meta.url), 'utf8');
+  assert.match(store, /if \(v\) creds\[f\.env\] = v; else delete creds\[f\.env\];/);
+});
