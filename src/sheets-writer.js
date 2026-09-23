@@ -12,7 +12,7 @@ import { extractSheetId, extractSheetGid } from './utils.js';
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 import { onWebappLane } from './webapp-lane.js';
 
-// v2.52.0: hard-coded constant from sheets-webapp-url.js wins over .env.
+// Shared default or independently owned bridge from sheets-webapp-url.js.
 // Function form preserved so the existing call sites don't have to change.
 const getWebAppUrl = () => SHEETS_WEBAPP_URL;
 
@@ -108,6 +108,12 @@ async function _postOnce(url, body) {
     }
 
     const text = await res.text();
+    if (res.status === 401 || res.status === 403) {
+      return { error: `Sheets service access denied (HTTP ${res.status}). Restore the deployment's access or configure your own Sheets bridge.` };
+    }
+    if (res.status >= 400) {
+      return { error: `Sheets service returned HTTP ${res.status}` };
+    }
     try {
       return JSON.parse(text);
     } catch {
@@ -116,7 +122,7 @@ async function _postOnce(url, body) {
         console.warn('[sheets-writer] Apps Script returned login page — redeployment may be needed');
         return { error: 'Authentication error — redeploy the Apps Script' };
       }
-      return { raw: text, status: res.status };
+      return { error: `Sheets service returned a non-JSON response (HTTP ${res.status}); check the deployment and its access settings.` };
     }
   } catch (err) {
     return { error: err.message };
@@ -589,7 +595,7 @@ export async function writeRecentConnectionsTab(sheetUrl, sender, connections, a
     });
     if (result?.ok) {
       console.log(`[sheets-writer] ✓ Wrote ${result.rows} row(s) to "${result.tab}" (accumulated: ${Array.isArray(result.accumulated) ? result.accumulated.length : 0})`);
-      return Array.isArray(result.accumulated) ? result.accumulated : [];
+      return Array.isArray(result.accumulated) ? result.accumulated : null;
     }
     if (result?.error) console.warn(`[sheets-writer] writeRecentConnections failed: ${result.error}`);
     return null;
@@ -653,7 +659,7 @@ export async function writeRecentMessagesTab(sheetUrl, sender, messages, activeS
   }
 }
 
-export async function batchUpdateSheet(sheetUrl, updates) {
+export async function batchUpdateSheet(sheetUrl, updates, { requireConfirmation = false } = {}) {
   if (!getWebAppUrl() || !updates.length) return false;
 
   const sheetId = extractSheetId(sheetUrl);
@@ -665,6 +671,7 @@ export async function batchUpdateSheet(sheetUrl, updates) {
   // that had to finish inside one Apps Script execution or lose the lot.
   let processed = 0;
   let allOk = true;
+  let failureReason = '';
   for (let i = 0; i < updates.length; i += BULK_CHUNK) {
     const chunk = updates.slice(i, i + BULK_CHUNK);
     const result = await postToWebApp({
@@ -674,15 +681,29 @@ export async function batchUpdateSheet(sheetUrl, updates) {
       updates: chunk,
     });
     if (result?.success) {
+      const failedRows = Array.isArray(result.results) ? result.results.filter((row) => row.error) : [];
+      // A row the script matched but wrote nothing to means every requested
+      // field lacked a column on this tab. The script still calls that a
+      // success, so say it here or the loss is invisible.
+      const silentRows = Array.isArray(result.results) ? result.results.filter((row) => !row.error && Array.isArray(row.updated) && row.updated.length === 0) : [];
+      if (silentRows.length) console.warn(`[sheets-writer] ⚠ ${silentRows.length} matched row(s) had no column to receive the update on sheet ${sheetId} — are the tracking columns provisioned?`);
+      if (requireConfirmation && failedRows.length) {
+        allOk = false;
+        failureReason = `${failedRows.length} row(s) failed: ${failedRows[0].error}`;
+      }
       processed += typeof result.processed === 'number' ? result.processed : chunk.length;
       continue;
     }
     allOk = false;
+    failureReason = result?.error || 'no success flag';
     console.warn(`[sheets-writer] ✗ LOST batch rows ${i + 1}–${i + chunk.length} for sheet ${sheetId}: ${result?.error || 'no success flag'}`);
   }
 
   if (processed) {
     console.log(`[sheets-writer] ✓ Batch updated ${processed} rows in sheet ${sheetId}`);
+  }
+  if (!allOk && requireConfirmation) {
+    throw new Error(`Sheet updates were not all confirmed: ${failureReason}`);
   }
   return allOk;
 }

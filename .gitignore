@@ -37,6 +37,7 @@ dist/
 # Parallel-work worktrees (per-developer, not source)
 .worktrees/
 apps-script/
+.env.before-independent-sheets
 
 # Superpowers brainstorm visual-companion scratch
 .superpowers/

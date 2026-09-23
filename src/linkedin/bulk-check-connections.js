@@ -785,6 +785,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   // if the round-trip fails, fall back to the live fetch attributed to this
   // sweeping profile so a sweep is never worse than the pre-tab behavior.
   let matchSet = null;
+  let sidecarConfirmed = false;
   try {
     const sidecarRows = conns.map((c) => ({
       firstName: c.firstName || '',
@@ -796,6 +797,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
       profileSentBy: pName || '',
     }));
     matchSet = await writeRecentConnectionsTab(sheetUrl, pName, sidecarRows, activeSendersList);
+    sidecarConfirmed = Array.isArray(matchSet);
   } catch (err) {
     console.warn(`[bulk-check] sidecar tab write failed: ${err.message}`);
   }
@@ -881,7 +883,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     if (diag.rowsScanned > 0 && diag.withUrl === 0) {
       return `${base} Something looks wrong: not one of those rows had a LinkedIn address on it, so nobody could be matched. Check that the right column is chosen for this sheet.`;
     }
-    return base;
+    return sidecarConfirmed ? base : `${base} Warning: the Recent Connections tab could not be confirmed saved.`;
   };
 
   if (updates.length === 0) {
@@ -891,7 +893,8 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   // Batch-update via the existing Apps Script bridge. cc → 'Connected
   // Status' column on the new schema; FIELD_MAP handles the column mapping.
   try {
-    await batchUpdateSheet(sheetUrl, updates);
+    const saved = await batchUpdateSheet(sheetUrl, updates, { requireConfirmation: true });
+    if (!saved) throw new Error('Sheet updates were not confirmed saved');
   } catch (err) {
     // Write failed — nothing is confirmed persisted, so freshConnected is 0
     // too, same reasoning as matched:0 below: an unconfirmed acceptance must

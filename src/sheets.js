@@ -310,11 +310,11 @@ export async function listSheetTabs(sheetUrl) {
       headers: { 'Content-Type': 'application/json' },
       body,
       redirect: 'manual',
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(60000),
     });
     if (initial.status >= 300 && initial.status < 400) {
       const location = initial.headers.get('location');
-      res = await fetch(location, { signal: AbortSignal.timeout(15000) });
+      res = await fetch(location, { signal: AbortSignal.timeout(60000) });
     } else {
       res = initial;
     }

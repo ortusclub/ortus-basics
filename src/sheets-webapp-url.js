@@ -1,9 +1,8 @@
 /**
  * Centralized config for shared Google Sheets infrastructure.
  *
- * Every value in this file is hard-coded so EVERY operator's Electron app
- * resolves to the same sheet / endpoint regardless of what's in their local
- * .env. Any matching .env values are IGNORED.
+ * Shared defaults live here. ORTUS_SHEETS_WEBAPP_URL selects an independently
+ * owned Sheets bridge for this installation; other services keep their defaults.
  *
  * Why centralized:
  *   Before v2.52.0, each operator pasted their own Apps Script URL + SoO sheet
@@ -23,7 +22,7 @@
 // that tab to populate in production, Antonio must redeploy the updated
 // google-apps-script.js on this centralized deployment. Connections and all
 // existing sheet writes work regardless.
-export const SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwZu0ormMlS2IfC7yarIZDBz0XJj_FbOcp5omJTWQPCGsQ8YO3_npqGUQojNc1fmHyXCg/exec';
+export const SHEETS_WEBAPP_URL = process.env.ORTUS_SHEETS_WEBAPP_URL?.trim() || 'https://script.google.com/macros/s/AKfycbwZu0ormMlS2IfC7yarIZDBz0XJj_FbOcp5omJTWQPCGsQ8YO3_npqGUQojNc1fmHyXCg/exec';
 
 // State of Operations sheet — the team-wide dashboard of which LinkedIn
 // account is in use / cooling off / banned. Drives the SoO panel in the app

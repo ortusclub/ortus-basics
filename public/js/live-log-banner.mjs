@@ -273,6 +273,10 @@ export function bannerEventPhase(event, fallback = '') {
   if (!event) return fallback;
   const kind = String(event.kind || '');
   if (kind === 'check-waiting' || kind === 'sending-paused-monitoring') return 'monitoring';
+  // A finished check is a record, not an activity. Mapping it to 'checking'
+  // kept the stage spinning with "Selecting account" and an elapsed clock on a
+  // STOPPED card, long after the sweep had ended (Sam, 2026-09-23 20:45).
+  if (kind === 'check-complete') return fallback === 'monitoring' ? 'monitoring' : 'checked';
   if (kind.startsWith('check-') || kind.startsWith('account-') || kind === 'local-browser-starting') return 'checking';
   if ([
     'sender-browser-opening', 'sender-batch-starting', 'sender-browser-closed',

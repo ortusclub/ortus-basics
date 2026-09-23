@@ -6512,6 +6512,13 @@ app.post('/api/bulk-check-now', async (req, res) => {
   }
   _manualSweepRunning = true;
   _manualSweepAbort = false;
+  // A Stop pressed while nothing was running leaves campaign._abort armed
+  // (stopCampaign flips it unconditionally and only a campaign start clears
+  // it). The sweep loop below reads that flag, so the next manual check used to
+  // log "Stop detected" and finish with 0 accounts swept before opening a
+  // single browser (Sam, 2026-09-23 20:32). A stale abort with no campaign or
+  // monitoring to abort belongs to nobody: clear it here so the check can run.
+  if (!campaign.running && campaign.state !== 'monitoring') campaign._abort = false;
   // Say "checking" the INSTANT the click is accepted, not 180 lines later.
   // The flag used to be set down at the sweep loop, after account resolution and
   // a sheet read over the network, so the operator pressed the button and the
@@ -6549,6 +6556,31 @@ app.post('/api/bulk-check-now', async (req, res) => {
       linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
     }
     if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
+
+    // A check stamps "Still Pending (…)" and "Connected" into Connection
+    // Accepted Status. That column is provisioned when a campaign STARTS, so a
+    // check on a tab whose campaign was never started had nowhere to write, and
+    // the Apps Script reports success for a field whose column is missing
+    // (Sam, 2026-09-23 21:46, "Test" tab: 3 rows "refreshed", nothing on the
+    // sheet). Provision it here the same non-lossy way Start does. Sheets that
+    // already have the column are left alone.
+    try {
+      const probe = await fetchSheet(sheetUrl).catch(() => []);
+      const headers = probe.length ? Object.keys(probe[0]) : [];
+      const hasAccepted = headers.some((h) => /^(connection accepted status|connected status)$/i.test(String(h || '').trim()));
+      if (!hasAccepted) {
+        const { prepareSheet } = await import('./src/sheets-writer.js');
+        // connect_only's column set has no accepted-status column, so a check on
+        // that mode borrows the check_status set, which is exactly that column.
+        const prepMode = ['connect_and_introduce', 'connect_and_message'].includes(reqMode) ? reqMode : 'check_status';
+        const prep = await prepareSheet(sheetUrl, prepMode);
+        campaignLog(prep.ok
+          ? `🧱 This tab had no tracking columns yet — added ${(prep.added || []).join(', ') || 'them'} so the check has somewhere to write.`
+          : '⚠ Could not add tracking columns to this tab — the check will run, but its results may not reach the sheet.');
+      }
+    } catch (e) {
+      campaignLog(`⚠ Tracking-column check failed: ${e.message}`);
+    }
 
     // v2.97: take precedence over a running campaign. Instead of waiting up to
     // 90s for a cooperative pause boundary (and failing if a slow lead — e.g. a
@@ -6896,6 +6928,12 @@ app.post('/api/bulk-check-now', async (req, res) => {
     res.status(500).json({ error: err.message });
   } finally {
     _manualSweepRunning = false;
+    // A Stop pressed during a solo sweep (no campaign running) also arms
+    // campaign._abort so the auto-intros inside the sweep halt. That job is
+    // done once the sweep unwinds; leaving it armed would stop the NEXT check
+    // on sight. Same guard as the start of the route: never touch a live
+    // campaign's flag.
+    if (!campaign.running && campaign.state !== 'monitoring') campaign._abort = false;
     // Pairs with the early set at the top of this route. A throw during setup
     // would otherwise leave the card claiming a check is running forever, and a
     // stuck flag also blocks every scheduled tick.

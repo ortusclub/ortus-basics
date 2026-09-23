@@ -1346,6 +1346,16 @@ const ACTIVE_DRAFT_KEY = 'ortus.activeDraftId';
 // ─────────────────────────────────────────────────────────────────────────
 let _wizardBoundKey = '';
 function _campaignKey(name) { return String(name || '').trim().toLowerCase(); }
+/**
+ * Title for the live-status card. The engine's name is empty after a restart
+ * or once a stopped campaign has unwound, and a solo check runs without any
+ * campaign at all, so the card used to sit on "Loading campaign…" next to a
+ * STOPPED badge (Sam, 2026-09-23). Fall back to the campaign open in the
+ * editor, which is the one the operator is looking at, before the placeholder.
+ */
+function _activeCardName(status) {
+  return (status && status.name) || _currentWizardName() || 'Loading campaign…';
+}
 function _currentWizardName() {
   return (document.getElementById('campaign-name-input')?.value || '').trim();
 }
@@ -9794,6 +9804,7 @@ async function _openDuplicateDraft(srcName, config) {
   stopViewingCloudCampaign();
   window.__viewingActiveCampaign = false;
   liveStatusForcedOpen = false;
+  _checkWizardKey = '';
   _editingExistingCampaign = false;
   try { localStorage.removeItem('wizardStoppedFromContext'); } catch (_) {}
   _openedCampaignId = draft.campaignId || null;
@@ -17225,6 +17236,12 @@ async function pollStatus() {
 // session). Without it, "Open log" was a no-op when nothing was running — it
 // scrolled to a display:none element. Reset on leaving the wizard (applyRoute).
 let liveStatusForcedOpen = false;
+// The wizard (by campaign-name key) that a "Run check now" was pressed in. A
+// solo check runs on a nameless, idle engine, so the "is this log about the
+// campaign I'm editing?" test below cannot match it by name; this remembers
+// where it was started so its live log shows there, started or not. Reset with
+// liveStatusForcedOpen whenever the operator moves to another campaign.
+let _checkWizardKey = '';
 // Set by _openDuplicateDraft / editDraft / startNewCampaign — suppresses the
 // "finished campaign log" section when the operator explicitly opened a different
 // draft. Without this, duplicating a finished campaign shows its log/progress in
@@ -17246,7 +17263,12 @@ function syncLiveStatusVisibility() {
   // Retain a stopped campaign's log only in its own wizard, never another draft.
   const draftName = (document.getElementById('campaign-name-input')?.value || '').trim().toLowerCase();
   const statusName = String(__cockpit?.name || '').trim().toLowerCase();
-  const unrelatedDraft = editingDraft && (!draftName || draftName !== statusName);
+  // A connection check started from THIS wizard. The engine stays idle and
+  // nameless during a solo check, so the name test below would call its log
+  // "unrelated" and hide it (Sam, 2026-09-23 20:35: pressed Check, no log).
+  const checking = !!(typeof __cockpit !== 'undefined' && __cockpit && __cockpit.monitoringCheckInProgress);
+  const checkHere = !statusName && !!draftName && draftName === _checkWizardKey && (checking || !!__cockpit?.hasLogs);
+  const unrelatedDraft = editingDraft && !checkHere && (!draftName || draftName !== statusName);
   // Follower Growth has its OWN self-contained log card (#fgtl-card); the generic
   // campaign Live Status (#nav-status) must never appear in FG view, else a prior
   // finished campaign's card lingers underneath the FG board (v2.119.2).
@@ -17258,8 +17280,8 @@ function syncLiveStatusVisibility() {
   // regardless of the local __cockpit state (which is idle for a VM campaign) and
   // even if liveStatusForcedOpen was reset by an unrelated re-render.
   const cloudView = !!(_viewingCloudId && window.__cloudActiveStatus);
-  const show = !inFollowerGrowth && onNew && !(editingDraft && _viewingLocalCampaign) && !unrelatedDraft
-    && (liveStatusForcedOpen || _viewingLocalCampaign || cloudView || ((running || monitoring) && !editingDraft) || finished);
+  const show = !inFollowerGrowth && onNew && !(editingDraft && _viewingLocalCampaign && !checkHere) && !unrelatedDraft
+    && (liveStatusForcedOpen || checkHere || _viewingLocalCampaign || cloudView || ((running || monitoring) && !editingDraft) || finished);
   sec.style.display = show ? '' : 'none';
   // A live ownership transition is operational status, not optional wizard
   // content. Accordion defaults and renderer reloads used to collapse section 7
@@ -17268,7 +17290,7 @@ function syncLiveStatusVisibility() {
   // the operator may collapse it normally.
   const cloudStatus = window.__cloudActiveStatus || null;
   const cloudOperational = !!(cloudStatus && (cloudStatus.running || cloudStatus.queued || cloudStatus.state === 'monitoring'));
-  if (show && (liveStatusForcedOpen || running || monitoring || cloudOperational || _whBusy)) {
+  if (show && (liveStatusForcedOpen || running || monitoring || (checkHere && checking) || cloudOperational || _whBusy)) {
     sec.classList.remove('collapsed');
   }
   const navBtn = document.querySelector('[data-nav="nav-status"]');
@@ -21173,6 +21195,7 @@ function applyRoute() {
     // v2.86.1 (port): leaving the wizard clears the "Open log" override so the
     // next idle visit starts hidden again (auto-show still applies when live).
     liveStatusForcedOpen = false;
+  _checkWizardKey = '';
     stopViewingCloudCampaign();   // leaving the wizard ends any cloud-view takeover
     refreshDashboard();
     startDashboardPolling();
@@ -21413,6 +21436,7 @@ async function editDraft(id) {
   if (typeof unlockCampaignType === 'function') unlockCampaignType();  // v2.160.42: drafts stay type-editable
   _suppressFinishedSection = true;
   liveStatusForcedOpen = false;
+  _checkWizardKey = '';
   if (!id) return;
   // 2026-05-27 (drafts-isolation, Task 6): flush any pending autosave for
   // the CURRENT active draft BEFORE switching the id. Otherwise the next
@@ -21424,6 +21448,7 @@ async function editDraft(id) {
   clearCloudEditMode();
   stopViewingCloudCampaign();
   liveStatusForcedOpen = false;
+  _checkWizardKey = '';
   setActiveDraftId(id);
   syncLiveStatusVisibility();
   try { localStorage.removeItem('wizardStoppedFromContext'); } catch {}
@@ -22280,6 +22305,7 @@ function rerunPastCampaign() {
   if (!s) return;
   _suppressFinishedSection = true;
   liveStatusForcedOpen = false;
+  _checkWizardKey = '';
 
   // Extract the saved tab gid: prefer s.sheetGid (persisted by Task 5's history
   // snapshot); fall back to extracting #gid= from the saved sheetUrl.
@@ -23268,6 +23294,7 @@ async function startNewCampaign() {
   // campaign doesn't show the previous campaign's log at the bottom.
   _suppressFinishedSection = true;
   liveStatusForcedOpen = false;
+  _checkWizardKey = '';
   try { stopViewingCloudCampaign(); } catch (_) { /* nothing bound */ }
   // Fresh draft → re-arm the scrape baseline so the next scrape view hides any
   // prior run's jobs (the engine's job list is global, not per-draft).
@@ -28423,7 +28450,7 @@ function _fmtElapsed(sec) {
 function _stageGlyphHtml(phase) {
   // A finished run is a record, not an activity: anything that spins or pulses
   // claims the VM is still working. Static mark only.
-  if (phase === 'done') return '<span class="stg-done">✓</span>';
+  if (phase === 'done' || phase === 'checked') return '<span class="stg-done">✓</span>';
   if (phase === 'paused') return '<span class="stg-paused" aria-label="Paused"><i></i><i></i></span>';
   if (phase === 'starting') return '<span class="stg-boot"><i></i></span>';
   if (phase === 'sending') return '<span class="stg-fly"><u></u><i>➤</i><i>➤</i><i>➤</i></span>';
@@ -28852,6 +28879,13 @@ function _stageMilestoneFallback(ca, phase) {
       ['Introductions', 'sent after matches', 'done'],
     ];
   }
+  if (p === 'checked') {
+    return [
+      ['Request', 'check complete', 'done'], ['Browser', 'closed', 'done'],
+      ['Invitations', 'compared', 'done'], ['Acceptances', 'recorded', 'done'],
+      ['Introductions', 'sent after matches', 'done'],
+    ];
+  }
   if (p === 'done') {
     return [
       ['Leads', 'eligibility confirmed', 'done'], ['Work', 'results recorded', 'done'],
@@ -28942,6 +28976,9 @@ function _stageOverview(status, ca, la, phase) {
   } else if (phase === 'paused') {
     side = ['Campaign state', 'Paused safely', 'No new lead starts until the operator resumes'];
     next = ['Operator action', 'Resume here or switch machines', 'The campaign continues from its saved queue position.'];
+  } else if (phase === 'checked') {
+    side = ['Check finished', 'Nothing is running', 'Every result is already on the campaign sheet'];
+    next = ['Next', 'Run another check whenever you like', 'Sending stays stopped until you start the campaign.'];
   } else if (phase === 'done') {
     const terminal = terminalPresentation(status || {});
     side = ['Outcome', terminal.complete ? 'Completed normally' : 'Stopped before completion',
@@ -29214,7 +29251,7 @@ function renderLiveStage(root, status) {
     // The headline above is the log's, in every state. The per-kind panels
     // below describe work that is still running, so a finished campaign keeps
     // its terminal facts and milestones and only borrows the headline.
-    if (phase !== 'done') {
+    if (phase !== 'done' && phase !== 'checked') {
     const allLogs = Array.isArray(status && status.logs) ? status.logs.map((x) => String(x && x.line != null ? x.line : x || '')) : [];
     let runStart = -1;
     allLogs.forEach((line, i) => { if (/Check now|Check started/i.test(line)) runStart = i; });
@@ -29324,7 +29361,7 @@ function renderLiveStage(root, status) {
   stage.classList.toggle('is-waiting', phase === 'waiting' || phase === 'monitoring');
   stage.classList.toggle('is-starting', phase === 'starting');
   stage.classList.toggle('is-delayed', phase === 'starting' && !!(ca && ca.overrun));
-  stage.classList.toggle('is-done', phase === 'done');
+  stage.classList.toggle('is-done', phase === 'done' || phase === 'checked');
   stage.classList.toggle('is-paused', paused);
   stage.classList.toggle('is-interrupted', interrupted);
 
@@ -30227,7 +30264,7 @@ window.renderActiveCard = function(status) {
     const total = Number(status.totalTargets) || 0;
     const done = Number(status.totalProcessed) || 0;
     const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
-    v3SetText('activeName', status.name || 'Loading campaign…');
+    v3SetText('activeName', _activeCardName(status));
     v3SetText('activeEyebrow', isDailyWait ? 'Waiting for daily reset' : 'Needs review');
     v3SetText('activePct', String(pct));
     v3SetText('activeSent', String(done));
@@ -30307,7 +30344,7 @@ window.renderActiveCard = function(status) {
     card.classList.remove('is-empty', 'is-monitor');
     card.classList.add('is-queued');
     const total = Number(status.totalTargets) || 0;
-    v3SetText('activeName', status.name || 'Loading campaign…');
+    v3SetText('activeName', _activeCardName(status));
     v3SetText('activeEyebrow', status.connectionUnknown ? 'Connection unavailable' : 'Launching…');
     v3SetText('activePct', '0');
     v3SetText('activeSent', '0');
@@ -30362,7 +30399,7 @@ window.renderActiveCard = function(status) {
     const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
     const terminal = terminalPresentation(status);
     card.classList.toggle('is-stopped', !isWaitingHere && !terminal.complete);
-    v3SetText('activeName', status.name || 'Loading campaign…');
+    v3SetText('activeName', _activeCardName(status));
     v3SetText('activeEyebrow', isWaitingHere ? 'Waiting for this Mac' : terminal.label);
     v3SetText('activePct', String(pct));
     v3SetText('activeSent', String(done));
@@ -30560,7 +30597,7 @@ window.renderActiveCard = function(status) {
   const total = Number(status.totalTargets) || 0;
   const done = Number(status.totalProcessed) || 0;
   const pct = total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0;
-  v3SetText('activeName', status.name || 'Loading campaign…');
+  v3SetText('activeName', _activeCardName(status));
   v3SetText('activeEyebrow', status.campaignId && !status._cloud ? campaignLifecycle(status).label : status._loadingIdentity ? 'Loading campaign…' : _isPreflight ? (status.hasHandshake === false ? 'Starting the campaign' : 'Phase 0 · Primary handshake')
     : isMonitoring
       ? (status.monitoringCheckInProgress ? 'Monitoring' : 'Paused · Monitoring')
@@ -34473,6 +34510,9 @@ async function _launchCheckRun(scope) {
     // Ortus Basics 1.0: automatic acceptance is removed, so a check never asks
     // the primary to accept anything.
     autoAcceptPrimary: false,
+    // The check provisions this tab's tracking columns if a campaign never
+    // started here; the mode decides which columns that means.
+    mode: document.getElementById('campaign-mode')?.value || '',
   };
   if (scope === 'sheet') {
     // Server derives the account set from this tab's Sender column.
@@ -34488,6 +34528,11 @@ async function _launchCheckRun(scope) {
     ? 'Checking all senders in this tab…'
     : `Checking ${body.profileIds.length} account(s)…`);
   _launchCheckPending = true;
+  // Show this wizard's Live Status now, so the check's log appears as it
+  // starts rather than only once the engine reports back.
+  _checkWizardKey = (document.getElementById('campaign-name-input')?.value || '').trim().toLowerCase();
+  __cockpit.monitoringCheckInProgress = true;
+  try { syncLiveStatusVisibility(); } catch (_) { /* */ }
   startPolling();
   try {
     const r = await fetch('/api/bulk-check-now', {
