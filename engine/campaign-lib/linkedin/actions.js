@@ -2082,12 +2082,12 @@ export async function sendIntroMessage(page, body, introName, groupTitle, second
       //   3. single-candidate fallback (only one suggestion: trust it)
       const matchOne = (cands) => {
         for (let i = 0; i < cands.length; i++) {
-          const t = normalizeName(cands[i].innerText || cands[i].textContent);
+          const t = normalizeName((cands[i].innerText || cands[i].textContent || '').split('\n')[0]);
           if (t === norm || t.startsWith(`${norm} `)) return { idx: i, reason: 'exact' };
         }
         const tokens = norm.split(/\s+/);
         for (let i = 0; i < cands.length; i++) {
-          const t = normalizeName(cands[i].innerText || cands[i].textContent);
+          const t = normalizeName((cands[i].innerText || cands[i].textContent || '').split('\n')[0]);
           const words = t.split(/\s+/);
           if (tokens.every(tok => words.some(w => w.startsWith(tok)))) {
             return { idx: i, reason: 'token-prefix' };
@@ -2584,7 +2584,7 @@ export async function sendIntroViaCleanCompose(page, body, leadFullName, primary
       // pure pickRecipientByIdentity in match-primary.js (keep in sync).
       const collectMatches = (cands) => {
         const nameHit = (text) => {
-          const t = normalizeName(text);
+          const t = normalizeName((text || '').split('\n')[0]);
           if (t === norm || t.startsWith(`${norm} `)) return true;
           const words = t.split(/\s+/);
           return tokens.length > 0 && tokens.every(tok => words.some(w => w.startsWith(tok)));

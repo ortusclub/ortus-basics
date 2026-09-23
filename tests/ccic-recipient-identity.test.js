@@ -81,3 +81,14 @@ test('reference photo present but only one name match → still use it (no ambig
   assert.equal(r.index, 0);
   assert.equal(r.reason, 'single');
 });
+
+test('last-initial name does not false-match on job title words (Nikki C. bug)', () => {
+  const cands = [
+    c('Nikki C. • 1st\nHead of Growth Marketing at The Ortus Club', true, 'TOKEN_NC'),
+    c('Dr. Nikki Noel Raheja, PhD • 1st\nCEO and Content Creator at TTPJ Productions', true, 'TOKEN_NR'),
+    c('Nikki Tan Li Yee • 1st\nCorporate Banking', true, 'TOKEN_NT'),
+  ];
+  const r = pickRecipientByIdentity(cands, { name: 'Nikki C.' });
+  assert.equal(r.index, 0);
+  assert.equal(r.reason, 'single');
+});

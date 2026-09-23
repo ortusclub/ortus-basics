@@ -41,7 +41,7 @@ export function matchPrimaryCandidate(candidates, configuredName) {
 
   // Tier 1: exact / startsWith
   for (let i = 0; i < candidates.length; i++) {
-    const t = normalizeName(candidates[i].text);
+    const t = normalizeName((candidates[i].text || '').split('\n')[0]);
     if (t === norm || t.startsWith(`${norm} `)) {
       return { matchIndex: i, reason: 'exact' };
     }
@@ -50,7 +50,7 @@ export function matchPrimaryCandidate(candidates, configuredName) {
   // Tier 2: token-prefix match
   const tokens = norm.split(/\s+/);
   for (let i = 0; i < candidates.length; i++) {
-    const t = normalizeName(candidates[i].text);
+    const t = normalizeName((candidates[i].text || '').split('\n')[0]);
     const words = t.split(/\s+/);
     const allMatched = tokens.every(tok => words.some(w => w.startsWith(tok)));
     if (allMatched) {
@@ -105,7 +105,7 @@ export function pickRecipientByIdentity(candidates, { name, expectedAvatarToken 
   const tokens = norm.split(/\s+/).filter(Boolean);
 
   const nameMatches = (cand) => {
-    const t = normalizeName(cand.text);
+    const t = normalizeName((cand.text || '').split('\n')[0]);
     if (t === norm || t.startsWith(`${norm} `)) return true;
     const words = t.split(/\s+/);
     return tokens.length > 0 && tokens.every((tok) => words.some((w) => w.startsWith(tok)));

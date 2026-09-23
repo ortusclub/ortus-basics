@@ -83,3 +83,16 @@ test('tier ordering: exact wins over single-candidate-fallback when both apply',
   );
   assert.equal(result.reason, 'exact');
 });
+
+test('last-initial token does not match job title words in later lines', () => {
+  const result = matchPrimaryCandidate(
+    [
+      { text: 'Nikki C. · 1st\nHead of Growth Marketing at The Ortus Club' },
+      { text: 'Dr. Nikki Noel Raheja, PhD · 1st\nCEO and Content Creator' },
+      { text: 'Nikki Tan Li Yee · 1st\nCorporate Banking' },
+    ],
+    'Nikki C.'
+  );
+  assert.equal(result.reason, 'exact');
+  assert.equal(result.matchIndex, 0);
+});
