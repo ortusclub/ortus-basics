@@ -13372,6 +13372,13 @@ function localCampaignViewStatus(incoming) {
   const selected = _viewingLocalCampaign;
   if (!incoming?._cloud && sameCampaign(incoming, selected)) {
     selected.status = { ...incoming, _cloud: false, runsOn: 'local', id: 'local-active' };
+  } else if (incoming && !incoming._cloud && !incoming.running && !incoming.name && !incoming.campaignId
+             && (incoming.monitoringCheckInProgress || (Array.isArray(incoming.logs) && incoming.logs.length))) {
+    // A connection check run from the wizard belongs to no campaign, so it never
+    // matches the one on screen — yet its log is exactly what the operator is
+    // waiting for. Carry the check's log and in-progress flag onto the snapshot.
+    selected.status = { ...selected.status, logs: incoming.logs || [], monitoringCheckInProgress: !!incoming.monitoringCheckInProgress,
+      accountPanel: incoming.monitoringCheckInProgress ? incoming.accountPanel : selected.status.accountPanel };
   }
   return selected.status;
 }
@@ -30179,6 +30186,40 @@ window.renderActiveCard = function(status) {
   // Detected by: not running, not monitoring, but logs exist from this session.
   const isFinished = !!(status && !status.running && !isMonitoring && !isInterrupted && !isLaunching && !isDailyWait && !isNeedsReview
     && Array.isArray(status.logs) && status.logs.length > 0);
+  // A connection check is running (from ⚡ Run check now) and no campaign is
+  // sending. Started or not, scheduled or not — the check's log is shown here.
+  const isChecking = !!(status && status.monitoringCheckInProgress && !status.running && !isMonitoring);
+  if (isChecking) {
+    card.classList.remove('is-empty', 'is-queued', 'is-done', 'is-waiting', 'is-stopped');
+    card.classList.add('is-monitor');
+    const viewingName = (typeof _viewingLocalCampaign !== 'undefined' && _viewingLocalCampaign?.name) || '';
+    v3SetText('activeName', status.name || viewingName || 'Connection check');
+    v3SetText('activeEyebrow', 'Checking connections…');
+    v3SetText('sendingLbl', 'Checking');
+    v3SetText('batchEta', 'in progress');
+    const liveEl = document.getElementById('active-live');
+    if (liveEl) {
+      liveEl.hidden = false;
+      liveEl.classList.remove('is-waking', 'is-paused', 'is-outcome');
+      liveEl.classList.add('is-checking');
+      v3SetText('activeLiveIco', '📡');
+      v3SetText('activeLiveL1', 'Checking connections');
+      v3SetText('activeLiveL2', 'opening each account, reading who accepted, sending any due introductions · Stop ends the check');
+      applyLiveBanner(liveEl, status);
+    }
+    if (!renderLiveStage(card, status)) _hideStage(card);
+    _setActiveDetails(true);
+    window.__activeCardActive = true;
+    const logEl = document.getElementById('active-log');
+    if (logEl && Array.isArray(status.logs)) {
+      const lastN = status.logs.slice(-200);
+      logEl.innerHTML = lastN.map(line => v3RenderLogLine(line)).join('');
+      const head = card.querySelector('.vj-log-head .vj-details-head');
+      if (head) head.textContent = `Live log · ${lastN.length} events (checking)`;
+    }
+    try { _renderVjCardControls(card, status, { active: true }); } catch (_) { /* controls are best-effort */ }
+    return;
+  }
   if (isDailyWait || isNeedsReview) {
     card.classList.remove('is-empty', 'is-monitor', 'is-queued', 'is-done');
     card.classList.toggle('is-waiting', isDailyWait);
@@ -34378,7 +34419,29 @@ function refreshLaunchCheckBtn() {
   if (!btn) return;
   const mode = document.getElementById('campaign-mode')?.value || '';
   btn.hidden = mode !== 'connect_and_introduce';
+  // While a check runs — from here or from the live card — this button is how
+  // you stop it, campaign started or not.
+  const checking = _launchCheckPending || !!(typeof _localLive !== 'undefined' && _localLive && _localLive.monitoringCheckInProgress);
+  if (checking) {
+    if (btn.dataset.mode !== 'stop') { btn.dataset.mode = 'stop'; btn.textContent = '■ Stop check'; btn.disabled = false; btn.onclick = () => stopLaunchCheck(btn); }
+  } else if (btn.dataset.mode === 'stop') {
+    btn.dataset.mode = ''; btn.textContent = '⚡ Run check now'; btn.disabled = false; btn.onclick = () => window.launchCheckNow();
+  }
 }
+async function stopLaunchCheck(btn) {
+  const toast = (m) => { if (typeof showCampaignToast === 'function') showCampaignToast(m); };
+  if (btn) { btn.disabled = true; btn.textContent = 'Stopping…'; }
+  try {
+    const r = await fetch('/api/bulk-check/stop', { method: 'POST' });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+    toast('Stopping the check — it ends after the account it is on.');
+  } catch (e) {
+    toast('Could not stop the check: ' + e.message);
+    if (btn) { btn.disabled = false; btn.textContent = '■ Stop check'; }
+  }
+}
+if (typeof window !== 'undefined') window.stopLaunchCheck = stopLaunchCheck;
 if (typeof window !== 'undefined') window.refreshLaunchCheckBtn = refreshLaunchCheckBtn;
 
 // The scope question is the SAME modal the live-card check uses
@@ -34420,7 +34483,7 @@ async function _launchCheckRun(scope) {
   }
 
   const prev = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Checking…'; }
+  if (btn) btn.textContent = 'Checking…';
   toast(scope === 'sheet'
     ? 'Checking all senders in this tab…'
     : `Checking ${body.profileIds.length} account(s)…`);
@@ -34442,7 +34505,7 @@ async function _launchCheckRun(scope) {
     _launchCheckPending = false;
     // Fetch terminal lines even if the stopped campaign normally stops polling.
     await pollStatus();
-    if (btn) { btn.disabled = false; btn.textContent = prev || '⚡ Run check now'; }
+    if (btn) { btn.dataset.mode = ''; btn.onclick = () => window.launchCheckNow(); btn.disabled = false; btn.textContent = prev && !/Stop|Checking|Stopping/.test(prev) ? prev : '⚡ Run check now'; }
   }
 }
 
