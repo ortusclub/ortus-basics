@@ -82,20 +82,62 @@ const LEGACY_SALES_NAV_RE = /\/sales\/profile\//;
  * Smart wait: resolves when the DOM stops changing for 1.5s OR after maxWait ms.
  * Much faster than a fixed 30s wait — typically resolves in 5-10s.
  */
-async function waitForDomSettle(page, { settleMs = 1500, maxWait = 15000 } = {}) {
-  await page.evaluate(({ settleMs, maxWait }) => new Promise((resolve) => {
-    const target = document.querySelector('main') || document.body;
-    let timer;
-    const observer = new MutationObserver(() => {
-      clearTimeout(timer);
-      timer = setTimeout(() => { observer.disconnect(); resolve(); }, settleMs);
-    });
-    observer.observe(target, { childList: true, subtree: true, characterData: true });
-    // Kick off the settle timer immediately (in case DOM is already done)
-    timer = setTimeout(() => { observer.disconnect(); resolve(); }, settleMs);
-    // Hard ceiling
-    setTimeout(() => { observer.disconnect(); resolve(); }, maxWait);
-  }), { settleMs, maxWait });
+async function waitForDomSettle(page, { settleMs = 1500, maxWait = 20000, retryOnEmpty = true } = {}) {
+  // One attempt. Returns 'settled', 'timeout' (page kept changing), or 'empty' (nothing to watch).
+  const attempt = async () => {
+    try {
+      return await page.evaluate(({ settleMs, maxWait }) => new Promise((resolve) => {
+        const deadline = Date.now() + maxWait;
+        const getTarget = () =>
+          document.querySelector('main') || document.body || document.documentElement;
+
+        const watch = (target) => {
+          let timer;
+          let done = false;
+          const finish = (result) => {
+            if (done) return;
+            done = true;
+            clearTimeout(timer);
+            clearTimeout(ceiling);
+            try { observer.disconnect(); } catch (_) {}
+            resolve(result);
+          };
+          const observer = new MutationObserver(() => {
+            clearTimeout(timer);
+            timer = setTimeout(() => finish('settled'), settleMs);
+          });
+          try {
+            observer.observe(target, { childList: true, subtree: true, characterData: true });
+          } catch (_) {
+            resolve('empty');
+            return;
+          }
+          timer = setTimeout(() => finish('settled'), settleMs);
+          const ceiling = setTimeout(() => finish('timeout'), Math.max(0, deadline - Date.now()));
+        };
+
+        const target = getTarget();
+        if (target) { watch(target); return; }
+
+        // Nothing on the page yet: check every 100ms until the shared deadline.
+        const poll = setInterval(() => {
+          const t = getTarget();
+          if (t) { clearInterval(poll); watch(t); }
+          else if (Date.now() >= deadline) { clearInterval(poll); resolve('empty'); }
+        }, 100);
+      }), { settleMs, maxWait });
+    } catch (_) {
+      // Page navigated or closed mid-check. Treat as empty so the retry can run.
+      return 'empty';
+    }
+  };
+
+  let status = await attempt();
+  if (status === 'empty' && retryOnEmpty) {
+    try { await page.reload({ waitUntil: 'domcontentloaded', timeout: 15000 }); } catch (_) {}
+    status = await attempt();
+  }
+  return status;
 }
 
 export async function performOutreach(page, targetUrl, templates, state = {}, modeHint = null) {
@@ -363,13 +405,13 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
     if (modeHint !== 'check_only') {
       progress('profile_loading', 'Profile opened — preparing the page', 'Waiting for LinkedIn controls to become ready');
       console.log('[outreach] Waiting for DOM to settle…');
-      await waitForDomSettle(page, { settleMs: 1500, maxWait: 15000 });
+      const settleStatus = await waitForDomSettle(page, { settleMs: 1500, maxWait: 20000 });
+      if (settleStatus === 'empty') throw new Error('LinkedIn page did not load');
       await new Promise(r => setTimeout(r, 2000));
       console.log('[outreach] DOM settled.');
-      await page.evaluate(() => { document.body.style.zoom = '75%'; });
+      await page.evaluate(() => { if (document.body) document.body.style.zoom = '75%'; });
       progress('profile_ready', 'Profile ready', 'Checking connection status and available actions');
     }
-
     // ── Step 2b: Human-like browsing — scroll profile and dwell ──
     // 2.8.29: skip the entire dwell block for check_only — read-only mode,
     // no LinkedIn-visible action that could be flagged. The dwell is pure
