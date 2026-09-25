@@ -14,6 +14,7 @@
  *   document.getElementById('interop-outlet').shadowRoot.querySelector(...)
  */
 
+import { alreadyMessagedNoticeIn, OP_ALREADY_MESSAGED } from './op-notices.js';
 import { randomDelay, clickByAria, clickByText, isNoteOverFreeLimit, MESSAGING_OVERLAY_SELECTOR } from './helpers.js';
 
 // Matches Sales Navigator profile URLs (/sales/people/… or /sales/lead/…).
@@ -1612,6 +1613,38 @@ export async function sendConnectionRequest(page, noteArg, onProgress) {
 // sendMessage
 // ═════════════════════════════════════════════════════════════════════════════
 
+// v1.7.48: read LinkedIn's "you already messaged this person" notice off the
+// current page (compose page, thread, or Sales Nav message panel).
+async function readAlreadyMessagedNotice(page) {
+  try {
+    const text = await page.evaluate(() => {
+      // Scope to the compose / thread / Sales Nav message panel. The left-hand
+      // conversation list carries other people's message previews, and a lead
+      // writing "I already sent it" must not read as LinkedIn's notice.
+      const panes = document.querySelectorAll(
+        '.msg-form, .msg-convo-wrapper, .msg-overlay-conversation-bubble, ' +
+        '[class*="msg-s-message-list"], [class*="msg-thread"], [class*="compose"], ' +
+        '[data-x-conversation-widget], [class*="message-composer"], [class*="inmail"], ' +
+        '[role="alert"], [class*="inline-feedback"], [class*="banner"], [class*="notice"]'
+      );
+      let out = '';
+      for (const el of panes) {
+        if (el.closest('.msg-conversations-container, [class*="conversation-list"], [class*="conversations-list"], nav, header')) continue;
+        out += (el.innerText || '') + '\n';
+      }
+      if (out.trim()) return out;
+      // Fallback: whole page minus the conversation list.
+      let body = document.body?.innerText || '';
+      for (const el of document.querySelectorAll('.msg-conversations-container, [class*="conversation-list"], [class*="conversations-list"]')) {
+        const t = el.innerText || '';
+        if (t) body = body.replace(t, '');
+      }
+      return body;
+    });
+    return alreadyMessagedNoticeIn(text);
+  } catch { return null; }
+}
+
 export async function sendMessage(page, message, explicitPublicId = null, freeOnly = false) {
   // ── 2.8.48 — Compose-page navigation + plain Enter to send ──────────
   // History: tried injecting the LinkedIn DM Assistant content.js into the
@@ -1679,6 +1712,10 @@ export async function sendMessage(page, message, explicitPublicId = null, freeOn
   // so we never silently burn an InMail credit. (The intentional InMail path
   // goes through sendInMail / the "Spend an InMail credit" tickbox, not here.)
   if (freeOnly) {
+    const recentNotice = await readAlreadyMessagedNotice(page);
+    if (recentNotice) {
+      throw new Error(`${OP_ALREADY_MESSAGED}: ${recentNotice}`);
+    }
     const billing = await page.evaluate(() => {
       const text = document.body?.innerText || '';
       return {
@@ -1847,6 +1884,8 @@ export async function sendMessage(page, message, explicitPublicId = null, freeOn
   const success = verified.composerEmpty === true || verified.foundInThread === true
     || (movedToThread && verified.composerEmpty !== false);
   if (!success) {
+    const recentNotice = await readAlreadyMessagedNotice(page);
+    if (recentNotice) throw new Error(`${OP_ALREADY_MESSAGED}: ${recentNotice}`);
     const why = verified.editorFound
       ? `composer still has text: "${verified.editorText}"`
       : 'composer not found and message not in thread';
@@ -3303,6 +3342,10 @@ export async function sendViaSalesNav(page, { mode, opSubject, opBody, inmailSub
     await new Promise(r => setTimeout(r, 3500));
     panel = await readSalesNavComposerState(page);
     console.log(`[actions] SalesNavRouter panel: ${JSON.stringify(panel)}`);
+    // v1.7.48: one unanswered free message per member — Sales Nav says so in
+    // the panel instead of offering a composer (or offers one that won't send).
+    const recentNotice = await readAlreadyMessagedNotice(page);
+    if (recentNotice) return { ok: false, reason: 'already_messaged', error: recentNotice };
   }
 
   // v2.11.3: dual-fact dialog detection — checked BEFORE the generic
@@ -3331,7 +3374,11 @@ export async function sendViaSalesNav(page, { mode, opSubject, opBody, inmailSub
       return { ok: false, reason: 'not_open_profile' };
     }
     const result = await typeAndSendSalesNavComposer(page, opSubject, opBody);
-    if (!result.ok) return { ok: false, reason: 'send_failed', error: result.error };
+    if (!result.ok) {
+      const recentNotice = await readAlreadyMessagedNotice(page);
+      if (recentNotice) return { ok: false, reason: 'already_messaged', error: recentNotice };
+      return { ok: false, reason: 'send_failed', error: result.error };
+    }
     console.log('[actions] ✓ Sales Nav free message sent (Open Profile / TeamLink / connected)');
     return { ok: true, kind: 'op_message_sent' };
   }

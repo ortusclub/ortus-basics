@@ -642,6 +642,9 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           return { ok: true, action: { action: 'op_message_sent' } };
         } catch (e) {
           console.warn(`[outreach] LinkedIn OP send failed: ${e.message}`);
+          if (/OP_ALREADY_MESSAGED/.test(e.message)) {
+            return { ok: false, reason: 'already_messaged', error: e.message.replace(/^OP_ALREADY_MESSAGED:\s*/, '') };
+          }
           // v1.7.48: only a PRE-send failure means "not Open Profile". If the
           // send went out but the post-send check couldn't confirm it, say so —
           // never fall through to InMail / Sales Nav (that would double-send).
@@ -674,19 +677,20 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         result = await tryLinkedIn();
       } else if (channel === 'ln_first') {
         result = await tryLinkedIn();
-        if (!result.ok && result.reason !== 'send_unconfirmed') {
+        if (!result.ok && result.reason !== 'send_unconfirmed' && result.reason !== 'already_messaged') {
           console.log(`[outreach] OP ln_first: LinkedIn failed (${result.reason}) → trying Sales Nav`);
           result = await trySalesNav();
         }
       } else { // sn_first (default)
         result = await trySalesNav();
-        if (!result.ok) {
+        if (!result.ok && result.reason !== 'already_messaged') {
           console.log(`[outreach] OP sn_first: Sales Nav failed (${result.reason}) → trying LinkedIn`);
           result = await tryLinkedIn();
         }
       }
 
       if (result.ok) return result.action;
+      if (result.reason === 'already_messaged')            return { action: 'skipped', error: `OP_ALREADY_MESSAGED: ${result.error || 'LinkedIn says a message was already sent recently'}` };
       if (result.reason === 'send_unconfirmed')            return { action: 'skipped', error: `MESSAGE_SEND_UNCONFIRMED: ${result.error || 'send not confirmed'}` };
       if (result.reason === 'not_open_profile')            return { action: 'skipped', error: 'NOT_OPEN_PROFILE: lead is not Open Profile (tick "Spend an InMail credit" to message anyway)' };
       if (result.reason === 'no_credits')                  return { action: 'skipped', error: 'INMAIL_NO_CREDITS: 0 credits remaining' };
