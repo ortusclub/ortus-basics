@@ -17282,7 +17282,7 @@ function syncLiveStatusVisibility() {
   // A check launched from THIS wizard is this wizard's, whatever the engine
   // says its campaign is, as long as no campaign is actually running.
   const checking = !!(typeof __cockpit !== 'undefined' && __cockpit && __cockpit.monitoringCheckInProgress);
-  const checkHere = !running && _checkLaunchedHere() && (checking || !!__cockpit?.hasLogs);
+  const checkHere = !running && (typeof _checkLaunchedHere === 'function' && _checkLaunchedHere()) && (checking || !!__cockpit?.hasLogs);
   const unrelatedDraft = editingDraft && !checkHere && (!draftName || draftName !== statusName);
   // Follower Growth has its OWN self-contained log card (#fgtl-card); the generic
   // campaign Live Status (#nav-status) must never appear in FG view, else a prior
