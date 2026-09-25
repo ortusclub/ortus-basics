@@ -78,6 +78,10 @@ export function memberNumberFromToken(value) {
  * collide with a member number. Exported so the auto-intro pass can apply the
  * identical dedup to its work-list (defense in depth).
  */
+// Stamped into Connection Request Status when a row has a Sender but no
+// recorded request: the app assumes the request was made and checks it.
+export const ASSUMED_REQUEST_STATUS = 'Assumed connection request made';
+
 export function leadIdentityKeys(url, row) {
   const keys = [];
   const slug = publicIdFromUrl(url);
@@ -183,6 +187,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
   let dbgDuplicateCollapsed = 0;
   let dbgAlreadyDmd = 0;
   let dbgRequestHealed = 0;
+  let dbgAssumedRequest = 0;
   let dbgAlreadyUnverified = 0;
   let dbgComposeCapped = 0;
   let dbgCrossSender = 0;
@@ -382,7 +387,20 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       updates.push({ linkedinUrl: url, connectionStatus: 'Connection Request Sent' });
       dbgRequestHealed++;
     }
-    const wasInvited = requestStatus === 'Connection Request Sent' || needsRequestHeal;
+    // A row whose Sender is filled in but whose Connection Request Status is
+    // blank was worked outside the app (or before the columns existed). The
+    // operator's rule (2026-09-25): a filled Sender means an attempt was made,
+    // so say so and check it like any other invitation — Connected on a match,
+    // Still Pending otherwise — instead of leaving the row blank or calling a
+    // match "Already connected". Only the assigned sender's own sweep assumes,
+    // and never over a row that already carries an acceptance result.
+    const assumedInvite = !requestStatus && !!rowSenderNorm && !rowSenderMismatch && !cs;
+    if (assumedInvite) {
+      updates.push({ linkedinUrl: url, connectionStatus: ASSUMED_REQUEST_STATUS });
+      dbgAssumedRequest++;
+    }
+    const wasInvited = requestStatus === 'Connection Request Sent' || requestStatus === ASSUMED_REQUEST_STATUS
+      || needsRequestHeal || assumedInvite;
 
     if (isMatch) {
       dbgPidMatched++;
@@ -583,7 +601,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       continue;
     }
 
-    if (requestStatus !== 'Connection Request Sent') continue;
+    if (!wasInvited) continue;
     // v2.62: don't let other accounts' bulk-checks downgrade a row to
     // Still Pending. Only the assigned Sender should refresh its own
     // pending timestamp.
@@ -639,6 +657,7 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
       duplicateCollapsed: dbgDuplicateCollapsed,
       alreadyDmd: dbgAlreadyDmd,
       requestHealed: dbgRequestHealed,
+      assumedRequest: dbgAssumedRequest,
       alreadyUnverified: dbgAlreadyUnverified,
       composeCapped: dbgComposeCapped,
       pidMatched: dbgPidMatched,
