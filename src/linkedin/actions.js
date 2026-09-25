@@ -1799,7 +1799,14 @@ export async function sendMessage(page, message, explicitPublicId = null, freeOn
   // 7.5s window covers the slow-transition case without sacrificing
   // happy-path throughput meaningfully.
   await new Promise(r => setTimeout(r, 7500));
+  // v1.7.48: a successful send moves the page from /messaging/compose/ to
+  // /messaging/thread/<id>/ — LinkedIn only does that after the message is
+  // accepted, so it is positive proof on its own. Also compare whitespace-
+  // normalised text: multi-line bodies render as separate <p> blocks in the
+  // thread, so a raw 40-char tail spanning a line break never matched.
+  const movedToThread = /\/messaging\/thread\//.test(page.url());
   const verified = await page.evaluate((sentText) => {
+    const norm = (t) => String(t || '').replace(/\u200b/g, '').replace(/\s+/g, ' ').trim();
     const editor = document.querySelector(
       'div[role="textbox"][aria-label*="Write a message" i], ' +
       '.msg-form__contenteditable, ' +
@@ -1813,14 +1820,20 @@ export async function sendMessage(page, message, explicitPublicId = null, freeOn
       composerEmpty = editorText.length === 0;
     }
     let foundInThread = false;
-    const tail = (sentText || '').slice(-40).trim();
+    const tail = norm(sentText).slice(-40).trim();
     if (tail.length >= 8) {
       const messages = document.querySelectorAll(
         '.msg-s-event-listitem, [class*="msg-s-event"], ' +
-        '[class*="msg-event-listitem"], .msg-s-message-list-content li'
+        '[class*="msg-event-listitem"], .msg-s-message-list-content li, ' +
+        '[data-event-urn], [class*="message-list"] li, [class*="msg-thread"] p'
       );
       for (const m of messages) {
-        if ((m.textContent || '').includes(tail)) { foundInThread = true; break; }
+        if (norm(m.textContent).includes(tail)) { foundInThread = true; break; }
+      }
+      if (!foundInThread && document.body && norm(document.body.innerText).includes(tail)
+          && !(editor && norm(editor.textContent).includes(tail))) {
+        // Body text carries the sent message and it's no longer in the composer.
+        foundInThread = true;
       }
     }
     return {
@@ -1831,14 +1844,15 @@ export async function sendMessage(page, message, explicitPublicId = null, freeOn
     };
   }, message);
 
-  const success = verified.composerEmpty === true || verified.foundInThread === true;
+  const success = verified.composerEmpty === true || verified.foundInThread === true
+    || (movedToThread && verified.composerEmpty !== false);
   if (!success) {
     const why = verified.editorFound
       ? `composer still has text: "${verified.editorText}"`
       : 'composer not found and message not in thread';
     throw new Error(`MESSAGE_SEND_FAILED: send not confirmed (${why})`);
   }
-  console.log(`[actions] ✓ Message sent (composerEmpty=${verified.composerEmpty}, foundInThread=${verified.foundInThread})`);
+  console.log(`[actions] ✓ Message sent (composerEmpty=${verified.composerEmpty}, foundInThread=${verified.foundInThread}, movedToThread=${movedToThread})`);
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

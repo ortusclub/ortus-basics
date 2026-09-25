@@ -473,6 +473,7 @@ export function normalizeSkipReason(msg) {
   // v2.14.x: modal cross-check detected we clicked Connect for someone
   // other than the profile owner (e.g. a sidebar firstName collision).
   if (lower.includes('connect_modal_wrong_person')) return 'Skipped: Connect modal opened for wrong person';
+  if (lower.includes('message_send_unconfirmed')) return 'Skipped: Message send not confirmed — it may have been delivered; check the thread before re-sending';
   if (lower.includes('send not confirmed') || lower.includes('send_not_confirmed')) return 'Skipped: Send not confirmed';
   // v2.10.0 — VOYAGER_REJECTED carries the HTTP status + LinkedIn's own error reason.
   // v2.78 — a bare 429 is ambiguous: it's USUALLY the weekly invitation cap, but

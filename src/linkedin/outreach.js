@@ -98,6 +98,16 @@ async function waitForDomSettle(page, { settleMs = 1500, maxWait = 15000 } = {})
   }), { settleMs, maxWait });
 }
 
+// v1.7.48: sendMessage throws for two very different reasons. Before the send
+// (no compose box, not a confirmed free message, could not type) the lead is
+// genuinely not messageable for free. After the send ("send not confirmed")
+// the message usually DID go out and only the DOM check failed — that must
+// never be reported as "not Open Profile" nor trigger a second send.
+export function isPostSendFailure(message) {
+  const m = String(message || '').toLowerCase();
+  return m.includes('send not confirmed') || m.includes('send_not_confirmed');
+}
+
 export async function performOutreach(page, targetUrl, templates, state = {}, modeHint = null) {
   try {
     const progress = (step, stepLabel, stepDetail = '') => {
@@ -632,6 +642,12 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           return { ok: true, action: { action: 'op_message_sent' } };
         } catch (e) {
           console.warn(`[outreach] LinkedIn OP send failed: ${e.message}`);
+          // v1.7.48: only a PRE-send failure means "not Open Profile". If the
+          // send went out but the post-send check couldn't confirm it, say so —
+          // never fall through to InMail / Sales Nav (that would double-send).
+          if (isPostSendFailure(e.message)) {
+            return { ok: false, reason: 'send_unconfirmed', error: e.message };
+          }
           if (!spendInMail) return { ok: false, reason: 'not_open_profile' };
           // InMail fallback needs an /in/ page for the Sales Nav resolve.
           if (!/\/in\//.test(page.url())) {
@@ -658,7 +674,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         result = await tryLinkedIn();
       } else if (channel === 'ln_first') {
         result = await tryLinkedIn();
-        if (!result.ok) {
+        if (!result.ok && result.reason !== 'send_unconfirmed') {
           console.log(`[outreach] OP ln_first: LinkedIn failed (${result.reason}) → trying Sales Nav`);
           result = await trySalesNav();
         }
@@ -671,6 +687,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       }
 
       if (result.ok) return result.action;
+      if (result.reason === 'send_unconfirmed')            return { action: 'skipped', error: `MESSAGE_SEND_UNCONFIRMED: ${result.error || 'send not confirmed'}` };
       if (result.reason === 'not_open_profile')            return { action: 'skipped', error: 'NOT_OPEN_PROFILE: lead is not Open Profile (tick "Spend an InMail credit" to message anyway)' };
       if (result.reason === 'no_credits')                  return { action: 'skipped', error: 'INMAIL_NO_CREDITS: 0 credits remaining' };
       if (result.reason === 'inmail_no_credits_lead_not_op') return { action: 'skipped', error: 'INMAIL_NO_CREDITS_NOT_OP: account has 0 InMail credits and lead is not Open Profile' };
