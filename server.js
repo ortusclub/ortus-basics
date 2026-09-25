@@ -70,7 +70,7 @@ import { startHandshakeJob, getHandshakeJob } from './src/cloud-handshake-job.js
 import { runCloudPreflightHandshake } from './src/cloud-preflight-handshake.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
-import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT } from './src/linkedin/intro-constants.js';
+import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT, INTRO_HELD_NO_PRIMARY } from './src/linkedin/intro-constants.js';
 import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
 import { accountForEmail, canOperatorUseProfile, usesProfileAsGuest, accountLabel, configuredAccounts, accountAllowsMode, accountModes, POST_AMPLIFICATION_MODE } from './src/gologin-accounts.js';
 import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
@@ -6873,6 +6873,17 @@ app.post('/api/bulk-check-now', async (req, res) => {
               });
             } catch (introErr) {
               campaignLog(`⚠ [${pName}] Auto-intro pass threw: ${introErr.message}`);
+            }
+          } else if (_phaseMode === 'connect_and_introduce' && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
+            // CC+IB with no primary person (name or intro message missing): the
+            // intro step cannot run. Say so on the sheet instead of leaving the
+            // Introduction Status blank as if the lead had not been reached.
+            campaignLog(`⏸ [${pName}] ${r.connectedUrls.length} accepted lead(s) not introduced — no primary person set on this campaign. Noted on the sheet.`);
+            try {
+              const { batchUpdateSheet: _batch } = await import('./src/sheets-writer.js');
+              await _batch(sheetUrl, r.connectedUrls.map((u) => ({ linkedinUrl: u, introductionStatus: INTRO_HELD_NO_PRIMARY })));
+            } catch (e) {
+              campaignLog(`⚠ [${pName}] Could not note the missing primary on the sheet: ${e.message}`);
             }
           }
         }

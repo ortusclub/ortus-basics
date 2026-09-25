@@ -23,6 +23,10 @@ export const INTRO_RETRY_RECONNECT = 'Reconnecting to primary — will retry';
 // runs a check once the two are connected (the text says so).
 export const INTRO_HELD_PRIMARY_NOT_CONNECTED = "Can't make intro — primary not connected to sender. Once they're connected, delete this text and run the check again.";
 
+// Same idea when the campaign has no primary person at all (2026-09-25,
+// "NitaHello": 10 Connected rows, intro step never ran, nothing said).
+export const INTRO_HELD_NO_PRIMARY = "Can't make intro — no primary person set on this campaign. Add the primary's name, LinkedIn URL and intro message in the wizard, delete this text and run the check again.";
+
 /** True when an Introduction Status value is the retry sentinel (≈ blank for
  *  re-queue purposes). Trimmed, case-sensitive on the canonical string. */
 export function isIntroRetrySentinel(s) {

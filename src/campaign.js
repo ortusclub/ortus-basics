@@ -30,7 +30,7 @@ import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
 import { fetchSheet as fetchSheetRows, isSystemTabName, looksLikeLeadRows, listSheetTabs } from './sheets.js';
 import { withGid, extractSheetGid } from './utils.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab, flushSheetWrites } from './sheets-writer.js';
-import { INTRO_HELD_PRIMARY_NOT_CONNECTED } from './linkedin/intro-constants.js';
+import { INTRO_HELD_PRIMARY_NOT_CONNECTED, INTRO_HELD_NO_PRIMARY } from './linkedin/intro-constants.js';
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
 import { writeSheetWithRetry, getFailures, clearFailures, configure as configureSheetWriteTracker } from './sheet-write-tracker.js';
 import { getPrefs as getOperatorPrefs, identityGateEnabled } from './operator-prefs.js';
@@ -983,12 +983,15 @@ export function forceCloseActiveBulkChecks() { _forceCloseActiveBulkChecks(); }
 // An accepted lead whose intro is held because THIS sender is not connected to
 // the primary gets told so on the sheet, with the way to retry (Sam,
 // 2026-09-25). Nothing else in the row changes.
-async function _stampIntroHeldPrimary(sheetUrl, urls, senderName) {
+async function _stampIntroHeldPrimary(sheetUrl, urls, senderName, why = 'not_connected') {
   const list = Array.isArray(urls) ? urls.filter(Boolean) : [];
   if (!list.length) return;
-  log(`  ⏸ [${senderName}] ${list.length} accepted lead(s) not introduced — this account is not connected to the primary. Noted on the sheet; clear the note and run a check once they are connected.`);
+  const note = why === 'no_primary' ? INTRO_HELD_NO_PRIMARY : INTRO_HELD_PRIMARY_NOT_CONNECTED;
+  log(why === 'no_primary'
+    ? `  ⏸ [${senderName}] ${list.length} accepted lead(s) not introduced — no primary person set on this campaign. Noted on the sheet.`
+    : `  ⏸ [${senderName}] ${list.length} accepted lead(s) not introduced — this account is not connected to the primary. Noted on the sheet; clear the note and run a check once they are connected.`);
   try {
-    await batchUpdateSheet(sheetUrl, list.map((u) => ({ linkedinUrl: u, introductionStatus: INTRO_HELD_PRIMARY_NOT_CONNECTED })));
+    await batchUpdateSheet(sheetUrl, list.map((u) => ({ linkedinUrl: u, introductionStatus: note })));
   } catch (e) {
     log(`  ⚠ [${senderName}] Could not note the held intros on the sheet: ${e.message}`);
   }
@@ -3366,9 +3369,10 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         }
 
         if (mode === 'connect_and_introduce' && !campaign.skipIntroductions && !willAutoIntro
-            && campaign._primaryConn && campaign._primaryConn.get(profileId) === 'pending'
             && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
-          await _stampIntroHeldPrimary(sheetUrl, r.connectedUrls, pName);
+          const _tplOk = !!(tpl && tpl.primaryName && tpl.primaryName.trim() && tpl.primaryIntroBody && tpl.primaryIntroBody.trim());
+          if (!_tplOk) await _stampIntroHeldPrimary(sheetUrl, r.connectedUrls, pName, 'no_primary');
+          else if (campaign._primaryConn && campaign._primaryConn.get(profileId) === 'pending') await _stampIntroHeldPrimary(sheetUrl, r.connectedUrls, pName);
         }
         if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
           await runAutoIntros({
@@ -4811,9 +4815,10 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
 
                   // Phase-2 dispatch — same helper pattern, mode-routed.
                   if (mode === 'connect_and_introduce' && !campaign.skipIntroductions && !willAutoIntro
-                      && campaign._primaryConn && campaign._primaryConn.get(profileId) === 'pending'
                       && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
-                    await _stampIntroHeldPrimary(sheetUrl, r.connectedUrls, pName);
+                    const _tplOk = !!(tpl && tpl.primaryName && tpl.primaryName.trim() && tpl.primaryIntroBody && tpl.primaryIntroBody.trim());
+                    if (!_tplOk) await _stampIntroHeldPrimary(sheetUrl, r.connectedUrls, pName, 'no_primary');
+                    else if (campaign._primaryConn && campaign._primaryConn.get(profileId) === 'pending') await _stampIntroHeldPrimary(sheetUrl, r.connectedUrls, pName);
                   }
                   if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
                     await runAutoIntros({
@@ -7469,9 +7474,10 @@ export async function runMonitoringCheck(profileId, profileName) {
     }
 
     if (_campaignMode === 'connect_and_introduce' && !campaign.skipIntroductions && !willAutoIntro
-        && campaign._primaryConn && campaign._primaryConn.get(profileId) === 'pending'
         && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
-      await _stampIntroHeldPrimary(sheetUrl, r.connectedUrls, profileName);
+      const _tplOk = !!(templates && templates.primaryName && templates.primaryName.trim() && templates.primaryIntroBody && templates.primaryIntroBody.trim());
+      if (!_tplOk) await _stampIntroHeldPrimary(sheetUrl, r.connectedUrls, profileName, 'no_primary');
+      else if (campaign._primaryConn && campaign._primaryConn.get(profileId) === 'pending') await _stampIntroHeldPrimary(sheetUrl, r.connectedUrls, profileName);
     }
     if (willAutoIntro && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
       await runAutoIntros({
