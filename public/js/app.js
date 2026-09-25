@@ -6304,7 +6304,7 @@ function syncSkipIntrosHelp() {
   const help = document.getElementById('skip-intros-help');
   if (!tog || !help) return;
   help.innerHTML = tog.checked
-    ? '<b>On:</b> invitations go out and every check stamps who accepted, but <b>no introduction is sent</b> — not during the campaign, not from ⚡ Check now. Turn off later and the next check introduces everyone still waiting.'
+    ? '<b>On:</b> invitations go out and every check stamps who accepted, but <b>no introduction is sent</b> — not during the campaign, not from ⚡ Check now. The primary person, intro subject and intro message are optional while this is on. Turn off later and the next check introduces everyone still waiting.'
     : '<b>Off:</b> accepted connections are introduced to the primary person as usual.';
 }
 window.syncSkipIntrosHelp = syncSkipIntrosHelp;
@@ -6929,7 +6929,10 @@ async function startCampaign(opts = {}) {
   // requests but every accepted lead would silently SKIP the intro DM (the
   // server logs a warning but the operator never sees it). Block at click-time
   // and scroll/focus the first empty field so the operator can fix it.
-  if (_mode === 'connect_and_introduce') {
+  // v1.7.49: "Connections only" (skip-intros) sends and checks but never
+  // introduces, so no primary person / intro message is needed to launch.
+  const _skipIntrosOn = _mode === 'connect_and_introduce' && document.getElementById('skip-intros')?.checked === true;
+  if (_mode === 'connect_and_introduce' && !_skipIntrosOn) {
     const _pName = (document.getElementById('primary-person-name')?.value || '').trim();
     const _pUrl  = (document.getElementById('primary-person-url')?.value  || '').trim();
     const _pBody = (document.getElementById('primary-intro-body')?.value || '').trim();
@@ -7006,7 +7009,7 @@ async function startCampaign(opts = {}) {
   // (Structural check only, no network lookup, so it can block without false-flagging.)
   // v2.119: ICB does NOT require the URL — its leads are already connected, so the
   // URL is only used for the {primary url} placeholder. Empty just omits the token.
-  if (_mode === 'connect_and_introduce') {
+  if (_mode === 'connect_and_introduce' && !_skipIntrosOn) {
     const _pUrlEl = document.getElementById('primary-person-url');
     const _pUrlVal = (_pUrlEl?.value || '').trim();
     if (!_pUrlVal) {
@@ -9180,6 +9183,7 @@ async function openCloudAccountPicker(id) {
     cloudId: id, name: st.name || 'this campaign', before,
     prevSelection: selectedProfileIds.slice(),
     mode: st.mode || '', primaryUrl: st.primaryUrl || '',
+    skipIntros: st.skipIntroductions === true,
   };
   selectedProfileIds = before.slice();
   goCreateCampaign();
@@ -9271,7 +9275,7 @@ window.acctAddCancel = acctAddCancel;
 
 async function acctAddApply() {
   if (!_acctAdd) return;
-  const { cloudId, mode, primaryUrl } = _acctAdd;
+  const { cloudId, mode, primaryUrl, skipIntros } = _acctAdd;
   const { add, remove } = _acctAddDiff();
   if (!add.length && !remove.length) return;
   // Match the engine: removals need a pause, additions don't. Say so instead of
@@ -9284,7 +9288,7 @@ async function acctAddApply() {
   // never fire. Same local Phase-0 handshake the wizard runs at launch — the VM
   // has no operator Chrome, so it has to happen on this machine.
   const isIntroMode = mode === 'connect_and_introduce';
-  if (isIntroMode && add.length && !primaryUrl) {
+  if (isIntroMode && !skipIntros && add.length && !primaryUrl) {
     showCampaignToast('Can’t add an account — this CC+IC campaign has no primary person URL, so the new sender could never send its intros.', 7000);
     return;
   }

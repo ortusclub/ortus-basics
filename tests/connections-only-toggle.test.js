@@ -39,3 +39,19 @@ test('post-campaign sweeps never introduce for a connections-only campaign', () 
   assert.equal(shouldFirePostCampaignIntro(entry, ['https://linkedin.com/in/x']), true);
   assert.equal(shouldFirePostCampaignIntro({ ...entry, skipIntroductions: true }, ['https://linkedin.com/in/x']), false);
 });
+
+import { needsHandshakeFromBody } from '../public/js/handshake-gate.mjs';
+
+test('with the toggle on, launching needs no primary person, URL, subject or intro message', () => {
+  // wizard: both CC+IB hard-blocks are bypassed
+  assert.match(app, /const _skipIntrosOn = _mode === 'connect_and_introduce' && document\.getElementById\('skip-intros'\)\?\.checked === true;/);
+  assert.equal((app.match(/if \(_mode === 'connect_and_introduce' && !_skipIntrosOn\) \{/g) || []).length, 2);
+  // server mirror of the primary-URL lock
+  assert.match(server, /if \(mode === 'connect_and_introduce' && body\.skipIntroductions === true\) return false;/);
+  // no sender→primary handshake either
+  const body = { mode: 'connect_and_introduce', templates: { autoAcceptPrimary: true }, skipIntroductions: true };
+  assert.equal(needsHandshakeFromBody(body), false);
+  assert.equal(needsHandshakeFromBody({ ...body, skipIntroductions: false }), true);
+  // and the help text says the fields are optional
+  assert.match(app, /intro subject and intro message are optional while this is on/);
+});

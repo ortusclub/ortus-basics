@@ -1162,6 +1162,9 @@ app.post('/api/templates/preview', async (req, res) => {
 function rejectIfBadPrimaryUrl(body, res) {
   const mode = body && body.mode;
   if (mode !== 'connect_and_introduce' && mode !== 'introduce_back') return false;
+  // v1.7.49: "Connections only" (skipIntroductions) never introduces, so a
+  // CC+IB launch without a primary is fine — nothing would ever use it.
+  if (mode === 'connect_and_introduce' && body.skipIntroductions === true) return false;
   const url = ((body && body.templates && body.templates.primaryUrl) || '').toString().trim();
   if (!url) {
     // v2.119: ICB's URL is optional (leads are already connected; the URL only

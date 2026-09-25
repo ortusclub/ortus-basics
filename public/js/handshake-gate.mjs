@@ -18,6 +18,8 @@
 // here too so an old draft carrying it cannot silently skip the handshake.
 export function needsHandshakeFromBody(body = {}) {
   const t = (body && body.templates) || {};
+  // v1.7.49: "Connections only" never introduces, so no sender→primary handshake.
+  if (body && body.skipIntroductions === true) return false;
   return body.mode === 'connect_and_introduce'
     && t.autoAcceptPrimary === true
     && (t.primarySource || 'local-browser') === 'local-browser';
