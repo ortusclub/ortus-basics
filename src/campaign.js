@@ -2212,17 +2212,6 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
   const _resumeTotal = resumeContext && Number.isFinite(Number(resumeContext.totalProcessed)) ? Number(resumeContext.totalProcessed) : 0;
   campaign.processedToday = 0;
   campaign.totalProcessed = _resumeTotal;
-  // Tab-as-Bible: the "Recent Connections" tab is a per-campaign record. Wipe
-  // it clean at the start of a NEW campaign so stale rows from a prior run on
-  // the same sheet can't produce false matches. On resume, keep the tab — the
-  // accumulated record belongs to the campaign we're continuing.
-  if (!resumeContext) {
-    try {
-      await clearRecentConnectionsTab(sheetUrl);
-    } catch (err) {
-      console.warn(`[campaign] Recent Connections wipe failed (non-fatal): ${err.message}`);
-    }
-  }
   campaign.totalTargets = 0;
   campaign.mode = mode;
   // ISO timestamp marking when this campaign run began. Used by the
@@ -3078,6 +3067,19 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     // Browser / Try Again buttons can call profile-specific endpoints.
     campaign.profileIds = profileIds.slice();
     log(`${Object.keys(profileNameCache).length} profiles in cache.`);
+    // Tab-as-Bible: the "Recent Connections" tab is a per-campaign record. Clear
+    // THIS campaign's accounts out of it at the start of a NEW run so stale rows
+    // from a prior run can't produce false matches; other campaign tabs in the
+    // same workbook keep their rows. On resume, keep everything — the
+    // accumulated record belongs to the campaign we're continuing. Runs here,
+    // once the account names are known, rather than before they were.
+    if (!resumeContext) {
+      try {
+        await clearRecentConnectionsTab(sheetUrl, (campaign.profileNames || []).filter((n) => n && n !== 'You'));
+      } catch (err) {
+        console.warn(`[campaign] Recent Connections wipe failed (non-fatal): ${err.message}`);
+      }
+    }
 
     // ── Phase 11.2: LAZY-LAUNCH BATCH LOOP ──
     // Profiles open on first batch (D-10). Each profile processes BATCH_SIZE leads

@@ -1223,6 +1223,19 @@
                 </div>
               </div>
 
+              <!-- "Add a connection note" — connect modes only (toggled in onModeChange).
+                   Off by default: requests go out bare and the note field stays hidden. -->
+              <div class="throttle-row" id="add-note-row" style="display:none">
+                <label class="alpha-toggle" title="Show the connection note field and send a note with each request">
+                  <input type="checkbox" id="add-note-toggle" onchange="setAddNote(this.checked); wizardDirtyOnInput()" />
+                  <span class="alpha-toggle-track"></span>
+                </label>
+                <div class="tr-text">
+                  <div class="tr-label">Add a connection note</div>
+                  <div class="tr-help" id="add-note-help"></div>
+                </div>
+              </div>
+
               <!-- "Free for all 25th" — Open Profile / InMail campaigns only (toggled in onModeChange). -->
               <div class="throttle-row" id="monthly-cutoff-row" style="display:none">
                 <label class="alpha-toggle" title="Stop this campaign just before LinkedIn's monthly message allowance renews">
@@ -2722,18 +2735,15 @@
          was a band-aid for the wrong-person incident. Root cause is now fixed by
          the pre-send identity gate, so the note returns to a plain always-visible
          field for every connect mode. -->
-    <div class="section tpl-section" id="tpl-connect-section">
-      <h2><span data-edit="h2-connect">Connection Note</span> <small>(disabled)</small></h2>
-      <!-- Ortus Basics 1.0: connection notes are switched off. Requests go out
-           bare; the conversation belongs in the group thread after the intro.
-           #tpl-note stays in the DOM and stays EMPTY — roughly a dozen call
-           sites read `getElementById('tpl-note').value` without a null guard,
-           so removing it would throw. Disabled + empty means every launch
-           payload carries connectionNote: "". -->
-      <div class="note-hint note-hint-callout"><span class="nh-ic">!</span><span class="nh-tx"><b>Connection notes are disabled in this version.</b> Requests are sent without a note — they get accepted more often, and the conversation is meant to happen in the group thread once the introduction is made.</span></div>
-      <textarea id="tpl-note" hidden disabled></textarea>
-      <span id="tpl-note-count" hidden></span>
-      <span id="tpl-note-hint" hidden></span>
+    <!-- Hidden until "Add a connection note" is switched on in Throughput
+         (setAddNote → syncAddNoteUI). Off, the launch payload carries
+         connectionNote: "" whatever is typed here. -->
+    <div class="section tpl-section" id="tpl-connect-section" style="display:none">
+      <h2><span data-edit="h2-connect">Connection Note</span> <small>(optional, max 300 chars)</small></h2>
+      <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!" oninput="updateTplNoteCount(); wizardDirtyOnInput()"></textarea>
+      <div id="tpl-note-count" style="font-size:0.7rem; color:var(--gray); margin-top:4px; text-align:right; font-family:var(--mono);">0 / 300</div>
+      <div id="tpl-note-hint" class="note-hint note-hint-callout hidden"><span class="nh-ic">!</span><span class="nh-tx"><b>You usually don't need a note.</b> Requests sent without one tend to get accepted more often.</span></div>
+      <div class="placeholder-tags" data-target="tpl-note"></div>
     </div>
 
     <!-- ── Direct message (message_only) — introduce_back keeps this hidden ── -->

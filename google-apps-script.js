@@ -2161,13 +2161,16 @@ function _writeRecentConnectionsLocked(spreadsheet, data) {
     return acct + '|name:' + n;
   }
 
-  // Keep rows from other campaign accounts (drop non-campaign accounts), and
-  // keep THIS sender's existing rows too — we only ADD new people, never wipe.
+  // Keep EVERY existing row, whatever account it belongs to. The tab is one
+  // per workbook and a workbook holds many campaign tabs, each with its own
+  // senders; dropping rows for accounts that are not senders on the tab being
+  // checked meant a check on tab B threw away tab A's accumulated record
+  // (2026-09-25: the CCI rows vanished after checks on two smaller tabs). The
+  // sender scope now only decides which rows go BACK to the caller, below.
   var keptRows = [];
   var seenKeys = {};
   for (var r = 0; r < existing.length; r++) {
     var rowSender = (existing[r][0] || '').toString().trim();
-    if (hasActiveSenderScope && !activeSendersLower[rowSender.toLowerCase()]) continue;
     keptRows.push(existing[r]);
     // existing columns: [Account, First, Last, PublicId, URN, MemberId, ...]
     seenKeys[_identityKey(rowSender, existing[r][4], existing[r][3], existing[r][1], existing[r][2])] = true;
@@ -2216,14 +2219,20 @@ function _writeRecentConnectionsLocked(spreadsheet, data) {
     sheet.getRange(2, 1, writeRows, RECENT_HEADERS.length).setValues(grid);
   }
 
-  // Return the full accumulated set so the bot matches against the tab, not
-  // the live 80-fetch. Shape mirrors the Node `conns` objects + `account`.
-  var accumulated = keptRows.map(function (row) {
-    return {
+  // Return the accumulated set the bot matches against, not the live 80-fetch —
+  // scoped to this tab's senders (plus the caller) when a scope was given, so a
+  // foreign account's connections never stamp a row on this tab.
+  var senderLower = sender.toLowerCase();
+  var accumulated = [];
+  for (var ai2 = 0; ai2 < keptRows.length; ai2++) {
+    var row = keptRows[ai2];
+    var acctLower = (row[0] || '').toString().trim().toLowerCase();
+    if (hasActiveSenderScope && !activeSendersLower[acctLower] && acctLower !== senderLower) continue;
+    accumulated.push({
       account: row[0], firstName: row[1], lastName: row[2],
       publicId: row[3], urn: row[4], memberNumber: row[5],
-    };
-  });
+    });
+  }
 
   return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, rows: appended, accumulated: accumulated });
 }
@@ -2236,11 +2245,29 @@ function handleClearRecentConnections(spreadsheet, data) {
     return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, cleared: 0 });
   }
   var lastRow = sheet.getLastRow();
-  var cleared = 0;
-  if (lastRow >= 2) {
-    cleared = lastRow - 1;
+  if (lastRow < 2) return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, cleared: 0 });
+  // `accounts` (optional): clear only THESE accounts' rows. A campaign starting
+  // on one tab must not wipe the record other tabs in the workbook rely on.
+  // Absent (older clients) → the whole tab, as before.
+  var only = Array.isArray(data.accounts) ? data.accounts : null;
+  if (!only) {
     sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).clearContent();
+    return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, cleared: lastRow - 1 });
   }
+  var onlyLower = {};
+  for (var i = 0; i < only.length; i++) { var v = (only[i] || '').toString().trim().toLowerCase(); if (v) onlyLower[v] = true; }
+  var rows = sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).getValues();
+  var keep = [];
+  var cleared = 0;
+  for (var r = 0; r < rows.length; r++) {
+    var acct = (rows[r][0] || '').toString().trim().toLowerCase();
+    if (onlyLower[acct]) { cleared++; continue; }
+    keep.push(rows[r]);
+  }
+  var blank = [];
+  for (var b = 0; b < RECENT_HEADERS.length; b++) blank.push('');
+  while (keep.length < rows.length) keep.push(blank.slice());
+  sheet.getRange(2, 1, rows.length, RECENT_HEADERS.length).setValues(keep);
   return jsonResponse({ ok: true, tab: RECENT_TAB_NAME, cleared: cleared });
 }
 

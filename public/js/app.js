@@ -1530,8 +1530,8 @@ function gatherCampaignFormState() {
     || (document.getElementById('intro-name')?.value?.trim() || '');
 
   const templates = {
-    // v2.59: drop addNoteOn gate — textarea value IS the note.
-    connectionNote: document.getElementById('tpl-note').value,
+    // Basics: the Throughput toggle decides. Off → no note, whatever is typed.
+    connectionNote: addNoteOn ? document.getElementById('tpl-note').value : '',
     // Intro flows suppress Follow-up Message because the body is shown
     // separately as Intro DM Body. Other modes pass tpl-followup through.
     followUp1: _isIntroFlow ? '' : _tplFollow,
@@ -3174,15 +3174,25 @@ function applyTemplateUIVisibility(_mode, _addNoteOn) {
   if (tplBar) tplBar.style.display = 'none';
 }
 
+const NOTE_MODES = ['connect_only', 'connect_and_introduce', 'connect_and_message'];
 function syncAddNoteUI(on) {
   const yesBtn = document.getElementById('add-note-yes');
   const noBtn = document.getElementById('add-note-no');
   const connect = document.getElementById('tpl-connect-section');
   if (yesBtn) yesBtn.classList.toggle('active', on);
   if (noBtn) noBtn.classList.toggle('active', !on);
-  if (connect) connect.style.display = on ? '' : 'none';
   const mode = document.getElementById('campaign-mode')?.value || 'connect_only';
+  // The note field exists only while the Throughput toggle is on, and only for
+  // a mode that sends connection requests.
+  if (connect) connect.style.display = (on && NOTE_MODES.includes(mode)) ? '' : 'none';
+  const tog = document.getElementById('add-note-toggle');
+  if (tog && tog.checked !== !!on) tog.checked = !!on;
+  const help = document.getElementById('add-note-help');
+  if (help) help.innerHTML = on
+    ? '<b>On:</b> the Connection Note field is shown in Message Templates and its text goes with every request (max 300 characters).'
+    : '<b>Off:</b> requests are sent without a note. Turn on to write one.';
   applyTemplateUIVisibility(mode, on);
+  if (typeof updateTplNoteCount === 'function') updateTplNoteCount();
 }
 
 function setAddNote(on) {
@@ -3479,7 +3489,9 @@ function onModeChange() {
   const tplMgmt = document.getElementById('nav-templates');
   const primaryBlock = document.getElementById('primary-person-block');
 
-  connect.style.display = 'none';
+  { const _anr = document.getElementById('add-note-row'); if (_anr) _anr.style.display = NOTE_MODES.includes(mode) ? '' : 'none'; }
+  // One source of truth for the note field: the saved switch, via syncAddNoteUI.
+  syncAddNoteUI(localStorage.getItem('ortus-add-note') === '1');
   message.style.display = 'none';
   inmail.style.display = 'none';
   if (op) op.style.display = 'none';
@@ -3612,10 +3624,9 @@ function onModeChange() {
   }
 
   if (mode === 'connect_only' || mode === 'connect_and_introduce' || mode === 'connect_and_message') {
-    // v2.59: Yes/No toggle (templates-question) is hidden, so the
-    // Connection Note section is always visible for connect modes.
-    // Operator leaves the textarea empty if they don't want a note.
-    connect.style.display = '';
+    // Basics: the Throughput "Add a connection note" toggle decides whether the
+    // Connection Note section is shown at all (off by default, hidden).
+    connect.style.display = addNoteOn ? '' : 'none';
   } else if (mode === 'message_only') {
     // Message Only: standalone follow-up DM, uses the Follow-up Message template.
     message.style.display = '';
@@ -7106,8 +7117,8 @@ async function startCampaign(opts = {}) {
     ? (document.getElementById('primary-intro-body')?.value || document.getElementById('tpl-followup').value || '')
     : document.getElementById('tpl-followup').value;
   const templates = {
-    // v2.59: drop addNoteOn gate — textarea value IS the note.
-    connectionNote: document.getElementById('tpl-note').value,
+    // Basics: the Throughput toggle decides. Off → no note, whatever is typed.
+    connectionNote: addNoteOn ? document.getElementById('tpl-note').value : '',
     followUp1: _icBody,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
@@ -17803,8 +17814,8 @@ async function saveQuickSchedule() {
 
   const addNoteOn = localStorage.getItem('ortus-add-note') === '1';
   const templates = {
-    // v2.59: drop addNoteOn gate — textarea value IS the note.
-    connectionNote: document.getElementById('tpl-note').value,
+    // Basics: the Throughput toggle decides. Off → no note, whatever is typed.
+    connectionNote: addNoteOn ? document.getElementById('tpl-note').value : '',
     followUp1: document.getElementById('tpl-followup').value,
     inmailSubject: document.getElementById('tpl-inmail-subject').value,
     inmailBody: document.getElementById('tpl-inmail-body').value,
@@ -23330,6 +23341,8 @@ async function startNewCampaign() {
   _suppressFinishedSection = true;
   liveStatusForcedOpen = false;
   _checkWizardKey = '';
+  // A fresh campaign starts without a connection note (the toggle is opt-in).
+  if (typeof setAddNote === 'function') setAddNote(false);
   try { stopViewingCloudCampaign(); } catch (_) { /* nothing bound */ }
   // Fresh draft → re-arm the scrape baseline so the next scrape view hides any
   // prior run's jobs (the engine's job list is global, not per-draft).

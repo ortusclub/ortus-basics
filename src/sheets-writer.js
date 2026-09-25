@@ -619,11 +619,15 @@ export async function writeRecentConnectionsTab(sheetUrl, sender, connections, a
  * returns false on any failure; a stale tab is non-fatal (active-sender
  * scoping still prevents foreign-account false positives).
  */
-export async function clearRecentConnectionsTab(sheetUrl) {
+export async function clearRecentConnectionsTab(sheetUrl, accounts = null) {
   if (!getWebAppUrl()) return false;
   const sheetId = extractSheetId(sheetUrl);
   try {
-    const result = await postToWebApp({ action: 'clearRecentConnections', sheetId });
+    // `accounts`: clear only these accounts' rows. The tab is shared by every
+    // campaign tab in the workbook, so a campaign starting on one tab must not
+    // wipe the record the others accumulated.
+    const result = await postToWebApp({ action: 'clearRecentConnections', sheetId,
+      ...(Array.isArray(accounts) && accounts.length ? { accounts } : {}) });
     if (result?.ok) {
       console.log('[sheets-writer] ✓ Cleared "Recent Connections" tab');
       return true;
