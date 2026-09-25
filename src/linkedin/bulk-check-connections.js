@@ -22,7 +22,7 @@
 
 import { getRecentConnections } from './helpers.js';
 import { fetchSheet } from '../sheets.js';
-import { batchUpdateSheet, writeRecentConnectionsTab } from '../sheets-writer.js';
+import { batchUpdateSheet, writeRecentConnectionsTab, lastRecentConnectionsError } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign } from '../campaign.js';
 import { readSourceMemberId } from '../profile-identity.js';
 import { isIntroSlotOpen } from './intro-constants.js';
@@ -42,6 +42,29 @@ function memberIdFromAny(value) {
   if (!value) return '';
   const m = String(value).match(/(ACoAA[A-Za-z0-9_-]+|ACwAA[A-Za-z0-9_-]+)/);
   return m ? m[1] : '';
+}
+
+// The numeric member id that BOTH token forms carry. An ACwAA… token (the
+// /in/ACwAA… URL form HubSpot exports use) and the ACoAA… URN the connections
+// API returns are different encodings of the same person: base64url, byte 1
+// is the container tag (0x2c vs 0x2a), bytes 4–7 are the member id as a
+// big-endian uint32, and the tail is a per-container hash. Comparing the raw
+// tokens therefore never matches across forms — on 2026-09-25 a campaign tab
+// of 2,419 ACwAA rows with no numeric id column reported 0 Connected while 73
+// of the fetched connections were its own leads. Decoding the number makes
+// the two forms comparable. Returns '' for anything that isn't such a token.
+export function memberNumberFromToken(value) {
+  const token = memberIdFromAny(value);
+  if (!token) return '';
+  try {
+    const b64 = token.replace(/-/g, '+').replace(/_/g, '/');
+    const bytes = Buffer.from(b64 + '='.repeat((4 - (b64.length % 4)) % 4), 'base64');
+    if (bytes.length < 8 || bytes[0] !== 0x00) return '';
+    const n = bytes.readUInt32BE(4);
+    return n > 0 ? String(n) : '';
+  } catch {
+    return '';
+  }
 }
 
 /**
@@ -64,6 +87,8 @@ export function leadIdentityKeys(url, row) {
   if (mid) keys.push('mid:' + mid);
   const num = readSourceMemberId(row || {});
   if (num) keys.push('num:' + num);
+  const decoded = memberNumberFromToken(mid);
+  if (decoded && decoded !== num) keys.push('num:' + decoded);
   return keys;
 }
 
@@ -140,6 +165,8 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     if (nameKey && nameKey !== ' ') _addAcct(nameToAccounts, nameKey, acct);
     const memberNumber = String(c.memberNumber == null ? '' : c.memberNumber).replace(/\D/g, '');
     if (memberNumber) _addAcct(memberNumberToAccounts, memberNumber, acct);
+    const decodedNumber = memberNumberFromToken(mid);
+    if (decodedNumber) _addAcct(memberNumberToAccounts, decodedNumber, acct);
   }
 
   // Snapshot a few extracted IDs for the diag eyeball-compare.
@@ -305,6 +332,10 @@ export function computeBulkCheckUpdates(rows, conns, linkedinColumn, stillPendin
     // memberNumberToAccounts holds the connections' numeric ids.
     const rowMemberNumber = readSourceMemberId(row);
     if (rowMemberNumber) for (const a of (memberNumberToAccounts.get(rowMemberNumber) || [])) _matchedAccounts.add(a);
+    // The number decoded from the row's own AC**AA token — the only strong key
+    // a sheet of /in/ACwAA… URLs with no numeric id column has.
+    const rowDecodedNumber = memberNumberFromToken(memberId);
+    if (rowDecodedNumber) for (const a of (memberNumberToAccounts.get(rowDecodedNumber) || [])) _matchedAccounts.add(a);
     const isMatch = _matchedAccounts.size > 0;
 
     // Is the row's ASSIGNED sender among the accounts connected to this lead?
@@ -786,6 +817,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
   // sweeping profile so a sweep is never worse than the pre-tab behavior.
   let matchSet = null;
   let sidecarConfirmed = false;
+  let _sidecarWhy = '';
   try {
     const sidecarRows = conns.map((c) => ({
       firstName: c.firstName || '',
@@ -798,6 +830,9 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     }));
     matchSet = await writeRecentConnectionsTab(sheetUrl, pName, sidecarRows, activeSendersList);
     sidecarConfirmed = Array.isArray(matchSet);
+    if (!sidecarConfirmed) {
+      _sidecarWhy = lastRecentConnectionsError || '';
+    }
   } catch (err) {
     console.warn(`[bulk-check] sidecar tab write failed: ${err.message}`);
   }
@@ -883,7 +918,7 @@ export async function bulkCheckConnections(page, sheetUrl, linkedinColumn, pName
     if (diag.rowsScanned > 0 && diag.withUrl === 0) {
       return `${base} Something looks wrong: not one of those rows had a LinkedIn address on it, so nobody could be matched. Check that the right column is chosen for this sheet.`;
     }
-    return sidecarConfirmed ? base : `${base} Warning: the Recent Connections tab could not be confirmed saved.`;
+    return sidecarConfirmed ? base : `${base} Warning: the Recent Connections tab could not be confirmed saved${_sidecarWhy ? ` (${_sidecarWhy})` : ''}.`;
   };
 
   if (updates.length === 0) {

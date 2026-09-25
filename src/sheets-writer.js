@@ -582,8 +582,13 @@ export async function appendReplyRow(sheetUrl, reply) {
  * accounts assigned in the sheet's Sender column survive a refresh.
  * Omit (legacy callers) → no filtering, current behavior preserved.
  */
+// Why the last Recent Connections write was not confirmed, for the sweep log.
+// The operator only sees campaign.log, never this process's stdout.
+export let lastRecentConnectionsError = '';
+
 export async function writeRecentConnectionsTab(sheetUrl, sender, connections, activeSenders) {
-  if (!getWebAppUrl()) return null;
+  lastRecentConnectionsError = '';
+  if (!getWebAppUrl()) { lastRecentConnectionsError = 'no Sheets service configured'; return null; }
   const sheetId = extractSheetId(sheetUrl);
   try {
     const result = await postToWebApp({
@@ -595,11 +600,14 @@ export async function writeRecentConnectionsTab(sheetUrl, sender, connections, a
     });
     if (result?.ok) {
       console.log(`[sheets-writer] ✓ Wrote ${result.rows} row(s) to "${result.tab}" (accumulated: ${Array.isArray(result.accumulated) ? result.accumulated.length : 0})`);
+      if (!Array.isArray(result.accumulated)) lastRecentConnectionsError = 'the Sheets service did not return the accumulated rows';
       return Array.isArray(result.accumulated) ? result.accumulated : null;
     }
+    lastRecentConnectionsError = (result && result.error) ? String(result.error) : 'no confirmation from the Sheets service';
     if (result?.error) console.warn(`[sheets-writer] writeRecentConnections failed: ${result.error}`);
     return null;
   } catch (err) {
+    lastRecentConnectionsError = err.message;
     console.warn(`[sheets-writer] writeRecentConnections threw: ${err.message}`);
     return null;
   }

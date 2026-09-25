@@ -2090,6 +2090,24 @@ var RECENT_TAB_NAME = 'Recent Connections';
 var RECENT_HEADERS = ['Account', 'First Name', 'Last Name', 'Public ID', 'LinkedIn URN', 'Member ID', 'Connected At', 'Fetched At'];
 
 function handleWriteRecentConnections(spreadsheet, data) {
+  // Serialize sidecar writes. A client that times out and retries, or two
+  // sweeps on one workbook, used to run this concurrently: each execution
+  // read the tab, cleared it and rewrote it from its own stale copy, so one
+  // account's rows vanished (2026-09-25 09:01, GGLxDEVO workbook).
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(45000);
+  } catch (lockErr) {
+    return jsonResponse({ error: 'Recent Connections tab is busy with another write; retry' });
+  }
+  try {
+    return _writeRecentConnectionsLocked(spreadsheet, data);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function _writeRecentConnectionsLocked(spreadsheet, data) {
   var connections = Array.isArray(data.connections) ? data.connections : [];
   var sender = (data.sender || '').toString().trim();
   // v2.62: client passes the set of accounts assigned to this campaign's
@@ -2181,12 +2199,21 @@ function handleWriteRecentConnections(spreadsheet, data) {
     appended++;
   }
 
-  // Rewrite the data area with the combined (kept + newly-appended) set.
-  if (lastRow >= 2) {
-    sheet.getRange(2, 1, lastRow - 1, RECENT_HEADERS.length).clearContent();
-  }
-  if (keptRows.length > 0) {
-    sheet.getRange(2, 1, keptRows.length, RECENT_HEADERS.length).setValues(keptRows);
+  // Rewrite the data area with the combined (kept + newly-appended) set in ONE
+  // setValues call, padding with blank rows to cover whatever was there before.
+  // The old clearContent-then-setValues pair left a window in which the tab was
+  // empty, and any error between the two (Sheets service hiccup, timeout) left
+  // it empty for good — a reader mid-write saw one account's rows missing and
+  // the next sweep started from nothing.
+  var oldDataRows = lastRow >= 2 ? lastRow - 1 : 0;
+  var writeRows = Math.max(oldDataRows, keptRows.length);
+  if (writeRows > 0) {
+    var blank = [];
+    for (var bi = 0; bi < RECENT_HEADERS.length; bi++) blank.push('');
+    var grid = keptRows.slice();
+    while (grid.length < writeRows) grid.push(blank.slice());
+    if (sheet.getMaxRows() < writeRows + 1) sheet.insertRowsAfter(sheet.getMaxRows(), writeRows + 1 - sheet.getMaxRows());
+    sheet.getRange(2, 1, writeRows, RECENT_HEADERS.length).setValues(grid);
   }
 
   // Return the full accumulated set so the bot matches against the tab, not

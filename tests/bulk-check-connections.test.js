@@ -734,7 +734,7 @@ test('name-only match does NOT stamp or introduce (cross-account, unsent)', () =
     'Sender': '', 'Connection Request Status': '', 'Linkedin Membership ID': '',
   }];
   // A DIFFERENT account has a connection that only shares the NAME (different token, no slug, no numeric id).
-  const conns = [{ account: 'abhinay@x', firstName: 'Vito', lastName: 'Mansueto', urn: 'urn:li:fsd_profile:ACoAAAZLmE8Be4SdifferentXYZ', publicId: '', memberNumber: '' }];
+  const conns = [{ account: 'abhinay@x', firstName: 'Vito', lastName: 'Mansueto', urn: 'urn:li:fsd_profile:ACoAAAYLmE8Be4SdifferentXYZ' /* different member number (bytes 4-7): a true namesake */, publicId: '', memberNumber: '' }];
   const { updates, connectedUrls } = computeBulkCheckUpdates(rows, conns, 'Linkedin Bio', 'Still Pending', { profileName: 'abhinay@x' });
   assert.equal(connectedUrls.length, 0);
   assert.ok(!updates.some(u => /connected/i.test(String(u.cc || '')) || /connected/i.test(String(u.stage || ''))));
@@ -762,7 +762,7 @@ test('G3 — v2.86.10 fingerprint at bulk layer: empty Membership ID + no token 
     'Linkedin Bio': 'http://www.linkedin.com/in/ACwAAAZLmE8Bl3D54RBLDEXg2MwvxPE4JoIyLX8',
     'Sender': '', 'Connection Request Status': '', 'Linkedin Membership ID': '',
   }];
-  const conns = [{ account: 'abhinay@x', firstName: 'Vito', lastName: 'Mansueto', urn: 'urn:li:fsd_profile:ACoAAAZLmE8Be4SdifferentXYZ', publicId: '', memberNumber: '' }];
+  const conns = [{ account: 'abhinay@x', firstName: 'Vito', lastName: 'Mansueto', urn: 'urn:li:fsd_profile:ACoAAAYLmE8Be4SdifferentXYZ' /* different member number (bytes 4-7): a true namesake */, publicId: '', memberNumber: '' }];
   const { updates, connectedUrls } = computeBulkCheckUpdates(rows, conns, 'Linkedin Bio', 'Still Pending', { profileName: 'abhinay@x' });
   assert.equal(connectedUrls.length, 0, 'name-only fingerprint not queued for intro');
   assert.ok(
