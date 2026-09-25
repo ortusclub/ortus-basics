@@ -58,6 +58,7 @@ export function shouldFirePostCampaignIntro(entry, connectedUrls) {
   if (!entry) return false;
   if (!Array.isArray(connectedUrls) || connectedUrls.length === 0) return false;
   if (entry.mode !== 'connect_and_introduce') return false;
+  if (entry.skipIntroductions === true) return false;
   return !!(entry.primaryName && entry.primaryIntroBody);
 }
 
@@ -116,6 +117,7 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
                                           followUpBody = '', followUpDelayMinutes = 10,
                                           primarySource = 'local-browser',
                                           senderFirstName = '',
+                                          skipIntroductions = false,
                                           sweepIntervalMs = null }) {
   if (!sheetId || !profileId || !Number.isFinite(days) || days <= 0) return;
   const sched = await readSchedule();
@@ -128,6 +130,8 @@ export async function registerSchedule({ sheetId, sheetUrl, profileId, profileNa
     profileName: profileName || profileId,
     linkedinColumn: linkedinColumn || '',
     operatorEmail: operatorEmail || sched[k]?.operatorEmail || null,
+    // "Connections only": this campaign never introduces, not even post-campaign.
+    skipIntroductions: skipIntroductions === true,
     // Connect + Introduce Back: persist the primary fields so each
     // post-campaign sweep can fire the auto-intro DM after the
     // bulk-check stamps Connected.

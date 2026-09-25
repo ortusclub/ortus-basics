@@ -3460,6 +3460,7 @@ function onModeChange() {
   { const _mcr = document.getElementById('monthly-cutoff-row'); if (_mcr) _mcr.style.display = ['open_profile_only', 'inmail_only'].includes(mode) ? '' : 'none'; if (typeof syncMonthlyCutoffHelp === 'function') syncMonthlyCutoffHelp(); }
   { const _ffa = document.getElementById('free-for-all-note'); if (_ffa) _ffa.style.display = mode === 'connect_and_introduce' ? '' : 'none'; if (typeof syncFreeForAllNote === 'function') syncFreeForAllNote(); }
   { const _wcr = document.getElementById('weekly-cutoff-row'); if (_wcr) _wcr.style.display = mode === 'connect_and_introduce' ? '' : 'none'; if (typeof syncWeeklyCutoffHelp === 'function') syncWeeklyCutoffHelp(); }
+  { const _sir = document.getElementById('skip-intros-row'); if (_sir) _sir.style.display = mode === 'connect_and_introduce' ? '' : 'none'; if (typeof syncSkipIntrosHelp === 'function') syncSkipIntrosHelp(); }
   document.querySelectorAll('.ccic-primary-note').forEach((el) => { el.style.display = mode === 'connect_and_introduce' ? '' : 'none'; });
   // Default Follower Growth to the Cloud VM. FG-on-cloud is the intended path — a
   // local FG run opens one GoLogin browser tab per account. Reset the local-pin on
@@ -6284,6 +6285,19 @@ function syncWeeklyCutoffHelp() {
 }
 window.syncWeeklyCutoffHelp = syncWeeklyCutoffHelp;
 
+// "Connections only": a CC+IB campaign that sends invitations and stamps
+// acceptances but never sends the introduction — for when the operator wants
+// the connections and the check without the follow-up.
+function syncSkipIntrosHelp() {
+  const tog = document.getElementById('skip-intros');
+  const help = document.getElementById('skip-intros-help');
+  if (!tog || !help) return;
+  help.innerHTML = tog.checked
+    ? '<b>On:</b> invitations go out and every check stamps who accepted, but <b>no introduction is sent</b> — not during the campaign, not from ⚡ Check now. Turn off later and the next check introduces everyone still waiting.'
+    : '<b>Off:</b> accepted connections are introduced to the primary person as usual.';
+}
+window.syncSkipIntrosHelp = syncSkipIntrosHelp;
+
 // "Free for all 25th": LinkedIn renews monthly message allowances on the 1st at
 // 00:00 UTC. Mirrors src/weekly-reset-cutoff.js (15 min before).
 function syncMonthlyCutoffHelp() {
@@ -7248,6 +7262,8 @@ async function startCampaign(opts = {}) {
     pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked === true,
     // "Free for all Friday" — only offered (and only sent) for Connect + Introduce Back.
     stopBeforeWeeklyReset: document.getElementById('campaign-mode')?.value === 'connect_and_introduce' && document.getElementById('stop-before-weekly-reset')?.checked === true,
+    // "Connections only" — CC+IB sends and checks acceptances but never introduces.
+    skipIntroductions: document.getElementById('campaign-mode')?.value === 'connect_and_introduce' && document.getElementById('skip-intros')?.checked === true,
     // "Free for all 25th" — only offered (and only sent) for the credit-based message types.
     stopBeforeMonthlyReset: ['open_profile_only', 'inmail_only'].includes(document.getElementById('campaign-mode')?.value) && document.getElementById('stop-before-monthly-reset')?.checked === true,
   };
@@ -18842,6 +18858,7 @@ function collectCurrentConfig() {
     pauseOnThrottle: document.getElementById('pause-on-throttle')?.checked === true,
     stopBeforeWeeklyReset: document.getElementById('stop-before-weekly-reset')?.checked === true,
     stopBeforeMonthlyReset: document.getElementById('stop-before-monthly-reset')?.checked === true,
+    skipIntroductions: document.getElementById('skip-intros')?.checked === true,
     messageOpenProfiles: !!document.getElementById('open-profile-msg')?.checked,
     addNote: localStorage.getItem('ortus-add-note') === '1',
     linkedinColumn: getV('linkedin-col-select'),
@@ -18954,6 +18971,9 @@ function applyPresetConfig(config) {
     const _smr = document.getElementById('stop-before-monthly-reset');
     if (_smr) _smr.checked = config.stopBeforeMonthlyReset === true;
     if (typeof syncMonthlyCutoffHelp === 'function') syncMonthlyCutoffHelp();
+    const _sit = document.getElementById('skip-intros');
+    if (_sit) _sit.checked = config.skipIntroductions === true;
+    if (typeof syncSkipIntrosHelp === 'function') syncSkipIntrosHelp();
   }
   if (typeof checkDelayDanger === 'function') checkDelayDanger();
   // Render the sheet preview, THEN restore the column mapping. previewSheet()
@@ -34529,6 +34549,8 @@ async function _launchCheckRun(scope) {
     // The check provisions this tab's tracking columns if a campaign never
     // started here; the mode decides which columns that means.
     mode: document.getElementById('campaign-mode')?.value || '',
+    // "Connections only": the check stamps acceptances but sends no introduction.
+    skipIntroductions: document.getElementById('skip-intros')?.checked === true,
   };
   if (scope === 'sheet') {
     // Server derives the account set from this tab's Sender column.

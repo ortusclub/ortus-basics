@@ -1210,6 +1210,19 @@
                 </div>
               </div>
 
+              <!-- "Connections only" — Connect + Introduce Back only (toggled in onModeChange):
+                   send invitations and run the acceptance check, never the introduction. -->
+              <div class="throttle-row" id="skip-intros-row" style="display:none">
+                <label class="alpha-toggle" title="Send connection requests and check acceptances, but never send the introduction">
+                  <input type="checkbox" id="skip-intros" onchange="syncSkipIntrosHelp(); wizardDirtyOnInput()" />
+                  <span class="alpha-toggle-track"></span>
+                </label>
+                <div class="tr-text">
+                  <div class="tr-label">Connections only — skip the introduction step</div>
+                  <div class="tr-help" id="skip-intros-help"></div>
+                </div>
+              </div>
+
               <!-- "Free for all 25th" — Open Profile / InMail campaigns only (toggled in onModeChange). -->
               <div class="throttle-row" id="monthly-cutoff-row" style="display:none">
                 <label class="alpha-toggle" title="Stop this campaign just before LinkedIn's monthly message allowance renews">

@@ -1233,7 +1233,7 @@ function buildCampaignConfig(body) {
           multiTab,
           // Fix B Task 3: pause the campaign when a 429/throttle is detected.
           // Defaults to true when absent or undefined so legacy clients opt-in automatically.
-          pauseOnThrottle: pauseOnThrottleRaw, stopBeforeWeeklyReset, stopBeforeMonthlyReset } = body || {};
+          pauseOnThrottle: pauseOnThrottleRaw, stopBeforeWeeklyReset, stopBeforeMonthlyReset, skipIntroductions } = body || {};
   const pauseOnThrottle = pauseOnThrottleRaw === false ? false : true;
   // Coerce sheetGid to digits only; fall back to extracting from the URL.
   const sheetGid = sheetGidRaw != null
@@ -1294,6 +1294,8 @@ function buildCampaignConfig(body) {
     stopBeforeWeeklyReset: stopBeforeWeeklyReset === true,
     // "Free for all 25th" — opt-in only.
     stopBeforeMonthlyReset: stopBeforeMonthlyReset === true,
+    // "Connections only" — CC+IB without the introduction step. Opt-in only.
+    skipIntroductions: skipIntroductions === true,
     // Pre-flight hard exclusions (blocklist URLs): set by the /api/campaign/start gate.
     excludedUrls: Array.isArray(body._preflightExcludedUrls) ? body._preflightExcludedUrls : [],
   };
@@ -6536,7 +6538,11 @@ app.post('/api/bulk-check-now', async (req, res) => {
           // Cloud-campaign local check (v2.160.87): the request carries the CLOUD
           // campaign's mode/templates, since the local `campaign` singleton may
           // hold a stale/unrelated local config. Fall back to current behaviour.
-          mode: reqMode, ccDmBody: reqCcDmBody, senderFirstNames: reqSenderFirstNames } = req.body || {};
+          mode: reqMode, ccDmBody: reqCcDmBody, senderFirstNames: reqSenderFirstNames,
+          skipIntroductions: reqSkipIntros } = req.body || {};
+    // "Connections only": the wizard says so explicitly; a check that carries no
+    // answer (older clients, the running campaign's own card) follows the campaign.
+    const skipIntros = reqSkipIntros === true || (reqSkipIntros == null && !!campaign.skipIntroductions);
     // v2.78: "all senders in the sheet" — ignore any campaign/explicit accounts
     // and derive every account from the sheet's Sender column (below), even
     // while a campaign is running.
@@ -6850,6 +6856,8 @@ app.post('/api/bulk-check-now', async (req, res) => {
             } else {
               campaignLog(`⚠ [${pName}] CC+DM bulk-check: post-acceptance DM body missing — no DM sent.`);
             }
+          } else if (skipIntros && Array.isArray(r.connectedUrls) && r.connectedUrls.length > 0) {
+            campaignLog(`ℹ [${pName}] Connections only — ${r.connectedUrls.length} accepted connection(s) stamped, no introduction sent.`);
           } else if (_effectiveTemplates.primaryName && _effectiveTemplates.primaryIntroBody) {
             try {
               await runAutoIntros({

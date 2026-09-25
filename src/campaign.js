@@ -980,6 +980,10 @@ export function forceCloseActiveBulkChecks() { _forceCloseActiveBulkChecks(); }
 // to be NOT connected to the primary ('pending'). Unknown (no entry — e.g. a
 // monitoring sweep after restart) fails open so intros aren't blocked forever.
 function _primaryIntroAllowed(profileId) {
+  // "Connections only" (skipIntroductions): the campaign sends and checks but
+  // never introduces. One gate for the in-campaign, end-of-list and monitoring
+  // intro passes, so the toggle cannot be bypassed by any of them.
+  if (campaign.skipIntroductions) return false;
   return (campaign._primaryConn && campaign._primaryConn.get(profileId)) !== 'pending';
 }
 
@@ -2083,7 +2087,7 @@ export function setLiveCadence(min) {
   return { ok: true, checkIntervalMinutes: v };
 }
 
-export async function startCampaign({ campaignId = null, profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 10, delayMax = 20, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, stopBeforeWeeklyReset = false, stopBeforeMonthlyReset = false, excludedUrls = [] }) {
+export async function startCampaign({ campaignId = null, profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 10, delayMax = 20, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, stopBeforeWeeklyReset = false, stopBeforeMonthlyReset = false, skipIntroductions = false, excludedUrls = [] }) {
   if (campaign.running) throw new Error('Campaign already running');
   const identity = ensureCampaignIdentity({ campaignId, name, config: { profileIds, sheetUrl, templates, mode } });
   campaignId = identity.campaignId;
@@ -2120,7 +2124,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     campaignId, profileIds, sheetUrl, sheetGid, templates, dailyLimit, mode, messageOpenProfiles,
     delayMin, delayMax, linkedinColumn, senderFirstNames, concurrency,
     name, acceptanceTrackingDays, preflightCheckStatus, createdBy,
-    senderColumn, allLeadsConnected, checkIntervalMinutes, autoChecksEnabled, stopBeforeWeeklyReset, stopBeforeMonthlyReset,
+    senderColumn, allLeadsConnected, checkIntervalMinutes, autoChecksEnabled, stopBeforeWeeklyReset, stopBeforeMonthlyReset, skipIntroductions,
     // Persist excludedUrls so restoreCampaign re-applies the same hard exclusions.
     excludedUrls: Array.isArray(excludedUrls) ? excludedUrls.slice() : [],
     benchedProfileIds: Array.isArray(benchedProfileIds) ? benchedProfileIds.slice() : [],
@@ -2284,6 +2288,9 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
   // "Free for all Friday": stop sending just before LinkedIn's weekly invitation
   // allowance resets, so this run never spends next week's invites.
   campaign.weeklyCutoffAt = stopBeforeWeeklyReset ? new Date(weeklyCutoffMs(Date.now())).toISOString() : null;
+  // "Connections only": every intro pass consults _primaryIntroAllowed, which
+  // answers no while this is set. Acceptances are still stamped Connected.
+  campaign.skipIntroductions = skipIntroductions === true;
   // "Free for all 25th": the same idea for the MONTHLY message allowances (1st of the month, UTC).
   campaign.monthlyCutoffAt = stopBeforeMonthlyReset ? new Date(monthlyCutoffMs(Date.now())).toISOString() : null;
   campaign.dailyLimit = dailyLimit;
@@ -6001,6 +6008,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
             // Persist Connect + Introduce Back primary fields so each
             // post-campaign sweep can fire the auto-intro DM.
             mode,
+            skipIntroductions: !!campaign.skipIntroductions,
             primaryName: (templates && templates.primaryName) || '',
             primaryIntroBody: (templates && templates.primaryIntroBody) || '',
             primaryUrl: (templates && templates.primaryUrl) || '',
