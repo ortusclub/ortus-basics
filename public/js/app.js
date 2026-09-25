@@ -1759,7 +1759,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'sheet-url',
     'tpl-note', 'tpl-followup',
     'tpl-inmail-subject', 'tpl-inmail-body',
-    'tpl-op-subject', 'tpl-op-body',
+    'tpl-op-subject', 'tpl-op-body', 'tpl-op-channel', 'tpl-op-spend-inmail',
     // v2.59.x — IC / CC+IC fields. Without these, typing into Intro DM Body
     // didn't update the Preview button state until something else (mode
     // change, etc.) re-ran refreshPreviewButtonState.
@@ -18893,6 +18893,10 @@ function collectCurrentConfig() {
       inmailBody: getV('tpl-inmail-body'),
       openProfileSubject: getV('tpl-op-subject'),
       openProfileBody: getV('tpl-op-body'),
+      // v1.7.54: the Open Profile sending method + InMail tickbox were never
+      // saved, so a re-run always fell back to the engine default (sn_first).
+      opChannel: getV('tpl-op-channel') || 'sn_first',
+      opSpendInMail: !!document.getElementById('tpl-op-spend-inmail')?.checked,
       // v2.160.44: intro-flow (CC+IC / ICB / CC+DM) fields. applyPresetConfig
       // restores every one of these from templates, so a faithful save must
       // capture them — previously omitted, which is why the Primary Person name,
@@ -19031,6 +19035,8 @@ function applyPresetConfig(config) {
   setV('tpl-inmail-subject', t.inmailSubject || '');
   setV('tpl-inmail-body', t.inmailBody || '');
   setV('tpl-op-subject', t.openProfileSubject || '');
+  { const _oc = document.getElementById('tpl-op-channel'); if (_oc) _oc.value = t.opChannel || 'sn_first';
+    const _osi = document.getElementById('tpl-op-spend-inmail'); if (_osi) _osi.checked = !!t.opSpendInMail; }
   setV('tpl-op-body', t.openProfileBody || '');
 
   // v2.14.x: CC+IC fields. These live inside config.templates as
@@ -27152,7 +27158,7 @@ function initWizardDirtyTracking() {
     'campaign-name-input', 'sheet-url', 'daily-limit-input',
     'tpl-note', 'tpl-followup',
     'tpl-inmail-subject', 'tpl-inmail-body',
-    'tpl-op-subject', 'tpl-op-body',
+    'tpl-op-subject', 'tpl-op-body', 'tpl-op-channel', 'tpl-op-spend-inmail',
     'primary-intro-body', 'intro-title',
     'primary-person-url', 'primary-person-name',
   ];
