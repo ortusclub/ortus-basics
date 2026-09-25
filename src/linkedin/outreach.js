@@ -597,14 +597,51 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       // otherwise force_open_profile sends only when the OP badge is present.
       const trySalesNav = async () => {
         if (!SALES_NAV_URL_RE.test(page.url())) {
-          const salesNavUrl = await resolveSalesNavUrlFromInProfile(page);
+          // v1.7.51: under ln_first the page is still on /messaging/compose when
+          // LinkedIn fails. Resolving "View in Sales Navigator" there picked up a
+          // generic /sales/ link from the nav, so Sales Nav opened with NO lead and
+          // nothing was ever typed. An encoded member URN maps straight to the lead
+          // page (the same fast path sn_first uses); a vanity slug goes back to the
+          // profile first and resolves the link from the More menu as before.
+          let salesNavUrl = null;
+          if (_origPublicId && /^AC[A-Za-z0-9_-]{10,}$/.test(_origPublicId)) {
+            salesNavUrl = `https://www.linkedin.com/sales/lead/${_origPublicId}`;
+            console.log(`[outreach] OP Sales Nav: member URN → ${salesNavUrl}`);
+          } else {
+            if (!/\/in\//.test(page.url()) && _origPublicId) {
+              try {
+                await page.goto(`https://www.linkedin.com/in/${_origPublicId}`, { waitUntil: 'domcontentloaded', timeout: 20000 });
+                await waitForDomSettle(page, { settleMs: 1200, maxWait: 8000 });
+              } catch (e) {
+                console.warn(`[outreach] OP Sales Nav: could not reopen the profile: ${e.message}`);
+              }
+            }
+            salesNavUrl = await resolveSalesNavUrlFromInProfile(page);
+          }
           if (!salesNavUrl) return { ok: false, reason: 'sales_nav_unresolvable' };
           try {
             await page.goto(salesNavUrl, { waitUntil: 'domcontentloaded', timeout: 30000 });
           } catch (e) {
             console.warn(`[outreach] OP Sales Nav navigation issue: ${e.message}`);
           }
-          await new Promise(r => setTimeout(r, 5000));
+          // Sales Nav redirects /sales/lead/<urn> → /sales/lead/<id>,<name> and
+          // renders the top card late. Wait for the lead page + its Message
+          // button (up to 15s) instead of a fixed 5s that a cold load overran.
+          const _t0 = Date.now();
+          let _ready = false;
+          while (Date.now() - _t0 < 15000) {
+            try {
+              _ready = SALES_NAV_URL_RE.test(page.url()) && await page.evaluate(() => Array.from(document.querySelectorAll('button, a')).some((b) => {
+                const t = (b.textContent || '').trim().toLowerCase();
+                const a = (b.getAttribute('aria-label') || '').toLowerCase();
+                return (t === 'message' || a.startsWith('message')) && b.offsetWidth > 0;
+              }));
+            } catch { _ready = false; }
+            if (_ready) break;
+            await new Promise(r => setTimeout(r, 500));
+          }
+          await new Promise(r => setTimeout(r, _ready ? 1500 : 500));
+          if (!_ready) console.warn(`[outreach] OP Sales Nav: lead page / Message button not seen within 15s (url=${page.url()})`);
         }
         const r = spendInMail
           ? await sendViaSalesNav(page, { mode: 'force_inmail', opSubject, opBody, inmailSubject: opSubject, inmailBody: opBody })

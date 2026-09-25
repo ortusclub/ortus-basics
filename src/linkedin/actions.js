@@ -3137,9 +3137,12 @@ export async function resolveSalesNavUrlFromInProfile(page) {
           if (inDropdown) return a.href;
         }
       }
+      // v1.7.51: a LEAD link only (…/sales/lead/<id> or …/sales/people/<id>) —
+      // never a bare /sales/ product link from the site nav.
+      const isLead = (h) => /\/sales\/(?:lead|people)\/[A-Za-z0-9_%,-]{6,}/.test(h);
       for (const a of anchors) {
         const href = a.getAttribute('href') || '';
-        if (href.includes('/sales/lead/') || href.includes('/sales/people/')) return a.href;
+        if (isLead(href)) return a.href;
       }
       const items = Array.from(document.querySelectorAll('[role="button"], .artdeco-dropdown__item, li'));
       for (const el of items) {
