@@ -29,3 +29,12 @@ test('the profile-menu resolver only accepts a lead link, never a bare /sales/ p
   assert.equal(isLead('https://www.linkedin.com/sales/people/'), false);
   assert.equal(isLead('https://business.linkedin.com/sales-solutions'), false);
 });
+
+test('when LinkedIn fails, the fallback re-runs the whole Sales Nav flow from the top as sn_only', () => {
+  const src = read('src/linkedin/outreach.js');
+  const at = src.indexOf("} else if (channel === 'ln_first') {");
+  const branch = src.slice(at, src.indexOf('} else { // sn_first (default)', at));
+  assert.match(branch, /return await performOutreach\(page, targetUrl, \{ \.\.\.templates, opChannel: 'sn_only' \}, state, modeHint\);/);
+  // still no second attempt when the LinkedIn send may have gone out
+  assert.match(branch, /result\.reason !== 'send_unconfirmed' && result\.reason !== 'already_messaged'/);
+});

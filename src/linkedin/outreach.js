@@ -715,8 +715,14 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       } else if (channel === 'ln_first') {
         result = await tryLinkedIn();
         if (!result.ok && result.reason !== 'send_unconfirmed' && result.reason !== 'already_messaged') {
-          console.log(`[outreach] OP ln_first: LinkedIn failed (${result.reason}) → trying Sales Nav`);
-          result = await trySalesNav();
+          // v1.7.52: run the Sales Nav send EXACTLY as a Sales-Nav-only campaign
+          // would — from the top: landing on the lead's Sales Nav page, DOM
+          // settle, dwell, degree read, composer. Operator ask 2026-09-25: the
+          // in-place fallback kept failing where sn_first worked, so re-enter
+          // performOutreach with the channel pinned to sn_only (which never
+          // falls back, so this can't recurse).
+          console.log(`[outreach] OP ln_first: LinkedIn failed (${result.reason}) → re-running the Sales Nav path from the top`);
+          return await performOutreach(page, targetUrl, { ...templates, opChannel: 'sn_only' }, state, modeHint);
         }
       } else { // sn_first (default)
         result = await trySalesNav();
