@@ -20,7 +20,7 @@ test('the bench reason reads as a suspected OP credits limit everywhere', () => 
 test('five not-Open-Profile skips in a row bench the sender; anything else breaks the streak', () => {
   const src = readFileSync(new URL('../src/campaign.js', import.meta.url), 'utf8');
   assert.match(src, /const NOT_OP_BENCH_THRESHOLD = 5;/);
-  assert.match(src, /if \(!errorMsg\.includes\('NOT_OPEN_PROFILE'\)\) consecutiveNotOp\.delete\(profileId\);/);
+  assert.match(src, /if \(!errorMsg\.includes\('NOT_OPEN_PROFILE'\) && !errorMsg\.includes\(SN_UNRESOLVABLE\)\) consecutiveNotOp\.delete\(profileId\);/);
   const branch = src.slice(src.indexOf("} else if (errorMsg.includes('NOT_OPEN_PROFILE')) {"), src.indexOf("} else if (errorMsg.includes('rate_limited')) {"));
   assert.match(branch, /_notOp >= NOT_OP_BENCH_THRESHOLD && !weeklyLimited\.has\(profileId\)/);
   assert.match(branch, /weeklyLimited\.add\(profileId\)/);
@@ -45,4 +45,16 @@ test('an account paused on an HTTP 429 reads as a SUSPECTED weekly limit, not a 
   // LinkedIn's own "weekly limit" message is certain, not suspected.
   assert.equal(parkSentence('Weekly invitation limit hit (~100/week)'), 'This account has used up its invitations for the week.');
   assert.equal(prettyParkReason('suspected_weekly_limit'), 'suspected weekly invitation limit (HTTP 429)');
+});
+
+test('six "no Sales Navigator route" skips in a row bench the sender as a suspected OP credits limit', () => {
+  const src = readFileSync(new URL('../src/campaign.js', import.meta.url), 'utf8');
+  assert.match(src, /const SN_UNRESOLVABLE = 'Could not resolve Sales Navigator link';/);
+  assert.match(src, /const SN_UNRESOLVABLE_BENCH_THRESHOLD = 6;/);
+  const branch = src.slice(src.indexOf('} else if (errorMsg.includes(SN_UNRESOLVABLE)) {'), src.indexOf("} else if (errorMsg.includes('rate_limited')) {"));
+  assert.match(branch, /consecutiveNotOp\.set\(profileId, _notOp\)/);
+  assert.match(branch, /_notOp >= SN_UNRESOLVABLE_BENCH_THRESHOLD && !weeklyLimited\.has\(profileId\)/);
+  assert.match(branch, /reason: 'op_credit_limit'/);
+  // the lead itself stays retryable — only the sender is benched
+  assert.match(branch, /delete state\.processed\[url\]/);
 });

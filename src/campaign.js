@@ -3452,6 +3452,11 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     // Bench it (Retry un-benches) instead of burning the rest of the sheet.
     const consecutiveNotOp = new Map();
     const NOT_OP_BENCH_THRESHOLD = 5;
+    // v1.7.50: "Could not resolve Sales Navigator link from the profile" is the
+    // same signal in disguise — the lead isn't Open Profile, or the sender has
+    // no OP credits left so LinkedIn hides the route. Six in a row bench it.
+    const SN_UNRESOLVABLE = 'Could not resolve Sales Navigator link';
+    const SN_UNRESOLVABLE_BENCH_THRESHOLD = 6;
     const bumpUnconfirmed = (profileId, kind) => {
       const previous = consecutiveUnconfirmed.get(profileId);
       const next = { kind, count: previous && previous.kind === kind ? previous.count + 1 : 1 };
@@ -5110,7 +5115,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
             } else {
               consecutiveUnconfirmed.delete(profileId);
             }
-            if (!errorMsg.includes('NOT_OPEN_PROFILE')) consecutiveNotOp.delete(profileId);
+            if (!errorMsg.includes('NOT_OPEN_PROFILE') && !errorMsg.includes(SN_UNRESOLVABLE)) consecutiveNotOp.delete(profileId);
 
             if (errorMsg.includes('WEEKLY_LIMIT')) {
               log(`  ⚠ WEEKLY LIMIT reached for ${pName}. Removing from rotation.`);
@@ -5256,6 +5261,24 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
                 ...buildSkipSheetData(mode, normalizeSkipReason('Not Open Profile'), pName),
                 dateLastAction: now,
                 auditAction: normalizeSkipReason('Not Open Profile'),
+              }, linkedinColumn);
+            } else if (errorMsg.includes(SN_UNRESOLVABLE)) {
+              const _notOp = (consecutiveNotOp.get(profileId) || 0) + 1;
+              consecutiveNotOp.set(profileId, _notOp);
+              log(`  ✗ Skipped — no Sales Navigator route to ${data.firstName || 'this contact'}: either not an Open Profile, or ${pName} is out of monthly OP credits (${_notOp} in a row).`);
+              if (_notOp >= SN_UNRESOLVABLE_BENCH_THRESHOLD && !weeklyLimited.has(profileId)) {
+                log(`  ⚠ ${pName}: ${_notOp} contacts in a row with no Sales Navigator route — suspected OP credits limit reached. Benching this account; choose Retry to unbench it.`);
+                weeklyLimited.add(profileId);
+                recordProfileEnd(profileId, pName, 'Suspected OP credits limit reached');
+                campaign.parkedProfiles.push({ profileId, pName, parkedAt: Date.now(), reason: 'op_credit_limit', skipCount: _notOp });
+                pushSoftWarning(campaign, { profileId, pName, kind: 'op_credit_limit', message: 'Suspected OP credits limit reached' });
+              }
+              delete state.processed[url];
+              await saveState(state);
+              await trackedSheetWrite(sheetUrl, url, `${data.firstName || ''} ${data.lastName || ''}`.trim(), {
+                ...buildSkipSheetData(mode, normalizeSkipReason(errorMsg), pName),
+                dateLastAction: now,
+                auditAction: normalizeSkipReason(errorMsg),
               }, linkedinColumn);
             } else if (errorMsg.includes('rate_limited')) {
               pushSoftWarning(campaign, {
