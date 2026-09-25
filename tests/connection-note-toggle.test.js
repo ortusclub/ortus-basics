@@ -31,3 +31,11 @@ test('a campaign start clears only its own accounts from the shared Recent Conne
   assert.ok(names > -1 && clear > names, 'the clear runs after the names are populated');
   assert.equal((engine.match(/clearRecentConnectionsTab\(/g) || []).length, 1);
 });
+
+test('the note field carries a Sales Navigator warning above it', () => {
+  const html = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
+  const warn = html.indexOf('id="tpl-note-salesnav-warn"');
+  assert.ok(warn > 0);
+  assert.ok(warn < html.indexOf('id="tpl-note"'), 'warning sits above the textarea');
+  assert.match(html.slice(warn, warn + 400), /Needs Sales Navigator/);
+});

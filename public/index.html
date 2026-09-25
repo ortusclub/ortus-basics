@@ -2740,6 +2740,7 @@
          connectionNote: "" whatever is typed here. -->
     <div class="section tpl-section" id="tpl-connect-section" style="display:none">
       <h2><span data-edit="h2-connect">Connection Note</span> <small>(optional, max 300 chars)</small></h2>
+      <div id="tpl-note-salesnav-warn" class="note-hint note-hint-callout"><span class="nh-ic">!</span><span class="nh-tx"><b>Needs Sales Navigator.</b> If the sending account doesn't have Sales Navigator, the connection note will not work — the request still goes out, but without the note.</span></div>
       <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!" oninput="updateTplNoteCount(); wizardDirtyOnInput()"></textarea>
       <div id="tpl-note-count" style="font-size:0.7rem; color:var(--gray); margin-top:4px; text-align:right; font-family:var(--mono);">0 / 300</div>
       <div id="tpl-note-hint" class="note-hint note-hint-callout hidden"><span class="nh-ic">!</span><span class="nh-tx"><b>You usually don't need a note.</b> Requests sent without one tend to get accepted more often.</span></div>
