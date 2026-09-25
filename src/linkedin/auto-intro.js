@@ -22,11 +22,11 @@ import { sendIntroMessage, sendIntroViaCleanCompose } from './actions.js';
 import { personalizeTemplate, getConnectionStatus } from './helpers.js';
 import { checkAndConnectPrimary, primaryConnState } from './primary-connection.js';
 import { readSelfIdentity } from './accept-invitation.js';
-import { INTRO_FAILED_PRIMARY_NOT_CONNECTED } from './intro-constants.js';
+import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_HELD_PRIMARY_NOT_CONNECTED } from './intro-constants.js';
 import { extractSheetId } from '../utils.js';
 import { buildFollowUpTask, buildAcceptTask, enqueuePrimaryTask, enqueueFollowUpBatched } from '../primary-tasks.js';
 import { fetchSheet } from '../sheets.js';
-import { updateSheetRow } from '../sheets-writer.js';
+import { updateSheetRow, batchUpdateSheet } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
 import { leadIdentityKeys } from './bulk-check-connections.js';
 
@@ -496,9 +496,14 @@ export async function runAutoIntros({
         }
 
         if (_shouldHoldIntros(_res)) {
-          log(`  ⏸ [${profileName}] Not yet connected to ${primaryName} — holding ${connectedUrls.length} intro(s) until the connection is accepted (will retry on the next check).`);
+          log(`  ⏸ [${profileName}] Not connected to ${primaryName} — ${connectedUrls.length} accepted lead(s) not introduced. Noted on the sheet; clear the note and run a check once they are connected.`);
+          try {
+            await batchUpdateSheet(sheetUrl, connectedUrls.map((u) => ({ linkedinUrl: u, introductionStatus: INTRO_HELD_PRIMARY_NOT_CONNECTED })));
+          } catch (e) {
+            log(`  ⚠ [${profileName}] Could not note the held intros on the sheet: ${e.message}`);
+          }
           result.skipped = connectedUrls.length;
-          return result; // leave Introduction Status blank → next sweep retries
+          return result;
         }
       } catch (e) {
         // Gate failure must never block intros — if the degree read throws,
