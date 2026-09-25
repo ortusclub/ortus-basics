@@ -13383,11 +13383,15 @@ function localCampaignViewStatus(incoming) {
   const selected = _viewingLocalCampaign;
   if (!incoming?._cloud && sameCampaign(incoming, selected)) {
     selected.status = { ...incoming, _cloud: false, runsOn: 'local', id: 'local-active' };
-  } else if (incoming && !incoming._cloud && !incoming.running && !incoming.name && !incoming.campaignId
+  } else if (incoming && !incoming._cloud && !incoming.running
+             && ((!incoming.name && !incoming.campaignId) || _checkLaunchedHere())
              && (incoming.monitoringCheckInProgress || (Array.isArray(incoming.logs) && incoming.logs.length))) {
     // A connection check run from the wizard belongs to no campaign, so it never
     // matches the one on screen — yet its log is exactly what the operator is
     // waiting for. Carry the check's log and in-progress flag onto the snapshot.
+    // The engine may still be wearing an ENDED campaign's name and id when the
+    // check runs (it keeps them until restart); a check started from this
+    // wizard is still this wizard's.
     selected.status = { ...selected.status, logs: incoming.logs || [], monitoringCheckInProgress: !!incoming.monitoringCheckInProgress,
       accountPanel: incoming.monitoringCheckInProgress ? incoming.accountPanel : selected.status.accountPanel };
   }
@@ -17242,6 +17246,11 @@ let liveStatusForcedOpen = false;
 // where it was started so its live log shows there, started or not. Reset with
 // liveStatusForcedOpen whenever the operator moves to another campaign.
 let _checkWizardKey = '';
+// True while the wizard on screen is the one a check was started from.
+function _checkLaunchedHere() {
+  const typed = (document.getElementById('campaign-name-input')?.value || '').trim().toLowerCase();
+  return !!_checkWizardKey && typed === _checkWizardKey;
+}
 // Set by _openDuplicateDraft / editDraft / startNewCampaign — suppresses the
 // "finished campaign log" section when the operator explicitly opened a different
 // draft. Without this, duplicating a finished campaign shows its log/progress in
@@ -17266,8 +17275,14 @@ function syncLiveStatusVisibility() {
   // A connection check started from THIS wizard. The engine stays idle and
   // nameless during a solo check, so the name test below would call its log
   // "unrelated" and hide it (Sam, 2026-09-23 20:35: pressed Check, no log).
+  // The engine keeps the last campaign's name and id after it ends (until the
+  // app restarts), so "nameless engine" is not a usable test: on 2026-09-25
+  // Sam pressed Check on a wizard while the engine still held yesterday's
+  // campaign, the name test called the check "unrelated" and nothing showed.
+  // A check launched from THIS wizard is this wizard's, whatever the engine
+  // says its campaign is, as long as no campaign is actually running.
   const checking = !!(typeof __cockpit !== 'undefined' && __cockpit && __cockpit.monitoringCheckInProgress);
-  const checkHere = !statusName && !!draftName && draftName === _checkWizardKey && (checking || !!__cockpit?.hasLogs);
+  const checkHere = !running && _checkLaunchedHere() && (checking || !!__cockpit?.hasLogs);
   const unrelatedDraft = editingDraft && !checkHere && (!draftName || draftName !== statusName);
   // Follower Growth has its OWN self-contained log card (#fgtl-card); the generic
   // campaign Live Status (#nav-status) must never appear in FG view, else a prior
@@ -30230,7 +30245,8 @@ window.renderActiveCard = function(status) {
     card.classList.remove('is-empty', 'is-queued', 'is-done', 'is-waiting', 'is-stopped');
     card.classList.add('is-monitor');
     const viewingName = (typeof _viewingLocalCampaign !== 'undefined' && _viewingLocalCampaign?.name) || '';
-    v3SetText('activeName', status.name || viewingName || 'Connection check');
+    const launchedHereName = _checkLaunchedHere() ? _currentWizardName() : '';
+    v3SetText('activeName', launchedHereName || status.name || viewingName || 'Connection check');
     v3SetText('activeEyebrow', 'Checking connections…');
     v3SetText('sendingLbl', 'Checking');
     v3SetText('batchEta', 'in progress');

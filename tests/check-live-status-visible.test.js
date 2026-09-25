@@ -59,3 +59,22 @@ test('launching a check remembers the wizard and reveals the section immediately
   assert.match(fn, /syncLiveStatusVisibility\(\)/);
   assert.equal((app.match(/liveStatusForcedOpen = false;\n  _checkWizardKey = '';/g) || []).length, 6, 'every place that forgets the forced-open log also forgets the check wizard');
 });
+
+test('the engine still wearing yesterday\'s ended campaign does not hide a check started here', () => {
+  // 2026-09-25: installed app, campaign ended the day before, engine keeps its
+  // name/id until restart; Check pressed on a wizard → nothing showed.
+  const stale = { running: false, state: 'done', name: 'Yesterday CC', campaignId: 'c-old', monitoringCheckInProgress: true, hasLogs: true };
+  const h = harness({ typed: 'Barry', cockpit: stale });
+  h.ctx.setKey('barry');
+  h.ctx.sync();
+  assert.equal(h.sec.style.display, '');
+  assert.ok(h.sec.classList.removed.includes('collapsed'));
+});
+
+test('a genuinely running campaign still wins over a remembered check key', () => {
+  const live = { running: true, state: 'running', name: 'Other live', campaignId: 'c-live', monitoringCheckInProgress: false, hasLogs: true };
+  const h = harness({ typed: 'Barry', cockpit: live });
+  h.ctx.setKey('barry');
+  h.ctx.sync();
+  assert.equal(h.sec.style.display, 'none');
+});

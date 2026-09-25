@@ -38,3 +38,22 @@ test('the launch-card check button becomes Stop check while a check runs, and re
   assert.match(fn, /btn\.onclick = \(\) => window\.launchCheckNow\(\);/);
   assert.ok(!/btn\.onclick = null/.test(app.slice(app.indexOf('function refreshLaunchCheckBtn()'), app.indexOf('// Keep it in step with the mode picker'))));
 });
+
+test('a check started from this wizard carries its log even while the engine still names an ended campaign', () => {
+  const start = app.indexOf('function localCampaignViewStatus(');
+  const src = app.slice(start, app.indexOf('// v2.160.46: OPEN on an ACTIVE', start));
+  const mk = (launchedHere) => {
+    const ctx = vm.createContext({ sameCampaign, location: { hash: '#/new' }, _checkLaunchedHere: () => launchedHere,
+      _viewingLocalCampaign: { id: 'saved-x', name: 'Barry', campaignId: 'c-barry', status: { name: 'Barry', state: 'draft', running: false, logs: [] } } });
+    vm.runInContext(src + '\nthis.view = localCampaignViewStatus;', ctx);
+    return ctx;
+  };
+  const stale = { running: false, state: 'done', name: 'Yesterday CC', campaignId: 'c-old', monitoringCheckInProgress: true, logs: ['[t] 📡 Sweeping…'] };
+  const here = mk(true).view(stale);
+  assert.equal(here.name, 'Barry');
+  assert.equal(here.monitoringCheckInProgress, true);
+  assert.deepEqual(here.logs, ['[t] 📡 Sweeping…']);
+  // Not launched here → the ended campaign's log stays off this wizard.
+  const elsewhere = mk(false).view(stale);
+  assert.notDeepEqual(elsewhere.logs, ['[t] 📡 Sweeping…']);
+});
