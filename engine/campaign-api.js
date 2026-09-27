@@ -209,6 +209,7 @@ function mountCampaignApi(app, store, opts = {}) {
           connectionAcceptedStatus: l.connection_accepted_status || null,
           introductionStatus: l.introduction_status || null,
           dmStatus: l.dm_status || null,
+          sentVia: l.sent_via || null,
           // Acceptance/intro moment (monitor-phase outcome) — lets the app place
           // "connection accepted" / "introduced" lines chronologically in the log.
           dateLastAction: l.date_last_action || null,

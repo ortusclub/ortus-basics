@@ -1,3 +1,4 @@
+import { campaignTitle } from './campaign-title.mjs';
 import { terminalPresentation } from './campaign-terminal.mjs';
 import { normalizeLifecycle, campaignLifecycle, withCampaignLifecycle, campaignActionSpecs } from './campaign-lifecycle.mjs';
 
@@ -256,7 +257,7 @@ export function vjCardFields(status = {}) {
     : (s.paused ? 'Paused' : 'Sending');
   return {
     isMonitor, isDone, isQueued, isWaiting, isInterrupted,
-    name: s.name || 'Loading campaign…',
+    name: campaignTitle(s),
     eyebrow: s.campaignId && !s._cloud ? campaignLifecycle(s).label : eyebrow, pct, done, total, accountsCount, accepted, sendingLbl,
   };
 }

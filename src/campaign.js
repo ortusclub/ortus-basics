@@ -1,3 +1,5 @@
+import { hasDailySendLimit, dailyQuotaCount, utcDayKey, nextDailyResetAt } from './campaign-limits.js';
+import { getSalesNavAccess } from './linkedin/sales-nav-access.js';
 import { ensureCampaignIdentity, getConfigById, saveConfig } from './campaign-configs.js';
 import { campaignLifecycle } from '../public/js/campaign-lifecycle.mjs';
 import { weeklyCutoffMs, nextWeeklyResetMs, monthlyCutoffMs, nextMonthlyResetMs } from './weekly-reset-cutoff.js';
@@ -426,6 +428,20 @@ export function buildNeedsLoginUpdates(rows, accountName, senderColumn, linkedin
 const campaignCounts = {};
 const campaignSendCounts = {};
 const campaignMessageCounts = {};
+let dailyCountsDay = utcDayKey();
+function refreshDailyCountDay() {
+  const day = utcDayKey();
+  if (day === dailyCountsDay) return;
+  for (const counts of [campaignSendCounts, campaignMessageCounts]) {
+    for (const id of Object.keys(counts)) delete counts[id];
+  }
+  dailyCountsDay = day;
+}
+function getCampaignQuotaCount(profileId) {
+  refreshDailyCountDay();
+  return dailyQuotaCount(campaign.mode, campaignSendCounts[profileId] || 0, campaignMessageCounts[profileId] || 0);
+}
+
 
 // v2.14.x: Snapshot of the most recent startCampaign() options, captured
 // at run-start. Used by restoreCampaign() to re-launch with the exact same
@@ -441,12 +457,14 @@ function getCampaignCount(profileId) {
 function bumpCampaignCount(profileId) {
   campaignCounts[profileId] = (campaignCounts[profileId] || 0) + 1;
 }
-function getCampaignSendCount(profileId) { return campaignSendCounts[profileId] || 0; }
+function getCampaignSendCount(profileId) { refreshDailyCountDay(); return campaignSendCounts[profileId] || 0; }
 function bumpCampaignSendCount(profileId) {
+  refreshDailyCountDay();
   campaignSendCounts[profileId] = (campaignSendCounts[profileId] || 0) + 1;
 }
-function getCampaignMessageCount(profileId) { return campaignMessageCounts[profileId] || 0; }
+function getCampaignMessageCount(profileId) { refreshDailyCountDay(); return campaignMessageCounts[profileId] || 0; }
 function bumpCampaignMessageCount(profileId) {
+  refreshDailyCountDay();
   campaignMessageCounts[profileId] = (campaignMessageCounts[profileId] || 0) + 1;
 }
 
@@ -1834,13 +1852,17 @@ export function buildSheetDataForAction({
   hyperSent = '',
   introMode = false,
   messageOpenProfiles = false,
-  creditsLeft
+  creditsLeft,
+  sentVia
 }) {
   // Write to BOTH 'Sender' (v2 schema) and 'Account Used' (legacy column).
   // Sheets that have only one of the two will silently ignore the missing
   // field; sheets that have both stay in sync. This is what makes the
   // "Account Used" column populate on legacy/migrated sheets.
   const out = { sender: profileName, accountUsed: profileName };
+  // Use the confirmed send route, never the campaign preference (fallbacks can differ).
+  if (['message_sent', 'op_message_sent', 'inmail_sent'].includes(action)
+      && ['LinkedIn', 'Sales Navigator'].includes(sentVia)) out.sentVia = sentVia;
 
   switch (action) {
     case 'connection_sent':
@@ -2702,7 +2724,8 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     // pick up where the prior run left off, AND it cumulatively caps daily
     // activity so LinkedIn's per-day quotas can't be blown by stop-and-restart.
     // Skip-only actions don't count toward the daily send total.
-    const _todayPrefix = new Date().toISOString().slice(0, 10); // YYYY-MM-DD UTC
+    dailyCountsDay = utcDayKey();
+    const _todayPrefix = dailyCountsDay; // YYYY-MM-DD UTC
     const _skipActions = new Set(['_in_progress', 'email_required', 'not_open_profile']);
     let _seedTotal = 0;
     for (const entry of Object.values(state.processed)) {
@@ -3579,9 +3602,8 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     // daily message limit, but must NOT inherit the connect-mode turn floor —
     // messaging existing connections does not carry invite risk. So the two
     // concerns are separate sets from here on.
-    const NO_DAILY_LIMIT = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only']);
     const NO_TURN_FLOOR  = new Set(['check_status', 'message_only', 'introduce_back', 'inmail_only', 'open_profile_only']);
-    const skipsDailyLimit = NO_DAILY_LIMIT.has(mode);
+    const skipsDailyLimit = !hasDailySendLimit(mode);
     const skipsTurnFloor  = NO_TURN_FLOOR.has(mode);
 
     // ═════════════════════════════════════════════════════════════════════
@@ -3648,7 +3670,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         // v2.78: operator benched this account for the rest of the run.
         if (campaign._skippedProfiles && campaign._skippedProfiles.has(candidate)) continue;
         if (weeklyLimited.has(candidate)) continue;
-        if (!skipsDailyLimit && getCampaignSendCount(candidate) >= campaign.dailyLimit) continue;
+        if (!skipsDailyLimit && getCampaignQuotaCount(candidate) >= campaign.dailyLimit) continue;
         if (now < (profileCooldownUntil.get(candidate) || 0)) continue;
         // Clear stale _cooldown429 entry once the cooldown window has passed
         if (campaign._cooldown429.has(candidate) && now >= (campaign._cooldown429.get(candidate).until || 0)) {
@@ -3669,7 +3691,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       if (profileQueue.length === 0) return true;
       return profileQueue.every(id =>
         weeklyLimited.has(id) ||
-        (!skipsDailyLimit && getCampaignSendCount(id) >= campaign.dailyLimit)
+        (!skipsDailyLimit && getCampaignQuotaCount(id) >= campaign.dailyLimit)
       );
     }
 
@@ -3831,11 +3853,12 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         let cooling429 = false;
         // The operator's two turn markers. Everything between them belongs to
         // this account, which is otherwise only inferable from the [name] tags.
-        const _turnSentAtStart = getCampaignSendCount(profileId);
         log(plainLine('turn-start', {
           account: pName,
           size: Number.isFinite(innerLimit) ? innerLimit : null,
         }));
+        campaign._turnByProfile = campaign._turnByProfile || {};
+        campaign._turnByProfile[profileId] = { done: 0, sent: 0, size: Number.isFinite(innerLimit) ? innerLimit : null };
         for (let leadInBatch = 0; leadInBatch < innerLimit && shouldContinueTurn({ abort: campaign._abort, orphan: isOrphan(), weeklyLimited: weeklyLimited.has(profileId), benched: campaign._skippedProfiles?.has(profileId) }); leadInBatch++) {
         // Where this account is in its TURN, for the per-account panel. `done`
         // is how many leads of this turn are behind it; `size` is how many the
@@ -3843,6 +3866,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         // in one go (they have no turn size to show).
         campaign._turnByProfile = campaign._turnByProfile || {};
         campaign._turnByProfile[profileId] = {
+          ...campaign._turnByProfile[profileId],
           done: leadInBatch,
           size: Number.isFinite(innerLimit) ? innerLimit : null,
         };
@@ -3852,6 +3876,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         // v2.112 (#2a): also bail if the operator benched this account while paused — without
         // this, the post-pause path would send one more lead before the for-condition re-checks.
         if (campaign._abort || isOrphan() || campaign._skippedProfiles?.has(profileId)) break;
+        if (!skipsDailyLimit && getCampaignQuotaCount(profileId) >= campaign.dailyLimit) break;
         // ── Phase 11.1: per-iteration resource sample + throttle decision ──
         // Pattern: RESEARCH.md §Pattern 2 (cached sample) + §Pattern 3 (multiplicative composition).
         // Writes campaign._lastSample and campaign._throttle for the status endpoint to read.
@@ -4539,6 +4564,12 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
             if (campaign._dashTick === 1 || campaign._dashTick % 15 === 0) _pushDashboard(false);
           } catch (_) { /* telemetry never blocks the loop */ }
 
+          // Update this turn as soon as its result arrives, before sheet/network work.
+          const turnProgress = campaign._turnByProfile?.[profileId];
+          if (turnProgress) {
+            turnProgress.done = leadInBatch + 1;
+            if (SENT_ACTIONS.has(result.action)) turnProgress.sent += 1;
+          }
           if (SUCCESS_ACTIONS.has(result.action)) {
             // v2.10.0: stash the invitationUrn returned by Approach A's network
             // listener so the start-of-run reconcile pass can match this row
@@ -4547,7 +4578,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
               profileId,
               profileName: pName,
               action: result.action,
-              date: now,
+              date: new Date().toISOString(),
               ...(result.invitationUrn ? { invitationUrn: result.invitationUrn } : {}),
             };
             bumpCampaignCount(profileId);
@@ -4598,6 +4629,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
             // are preserved.
             Object.assign(sheetData, buildSheetDataForAction({
               action: result.action,
+              sentVia: result.sentVia,
               mode,
               profileName: pName,
               hyperSent,
@@ -4740,7 +4772,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
                 what: SENT_WORDS[result.action] || 'a message',
                 done: leadInBatch + 1,
                 size: Number.isFinite(innerLimit) ? innerLimit : null,
-                today: getCampaignSendCount(profileId),
+                today: getCampaignQuotaCount(profileId),
                 dailyLimit: campaign.dailyLimit,
               }));
               if (_who) {
@@ -4881,7 +4913,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
             // The candidate filter at line ~1289 will silently exclude it
             // from the next round; this gives operators a visible "why" on
             // the dashboard's Done row.
-            if (!skipsDailyLimit && getCampaignSendCount(profileId) >= campaign.dailyLimit) {
+            if (!skipsDailyLimit && getCampaignQuotaCount(profileId) >= campaign.dailyLimit) {
               recordProfileEnd(profileId, pName, `Reached campaign limit (${campaign.dailyLimit})`);
             }
           } else {
@@ -5409,7 +5441,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
 
         log(plainLine('turn-end', {
           account: pName,
-          sent: Math.max(0, getCampaignSendCount(profileId) - _turnSentAtStart),
+          sent: campaign._turnByProfile?.[profileId]?.sent || 0,
           size: Number.isFinite(innerLimit) ? innerLimit : null,
         }));
 
@@ -5516,15 +5548,13 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         if (!profileId) {
           if (noProfilesLeftEver()) {
             const dailyCapped = profileQueue.some((id) => !weeklyLimited.has(id)
-              && !skipsDailyLimit && getCampaignSendCount(id) >= campaign.dailyLimit);
+              && !skipsDailyLimit && getCampaignQuotaCount(id) >= campaign.dailyLimit);
             if (dailyCapped && !leadsExhausted && !campaign._abort) {
-              const resume = new Date();
-              resume.setDate(resume.getDate() + 1);
-              resume.setHours(0, 2, 0, 0);
+              const resume = new Date(new Date(nextDailyResetAt()).getTime() + 2 * 60_000);
               campaign.dailyResetNeeded = true;
               campaign.resumeAt = resume.toISOString();
               campaign.state = 'waiting_daily_reset';
-              log(`◷ Daily invitation limit reached · remaining leads stay queued · sending resumes ${resume.toLocaleString()}.`);
+              log(`◷ Daily send limit reached · remaining leads stay queued · sending resumes ${resume.toLocaleString()}.`);
             }
             break;
           }
@@ -6653,14 +6683,17 @@ function buildAccountPanel() {
       weeklyCap,
       // Inferred from HTTP 429s rather than stated by LinkedIn — the UI says "suspected".
       weeklySuspected: weeklyCap && /429|suspected/.test(_why),
+      salesNavAccess: getSalesNavAccess(pid),
       needsLogin,
       batchDone: turn.done == null ? null : turn.done,
       batchSize: turn.size == null ? null : turn.size,
-      sentToday: getCampaignSendCount(pid),
+      sentToday: getCampaignQuotaCount(pid),
+      batchSent: turn.sent == null ? null : turn.sent,
+      dailyResetAt: nextDailyResetAt(),
       // An account a sweep found but that this campaign never selected has no
       // cap of its own here, so it shows none rather than borrowing this
       // campaign's.
-      dailyLimit: idx >= 0 ? (campaign.dailyLimit || 0) : 0,
+      dailyLimit: idx >= 0 && hasDailySendLimit(campaign.mode) ? (campaign.dailyLimit || 0) : 0,
       sub,
       reached: (reachedBy[pid] || []).slice(),
       missed,
@@ -6777,6 +6810,7 @@ export function getCampaignStatus() {
     // reflect post-campaign monitoring state without a second poll.
     state: interrupted ? 'interrupted' : (campaign.state || 'idle'),
     dailyResetNeeded: !!campaign.dailyResetNeeded,
+    dailyResetAt: nextDailyResetAt(),
     resumeAt: campaign.resumeAt || null,
     stoppedManually: !!campaign._stoppedManually,
     interrupted,

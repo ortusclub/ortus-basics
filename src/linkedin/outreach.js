@@ -11,6 +11,7 @@
 import { randomDelay, getConnectionStatus, getVoyagerDegree, getDegreeBadge, personalizeTemplate } from './helpers.js';
 import { sendConnectionRequest, sendMessage, sendIntroMessage, sendIntroViaCleanCompose, sendInMail, sendViaSalesNav, resolveSalesNavUrlFromInProfile } from './actions.js';
 import { dataPath } from '../paths.js';
+import { getSalesNavAccess, setSalesNavAccess, detectSalesNavSubscriptionGate, isSalesNavSubscriptionGate, salesNavChannel } from './sales-nav-access.js';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 // 2.8.42: HTML-only diagnostic, capped per process. The 2.8.41 version
@@ -186,11 +187,28 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
 
         console.log(`[outreach] IC fast-path → clean compose (lead="${_leadFullName}", primary="${templates.introName}") — skipping profile visit + degree check`);
         await sendIntroViaCleanCompose(page, body, _leadFullName, templates.introName, title);
-        return { action: 'message_sent' };
+        return { action: 'message_sent', sentVia: 'LinkedIn' };
       } catch (err) {
         return { action: 'skipped', error: `Message failed: ${err.message}` };
       }
     }
+
+    // Apply the durable per-profile restriction before choosing a landing URL.
+    if (modeHint === 'force_open_profile') {
+      const requested = templates.opChannel || 'sn_first';
+      const effective = salesNavChannel(requested, getSalesNavAccess(state.profileId));
+      if (effective === 'unavailable') return { action: 'skipped', error: 'SALES_NAV_UNAVAILABLE: this profile has no Sales Navigator licence' };
+      if (effective !== requested) templates = { ...templates, opChannel: effective, opSpendInMail: false };
+    }
+    const salesNavUnavailable = () => {
+      setSalesNavAccess(state.profileId, 'unavailable');
+      console.log('[outreach] Sales Navigator subscription required — saved profile flag');
+      const channel = templates.opChannel || 'sn_first';
+      if (modeHint === 'force_open_profile' && channel !== 'sn_only') {
+        return performOutreach(page, targetUrl, { ...templates, opChannel: 'ln_only', opSpendInMail: false }, { ...state, skipNavigation: false }, modeHint);
+      }
+      return { action: 'skipped', error: 'SALES_NAV_UNAVAILABLE: this profile has no Sales Navigator licence' };
+    };
 
     let url = targetUrl.trim();
     if (!url.startsWith('http')) url = 'https://' + url;
@@ -329,7 +347,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       console.log(`[outreach] DM fast-path → clean compose (publicId="${publicId}") — skipping profile visit + degree check`);
       try {
         await sendMessage(page, body, publicId);
-        return { action: 'message_sent' };
+        return { action: 'message_sent', sentVia: 'LinkedIn' };
       } catch (err) {
         return { action: 'skipped', error: `Message failed: ${err.message}` };
       }
@@ -368,15 +386,25 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       }
     }
 
+    if (SALES_NAV_URL_RE.test(url) && await detectSalesNavSubscriptionGate(page)) {
+      return await salesNavUnavailable();
+    }
+
     // ── Step 2: DOM settle / buffer / zoom — only needed for paths that
     // interact with the page. check_only reads the Voyager API and exits.
     if (modeHint !== 'check_only') {
       progress('profile_loading', 'Profile opened — preparing the page', 'Waiting for LinkedIn controls to become ready');
       console.log('[outreach] Waiting for DOM to settle…');
-      await waitForDomSettle(page, { settleMs: 1500, maxWait: 15000 });
-      await new Promise(r => setTimeout(r, 2000));
-      console.log('[outreach] DOM settled.');
-      await page.evaluate(() => { document.body.style.zoom = '75%'; });
+      try {
+        await waitForDomSettle(page, { settleMs: 1500, maxWait: 15000 });
+        await new Promise(r => setTimeout(r, 2000));
+        if (SALES_NAV_URL_RE.test(url) && await detectSalesNavSubscriptionGate(page)) return await salesNavUnavailable();
+        console.log('[outreach] DOM settled.');
+        await page.evaluate(() => { document.body.style.zoom = '75%'; });
+      } catch (error) {
+        if (SALES_NAV_URL_RE.test(url) && await detectSalesNavSubscriptionGate(page)) return await salesNavUnavailable();
+        throw error;
+      }
       progress('profile_ready', 'Profile ready', 'Checking connection status and available actions');
     }
 
@@ -522,8 +550,8 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
         inmailSubject: personalizeTemplate(templates.inmail?.subject || '', d),
         inmailBody:    personalizeTemplate(templates.inmail?.message || '', d),
       });
-      if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
-      if (result.ok && result.kind === 'inmail_sent')     return { action: 'inmail_sent', creditsLeft: result.creditsLeft };
+      if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent', sentVia: 'Sales Navigator' };
+      if (result.ok && result.kind === 'inmail_sent')     return { action: 'inmail_sent', sentVia: 'Sales Navigator', creditsLeft: result.creditsLeft };
       if (result.reason === 'message_button_not_found')   return { action: 'skipped', error: 'Sales Nav Message button not found' };
       if (result.reason === 'inmail_no_credits_lead_not_op') return { action: 'skipped', error: 'INMAIL_NO_CREDITS_NOT_OP: account has 0 InMail credits and lead is not Open Profile' };
       if (result.reason === 'no_compose_textbox')         return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
@@ -541,6 +569,9 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       const d = templates.data || {};
       const opSubject   = personalizeTemplate(templates.openProfileSubject || '', d);
       const opBody      = personalizeTemplate(templates.openProfileBody    || '', d);
+      // Native LinkedIn compose has one message field: retain the configured
+      // subject as a heading. Sales Navigator keeps its separate subject field.
+      const linkedInBody = opSubject.trim() ? `${opSubject.trim()}\n\n${opBody}` : opBody;
       const channel     = templates.opChannel || 'sn_first';
       const spendInMail = !!templates.opSpendInMail;
 
@@ -581,9 +612,9 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           }
           if (degree === 1) {
             console.log(`[outreach] OP: lead is a 1st-degree connection → plain DM (publicId="${_origPublicId}")`);
-            await sendMessage(page, opBody, _origPublicId);
+            await sendMessage(page, linkedInBody, _origPublicId);
             console.log('[outreach] ✓ Direct message sent to connection (Message Campaign → "DM Sent")');
-            return { action: 'message_sent' };
+            return { action: 'message_sent', sentVia: 'LinkedIn' };
           }
           console.log(`[outreach] OP: degree=${degree ?? 'undetermined'} → not a 1st connection, using the Open-Profile path`);
         } catch (e) {
@@ -596,6 +627,8 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       // InMail tickbox on, force_inmail sends free if OP else spends 1 credit;
       // otherwise force_open_profile sends only when the OP badge is present.
       const trySalesNav = async () => {
+        if (getSalesNavAccess(state.profileId)?.status === 'unavailable') return { ok: false, reason: 'sales_nav_unavailable' };
+        try {
         if (!SALES_NAV_URL_RE.test(page.url())) {
           // v1.7.51: under ln_first the page is still on /messaging/compose when
           // LinkedIn fails. Resolving "View in Sales Navigator" there picked up a
@@ -630,6 +663,10 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           const _t0 = Date.now();
           let _ready = false;
           while (Date.now() - _t0 < 15000) {
+            if (isSalesNavSubscriptionGate(page.url())) {
+              setSalesNavAccess(state.profileId, 'unavailable');
+              return { ok: false, reason: 'sales_nav_unavailable' };
+            }
             try {
               _ready = SALES_NAV_URL_RE.test(page.url()) && await page.evaluate(() => Array.from(document.querySelectorAll('button, a')).some((b) => {
                 const t = (b.textContent || '').trim().toLowerCase();
@@ -643,13 +680,26 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           await new Promise(r => setTimeout(r, _ready ? 1500 : 500));
           if (!_ready) console.warn(`[outreach] OP Sales Nav: lead page / Message button not seen within 15s (url=${page.url()})`);
         }
+        if (await detectSalesNavSubscriptionGate(page)) {
+          setSalesNavAccess(state.profileId, 'unavailable');
+          return { ok: false, reason: 'sales_nav_unavailable' };
+        }
         const r = spendInMail
           ? await sendViaSalesNav(page, { mode: 'force_inmail', opSubject, opBody, inmailSubject: opSubject, inmailBody: opBody })
           : await sendViaSalesNav(page, { mode: 'force_open_profile', opSubject, opBody });
         if (r.ok && (r.kind === 'op_message_sent' || r.kind === 'inmail_sent')) {
-          return { ok: true, action: { action: 'op_message_sent' } };
+          setSalesNavAccess(state.profileId, 'available');
+          return { ok: true, action: { action: 'op_message_sent', sentVia: 'Sales Navigator' } };
         }
         return { ok: false, reason: r.reason || 'sales_nav_failed', error: r.error };
+        } catch (error) {
+          if (await detectSalesNavSubscriptionGate(page)) {
+            setSalesNavAccess(state.profileId, 'unavailable');
+            return { ok: false, reason: 'sales_nav_unavailable' };
+          }
+          // Never turn an ambiguous send failure into a second message attempt.
+          throw error;
+        }
       };
 
       // Channel: plain LinkedIn. Open Profile members can be messaged for free
@@ -674,9 +724,9 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           // question: does /messaging/compose open a box for an Open-Profile
           // NON-connection? If yes → OP works here. If no → it fails cleanly and
           // Sales Nav (under sn_first) or a clean skip covers it — never a mis-send.
-          await sendMessage(page, opBody, publicId, /* freeOnly */ true);
+          await sendMessage(page, linkedInBody, publicId, /* freeOnly */ true);
           console.log('[outreach] ✓ LinkedIn message sent via recipient-pinned compose (free)');
-          return { ok: true, action: { action: 'op_message_sent' } };
+          return { ok: true, action: { action: 'op_message_sent', sentVia: 'LinkedIn' } };
         } catch (e) {
           console.warn(`[outreach] LinkedIn OP send failed: ${e.message}`);
           if (/OP_ALREADY_MESSAGED/.test(e.message)) {
@@ -688,7 +738,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           if (isPostSendFailure(e.message)) {
             return { ok: false, reason: 'send_unconfirmed', error: e.message };
           }
-          if (!spendInMail) return { ok: false, reason: 'not_open_profile' };
+          if (!spendInMail || getSalesNavAccess(state.profileId)?.status === 'unavailable') return { ok: false, reason: 'not_open_profile' };
           // InMail fallback needs an /in/ page for the Sales Nav resolve.
           if (!/\/in\//.test(page.url())) {
             try {
@@ -698,7 +748,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           }
           try {
             await sendInMail(page, opSubject, opBody);
-            return { ok: true, action: { action: 'op_message_sent' } };
+            return { ok: true, action: { action: 'op_message_sent', sentVia: 'Sales Navigator' } };
           } catch (e2) {
             const msg = String(e2.message || '');
             if (/NO_CREDITS/.test(msg)) return { ok: false, reason: 'no_credits', error: msg };
@@ -738,6 +788,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
       if (result.reason === 'not_open_profile')            return { action: 'skipped', error: 'NOT_OPEN_PROFILE: lead is not Open Profile (tick "Spend an InMail credit" to message anyway)' };
       if (result.reason === 'no_credits')                  return { action: 'skipped', error: 'INMAIL_NO_CREDITS: 0 credits remaining' };
       if (result.reason === 'inmail_no_credits_lead_not_op') return { action: 'skipped', error: 'INMAIL_NO_CREDITS_NOT_OP: account has 0 InMail credits and lead is not Open Profile' };
+      if (result.reason === 'sales_nav_unavailable') return { action: 'skipped', error: 'SALES_NAV_UNAVAILABLE: this profile has no Sales Navigator licence' };
       if (result.reason === 'sales_nav_unresolvable')      return { action: 'skipped', error: 'Could not resolve Sales Navigator link from the profile' };
       if (result.reason === 'message_button_not_found')    return { action: 'skipped', error: 'Sales Nav Message button not found' };
       if (result.reason === 'no_compose_textbox')          return { action: 'skipped', error: 'Sales Nav compose textbox did not appear' };
@@ -759,7 +810,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           opBody: opBody,
           connectionNote: note,
         });
-        if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
+        if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent', sentVia: 'Sales Navigator' };
         if (result.ok && result.kind === 'connection_sent') return { action: 'connection_sent' };
         if (result.reason === 'unreachable')                return { action: 'skipped', error: 'Sales Nav: neither OP nor Connect available' };
         if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
@@ -787,7 +838,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
             opBody: opBody,
             connectionNote: note,
           });
-          if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent' };
+          if (result.ok && result.kind === 'op_message_sent') return { action: 'op_message_sent', sentVia: 'Sales Navigator' };
           if (result.ok && result.kind === 'connection_sent') return { action: 'connection_sent' };
           if (result.reason === 'unreachable')                return { action: 'skipped', error: 'Sales Nav: neither OP nor Connect available' };
           if (result.reason === 'send_failed')                return { action: 'skipped', error: `Sales Nav send failed: ${result.error}` };
@@ -909,7 +960,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           } else {
             await sendMessage(page, personalizeTemplate(templates.followUpMessage, data));
           }
-          return { action: 'message_sent' };
+          return { action: 'message_sent', sentVia: 'LinkedIn' };
         } catch (err) {
           return { action: 'skipped', error: `Message failed: ${err.message}` };
         }
@@ -935,7 +986,7 @@ export async function performOutreach(page, targetUrl, templates, state = {}, mo
           const inmailResult = await sendInMail(page,
             personalizeTemplate(templates.inmail.subject || '', data),
             personalizeTemplate(templates.inmail.message || '', data));
-          return { action: 'inmail_sent', creditsLeft: inmailResult?.creditsLeft ?? null };
+          return { action: 'inmail_sent', sentVia: 'Sales Navigator', creditsLeft: inmailResult?.creditsLeft ?? null };
         } catch (err) {
           return { action: 'skipped', error: `InMail failed: ${err.message}` };
         }

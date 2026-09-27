@@ -2,13 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
+import { campaignTitle } from '../public/js/campaign-title.mjs';
 
 const app = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
 const start = app.indexOf('function _activeCardName(status) {');
 const source = app.slice(start, app.indexOf('function bindWizardTo', start));
 
 function harness(typed) {
-  const ctx = vm.createContext({ document: { getElementById: () => ({ value: typed }) } });
+  const ctx = vm.createContext({ campaignTitle, document: { getElementById: () => ({ value: typed }) } });
   vm.runInContext(source, ctx);
   return ctx;
 }
@@ -22,8 +23,8 @@ test('a stopped or solo-check card shows the campaign open in the editor, not "L
   assert.equal(harness('CCIV')._activeCardName(null), 'CCIV');
 });
 
-test('the placeholder only appears when there is genuinely nothing to name', () => {
-  assert.equal(harness('')._activeCardName({}), 'Loading campaign…');
+test('an unnamed loaded campaign has a stable fallback title', () => {
+  assert.equal(harness('')._activeCardName({}), 'Campaign');
 });
 
 test('every live-status title render goes through the helper', () => {

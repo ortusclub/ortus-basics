@@ -92,10 +92,10 @@ var LEGACY_COLUMNS_TO_HIDE_V2 = [
 var MODE_COLUMNS_V2 = {
   connect_only:      ['Connection Request Status'],
   check_status:      ['Connection Accepted Status'],
-  message_only:      ['DM Status', 'Connection Accepted Status'],
+  message_only:      ['Sent via', 'DM Status', 'Connection Accepted Status'],
   introduce_back:    ['Intro Status', 'Connection Accepted Status'],
-  open_profile_only: ['OP Status', 'Open Profile'],
-  inmail_only:       ['InM Status'],
+  open_profile_only: ['Sent via', 'OP Status', 'Open Profile'],
+  inmail_only:       ['Sent via', 'InM Status'],
   // Connect + Introduce Back: full cold-lead flow with three mode columns.
   // Auto-intro fires when bulk-check detects acceptance — Introduction
   // Status becomes the single source of truth for those rows (Connection
@@ -127,7 +127,7 @@ var MODE_COLUMNS_V2 = {
 var ALL_MODE_COLUMNS_V2 = [
   'Connection Request Status', 'DM Status', 'OP Status',
   'InM Status', 'Intro Status', 'Connection Accepted Status',
-  'Open Profile', 'Introduction Status',
+  'Open Profile', 'Introduction Status', 'Sent via',
   'FG Status', 'FG Invited At', 'FG Note', 'FG Member ID', 'FG Invited By'
 ];
 
@@ -269,9 +269,9 @@ var MODE_TRACKING_COLUMNS = {
   // v2.62: CC+DM uses the same tracking column set as CC+IC — it's the
   // same connect-then-followup flow, just with a 1:1 DM in phase 2.
   connect_and_message:       ['Connection Request Status', 'Connected Status', 'Account Used', 'Date of Last Action', 'Time of Last Action', 'LinkedIn URN', 'LinkedIn Membership ID', 'Open Profile', 'Connected'],
-  message_only:              ['Connection Request Status', 'Message',  'Account Used', 'Date of Last Action', 'Time of Last Action'],
-  inmail_only:               ['Connection Request Status', 'InMail',   'Account Used', 'Date of Last Action', 'Time of Last Action'],
-  open_profile_only:         ['Connection Request Status', 'OP',       'Account Used', 'Date of Last Action', 'Time of Last Action'],
+  message_only:              ['Sent via', 'Connection Request Status', 'Message',  'Account Used', 'Date of Last Action', 'Time of Last Action'],
+  inmail_only:               ['Sent via', 'Connection Request Status', 'InMail',   'Account Used', 'Date of Last Action', 'Time of Last Action'],
+  open_profile_only:         ['Sent via', 'Connection Request Status', 'OP',       'Account Used', 'Date of Last Action', 'Time of Last Action'],
   check_status:              ['Connection Request Status', 'Connected Status', 'Account Used', 'Date of Last Action', 'Time of Last Action'],
   check_dms:                 ['Reply', 'Reply At', 'Reply Preview'],
 };
@@ -315,6 +315,7 @@ var FIELD_MAP = {
   message:         'Message',
   inmail:          'InMail',
   accountUsed:     'Account Used',
+  sentVia:         'Sent via',
   linkedinUrn:     'LinkedIn URN',
   linkedinMemberId:'LinkedIn Membership ID',
   openProfile:     'Open Profile',
@@ -1548,6 +1549,16 @@ function findRowsByUrl(sheet, urlColIndex, searchUrl, urlsCache) {
 // write all rows but append the audit-log entry only once for the action.
 function writeFields(sheet, headers, row, data, skipAudit) {
   var updated = [];
+  // Runs already in progress may predate prepareSheet's new column.
+  // Append only this field; preserve all existing columns and historical rows.
+  if ((data.sentVia === 'LinkedIn' || data.sentVia === 'Sales Navigator')
+      && headers.indexOf('Sent via') === -1) {
+    var nextCol = headers.length + 1;
+    if (nextCol > sheet.getMaxColumns()) sheet.insertColumnAfter(sheet.getMaxColumns());
+    sheet.getRange(1, nextCol).setValue('Sent via').setFontWeight('bold');
+    headers.push('Sent via');
+  }
+
 
   // ── READ FIRST (only if there are action columns to dash-fill) ──
   // The only read that previously interleaved with writes was the dash-fill's

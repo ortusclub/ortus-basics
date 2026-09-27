@@ -160,7 +160,7 @@ export function cloudLeadToLocalSheetData(mode, lead, senderName = '') {
   // Non-connect single-step sends (message_only / introduce_back / open_profile /
   // inmail) map straight to their action.
   if (!CONNECT_MODES.has(String(mode))) {
-    return buildSheetDataForAction({ action: sentStageToAction(lead.stage), mode, profileName: senderName });
+    return buildSheetDataForAction({ action: sentStageToAction(lead.stage), mode, profileName: senderName, sentVia: lead.sentVia });
   }
 
   // Connect-based modes — start from the connect stamp, then layer the pipeline.

@@ -122,6 +122,7 @@ function buildTracking(lead, cfg = {}, mode = "") {
   // sheet's original Account-Used, for auto-routed modes) then the raw id.
   // Written to BOTH keys, mirroring app buildSheetDataForAction (Sender = v2
   // schema, Account Used = legacy column; sheets with only one ignore the other).
+  if (["LinkedIn", "Sales Navigator"].includes(lead.sent_via)) t.sentVia = lead.sent_via;
   const emails = cfg.accountEmails || {};
   const account = lead.assigned_profile || lead.route_account || "";
   const senderLabel = emails[account] || lead.route_account || account || "";

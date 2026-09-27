@@ -203,6 +203,9 @@ export function accountColumns(status) {
         && /login|logged/.test(`${a.state || ''} ${a.sub || ''}`.toLowerCase())),
     // Two numbers that must never be read as one. batchDone/batchSize is this
     // account's position in ONE turn; sentToday/dailyLimit is its whole day.
+    batchSent: a.batchSent,
+    dailyResetAt: a.dailyResetAt,
+    salesNavAccess: a.salesNavAccess,
     batchDone: Number(a.batchDone) || 0,
     // A mode that drains every row in one go has no turn size at all, so an
     // absent size stays absent instead of borrowing the eight.

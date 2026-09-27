@@ -22,8 +22,8 @@ function selfTestBridge() {
     }
     var pending = 'Still Pending (' + new Date().toISOString() + ')';
     var saved = invoke({action: 'batchUpdate', updates: [
-      {linkedinUrl: 'https://linkedin.com/in/ortus-bridge-test-accepted', cc: 'Connected'},
-      {linkedinUrl: 'https://linkedin.com/in/ortus-bridge-test-pending', cc: pending, checkStatus: pending}
+      {linkedinUrl: 'https://linkedin.com/in/ortus-bridge-test-accepted', cc: 'Connected', sentVia: 'LinkedIn'},
+      {linkedinUrl: 'https://linkedin.com/in/ortus-bridge-test-pending', cc: pending, checkStatus: pending, sentVia: 'Sales Navigator'}
     ]});
     if (!saved.success || saved.results.some(function(r) {return !!r.error;})) throw new Error('Batch write failed');
     SpreadsheetApp.flush();
@@ -31,6 +31,13 @@ function selfTestBridge() {
     if (rows[0][3] !== 'Connected' || rows[1][3] !== pending) throw new Error('Accepted/pending readback failed');
     if (rows[2][3] !== 'Connected' || rows[2][1] !== 'other-sender') throw new Error('Control row changed');
     if (rows[0][4] !== 'keep accepted note' || rows[1][4] !== 'keep pending note' || rows[2][4] !== 'keep control note') throw new Error('Notes changed');
+    var actualHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    var channelColumn = actualHeaders.indexOf('Sent via') + 1;
+    if (!channelColumn) throw new Error('Sent via column was not created');
+    var channels = sheet.getRange(2, channelColumn, 3, 1).getValues();
+    if (channels[0][0] !== 'LinkedIn' || channels[1][0] !== 'Sales Navigator' || channels[2][0] !== '') throw new Error('Sent via readback or historical-row preservation failed');
+    invoke({action: 'batchUpdate', updates: [{linkedinUrl: 'https://linkedin.com/in/ortus-bridge-test-accepted', sentVia: 'LinkedIn'}]});
+    if (sheet.getLastColumn() !== actualHeaders.length) throw new Error('Sent via column duplicated');
     var payload = {action: 'writeRecentConnections', sender: 'bridge-test', activeSenders: ['bridge-test'], connections: [
       {firstName: 'Bridge', lastName: 'Test', publicId: 'ortus-bridge-test-accepted', connectedAt: Date.now()}
     ]};
@@ -39,7 +46,7 @@ function selfTestBridge() {
     var tab = workbook.getSheetByName('Recent Connections');
     if (!recent.ok || !tab || tab.getLastRow() !== 2 || repeated.accumulated.length !== 1) throw new Error('Recent Connections creation/deduplication failed');
     if (tab.getRange(2, 4).getValue() !== 'ortus-bridge-test-accepted') throw new Error('Recent Connections readback failed');
-    return jsonResponse({ok: true, checks: ['accepted status', 'pending timestamp', 'unrelated cells preserved', 'Recent Connections created', 'connections readback and deduplication']});
+    return jsonResponse({ok: true, checks: ['Sent via column created', 'LinkedIn and Sales Navigator readback', 'historical route left blank', 'no duplicate column', 'accepted status', 'pending timestamp', 'unrelated cells preserved', 'Recent Connections created', 'connections readback and deduplication']});
   } catch (err) {
     return jsonResponse({error: 'Bridge verification failed: ' + err.message});
   } finally {

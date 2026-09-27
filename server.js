@@ -1,3 +1,4 @@
+import { getSalesNavAccess, setSalesNavAccess } from './src/linkedin/sales-nav-access.js';
 import { ensureCampaignIdentity, getConfigById } from './src/campaign-configs.js';
 import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
 import { campaignLifecycle } from './public/js/campaign-lifecycle.mjs';
@@ -7342,6 +7343,15 @@ app.post('/api/profile/:id/open-browser', async (req, res) => {
 // (weeklyLimited, parkedProfiles, profileEndReasons, consecutive counters)
 // AND opens the GoLogin browser so the operator can re-authenticate. The
 // next campaign rotation picks the profile up again.
+// Clear only the Sales Navigator restriction; the account can still send via LinkedIn.
+// Probe on the next eligible message rather than navigating an active send's tab.
+app.post('/api/campaign/profile/:id/sales-nav/retry', (req, res) => {
+  const id = req.params.id;
+  if (!getSalesNavAccess(id)) return res.status(404).json({ error: 'No saved Sales Navigator access check for this profile' });
+  const access = setSalesNavAccess(id, 'retry_pending');
+  return res.json({ ok: true, access });
+});
+
 app.post('/api/campaign/profile/:id/retry', async (req, res) => {
   const profileId = req.params.id;
   if (!profileId) return res.status(400).json({ error: 'profileId required' });

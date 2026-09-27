@@ -206,7 +206,7 @@ class CampaignWorker {
 
         if (res && res.success) {
           await this.store.markActionSent(campaign.id, leadKey, dupeKind);
-          await this.store.markLead(lead.id, "sent", { stage: res.stage || "CC" });
+          await this.store.markLead(lead.id, "sent", { stage: res.stage || "CC", sentVia: res.sentVia });
           await this.store.clearThrottle(profileId); // clean send → reset 429 streak
           if (this.store.clearNeedsLogin) { try { await this.store.clearNeedsLogin(profileId); } catch (_) {} } // a clean send proves it's logged in
           if (this.store.clearWeeklyCap) { try { await this.store.clearWeeklyCap(profileId); } catch (_) {} } // a clean send proves the weekly cap lifted

@@ -149,7 +149,7 @@ function isAlreadyConnectedSkip(result) {
 function mapConnectResult(result, spec) {
   const action = (result && result.action) || "unknown";
   if (spec.done.has(action)) {
-    return { success: true, stage: spec.stage(action), invitationUrn: (result && result.invitationUrn) || null };
+    return { success: true, stage: spec.stage(action), sentVia: result.sentVia || null, invitationUrn: (result && result.invitationUrn) || null };
   }
   if (isAlreadyConnectedSkip(result)) {
     return { success: false, alreadyConnected: true, stage: "Already connected", error: "Already connected" };

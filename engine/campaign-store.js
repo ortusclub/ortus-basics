@@ -227,13 +227,14 @@ class CampaignStore {
     await this.pg.query(
       `UPDATE leads SET status=$2,
          stage=COALESCE($3,stage), error=COALESCE($4,error),
+         sent_via=COALESCE($6,sent_via),
          sent_at=CASE WHEN $2='sent' THEN now() ELSE sent_at END,
          -- error/skip moment: gives the app's log a timestamp for ✗ lines (sent
          -- leads carry sent_at) and the sheet writer a Date/Time of Last Action.
          date_last_action=CASE WHEN $2 IN ('error','skipped') THEN now() ELSE date_last_action END,
          sheet_dirty=CASE WHEN $5 THEN true ELSE sheet_dirty END
        WHERE id=$1`,
-      [id, status, patch.stage ?? null, patch.error ?? null, dirty]
+      [id, status, patch.stage ?? null, patch.error ?? null, dirty, ["LinkedIn", "Sales Navigator"].includes(patch.sentVia) ? patch.sentVia : null]
     );
   }
 

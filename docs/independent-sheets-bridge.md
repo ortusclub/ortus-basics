@@ -13,6 +13,13 @@ Deployment ID: `AKfycbzPLa8j57j-dsq__1j5uKS21pLQAKNy2lCoGmGUHEM60S3fOaqvwppip6hX
 Version 2 passed disposable-sheet writes/readback and campaign-tab reads.
 The development checkout's `.env` selects this deployment; Electron was restarted.
 
+Updated on 2026-09-27 to deployment version 5: `Sent via` records the confirmed
+LinkedIn or Sales Navigator route. Live disposable-sheet verification passed
+column creation, both labels, repeat-write idempotency, and preservation of
+historical rows and unrelated cells. New writes append the column when absent;
+older sends remain blank. This is the independent bridge, not the shared default.
+
+
 ## Deploy
 
 1. Sign in using `clasp -u ortus-basics-sam login`, selecting the owner account.

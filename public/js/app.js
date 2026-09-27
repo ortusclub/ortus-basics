@@ -1,3 +1,5 @@
+import { dailyCountText, batchCountText, dailyResetText } from '/js/campaign-counters.mjs';
+import { campaignTitle } from '/js/campaign-title.mjs';
 import { campaignLifecycle, sameCampaign, withCampaignLifecycle, campaignActionSpecs } from '/js/campaign-lifecycle.mjs';
 /* global fetch */
 
@@ -1354,7 +1356,7 @@ function _campaignKey(name) { return String(name || '').trim().toLowerCase(); }
  * editor, which is the one the operator is looking at, before the placeholder.
  */
 function _activeCardName(status) {
-  return (status && status.name) || _currentWizardName() || 'Loading campaign…';
+  return campaignTitle(status || {}, _currentWizardName());
 }
 function _currentWizardName() {
   return (document.getElementById('campaign-name-input')?.value || '').trim();
@@ -16958,12 +16960,14 @@ function _decorateLocalLiveStatus(s) {
       return {
         profileId: (s.profileIds || [])[i] || a.email || '',
         email: a.email || '', name: a.email || '',
+        batchSent: a.batchSent, batchDone: a.batchDone, batchSize: a.batchSize, dailyResetAt: a.dailyResetAt,
         dailyCount: Number(a.sentToday) || 0,
         dailyLimit: Number(a.dailyLimit) || 0,
         parked: ['benched', 'stopped', 'cannot-open', 'needs-login', 'identity-restricted'].includes(a.state),
         needsLogin,
         weeklyCap,
         weeklySuspected: !!a.weeklySuspected,
+        salesNavAccess: a.salesNavAccess || null,
         parkReason,
       };
     });
@@ -28598,7 +28602,7 @@ function _stageAcctPill(a, isCurrent, counts) {
   // drawer prints, on every pill, in every campaign. It used to be this run's
   // share of the batch ("12/13"), a denominator that changed every launch and
   // matched nothing else on screen (operator, 2026-08-28).
-  let count = acctPillCount(a, tally);
+  let count = acctPillCount(a, tally) + (a.dailyLimit > 0 ? " today" : "");
   // On a follower run the daily quota is the CONNECTION quota — always 0/50,
   // and nothing to do with why the run stopped. What binds is LinkedIn's
   // monthly "invite to follow" credits, which the payload already carries.
@@ -28664,6 +28668,8 @@ function _stageAcctPill(a, isCurrent, counts) {
   // Credits and the note allowance are separate LinkedIn limits and an account
   // can be short of both, so the tooltip carries whichever apply. Picking one
   // dropped the note explanation on every FG account that had credit data.
+  if (a.salesNavAccess?.status === 'unavailable') { text += ' · No Sales Nav'; tip = 'No Sales Navigator licence — using LinkedIn when allowed. Open this account to retry Sales Navigator.'; tipExact = true; }
+  if (isCurrent && batchCountText(a)) text += ` · ${batchCountText(a)}`;
   const title = tip ? (tipExact ? tip : `${tip} — retries next run`) : [cr ? _fgCreditTip(cr) : '', noteTip].filter(Boolean).join('\n');
   return `<button type="button" class="stg-acct" onclick="stageAcctPick(this,'${escHtml(a.profileId || '')}')"`
     + `${title ? ` title="${escHtml(title)}"` : ''}>`
@@ -28675,6 +28681,11 @@ function _stageAcctPill(a, isCurrent, counts) {
 // panel below the card — this doesn't duplicate them.
 function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '', onCloud = true) {
   const email = escHtml(_acctLabel(a, { full: true }));
+  const noSalesNav = a.salesNavAccess?.status === 'unavailable';
+  const salesNavRetryPending = a.salesNavAccess?.status === 'retry_pending';
+  const salesNavNote = noSalesNav
+    ? '<br><strong>No Sales Navigator licence</strong> · LinkedIn remains available.'
+    : salesNavRetryPending ? '<br>Sales Navigator will be checked on the next eligible message.' : '';
   const benched = !!(a.weeklyCap || a.parkReason === 'weekly' || a.parked);
   // A failed acceptance sweep reports the login problem through sweepAction,
   // while an active sending run reports it through needsLogin. They are the
@@ -28710,6 +28721,7 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '', onCloud = tr
   // engine's own remove control below.
   if (!onCloud && a.profileId) {
     const _pid = escHtml(a.profileId);
+    if (noSalesNav) acts.push(`<button type="button" title="Check Sales Navigator again on the next message that allows it" onclick="retrySalesNavAccess('${_pid}',this)">Retry Sales Navigator</button>`);
     if (!benched) acts.push(`<button type="button" onclick="benchLocalAccount('${_pid}',true,this)">Bench this account</button>`);
     acts.push(`<button type="button" style="color:var(--red)" onclick="removeLocalAccount('${_pid}',this)">Remove from campaign</button>`);
   }
@@ -28738,8 +28750,8 @@ function _stageDrawerHtml(cid, a, isCurrent, canWatch, remove = '', onCloud = tr
       : '';
   return `<div class="stg-drawer"><div class="dh"><b>${email}</b>${st}`
     + `<span class="x" onclick="stageAcctPick(this,'')">✕ close</span></div>`
-    + `<div class="dl">${a.dailyCount || 0}/${a.dailyLimit || 0} sent today${why}<br>`
-    + `${isCurrent ? (onCloud ? 'Currently driving this campaign on the VM.' : 'Currently driving this campaign on this Mac.') : 'Not currently driving anything.'}${lastMonitor}</div>`
+    + `<div class="dl">${escHtml(dailyCountText(a))}${why}<br>${batchCountText(a) ? escHtml(batchCountText(a)) + "<br>" : ""}${dailyResetText(a) ? escHtml(dailyResetText(a)) + "<br>" : ""}`
+    + `${isCurrent ? (onCloud ? 'Currently driving this campaign on the VM.' : 'Currently driving this campaign on this Mac.') : 'Not currently driving anything.'}${lastMonitor}${salesNavNote}</div>`
     + (acts.length ? `<div class="acts">${acts.join('')}</div>` : '') + danger + '</div>';
 }
 
@@ -29560,6 +29572,8 @@ function renderLiveStage(root, status) {
   let accts = cloudAccts.length ? cloudAccts : accountColumns(status).map((a) => ({
     profileId: a.email,
     email: a.email,
+    batchSent: a.batchSent, batchDone: a.batchDone, batchSize: a.batchSize, dailyResetAt: a.dailyResetAt,
+    salesNavAccess: a.salesNavAccess,
     dailyCount: a.sentToday,
     dailyLimit: a.dailyLimit,
     // Both come from the engine now. Sniffing them out of state/sub missed the
@@ -29590,7 +29604,7 @@ function renderLiveStage(root, status) {
   const _removeState = (!cid || cloudAccts.length < 2 || !_engStatus) ? ''
     : (['running', 'queued', 'pending'].includes(_engStatus) ? 'pause-first' : 'yes');
   const sel = _stageSel.get(cid) || '';
-  const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}${a.primaryConnected === true ? 'p' : ''}~${a.sweepChecked ? 'c' : ''}${a.sweepAccepted || 0}${a.sweepAction || ''}`).join(',')
+  const akey = accts.map((a) => `${a.profileId}~${a.email}~${a.dailyCount}/${a.dailyLimit}~${a.batchSent}/${a.batchDone}/${a.batchSize}/${a.dailyResetAt}/${a.salesNavAccess?.status}~${a.parked ? 1 : 0}${a.parkReason || ''}${a.weeklyCap ? 'w' : ''}${a.needsLogin ? 'n' : ''}${a.primaryConnected === true ? 'p' : ''}~${a.sweepChecked ? 'c' : ''}${a.sweepAccepted || 0}${a.sweepAction || ''}`).join(',')
     + `|${cur}|${sel}|${paused ? 1 : 0}|${phase}|${_removeState}`
     + `|${(ca && ca.resumeAt) || ''}|${(ca && ca.resumeReason) || ''}`
     + `|${[...((cid && _cloudAcctCounts.get(cid)) || new Map()).entries()].map(([k, v]) => `${k}:${v.sent}/${v.total}`).join(',')}`;
@@ -29602,6 +29616,8 @@ function renderLiveStage(root, status) {
         const html = _stageAcctPill(a, isCur(a), counts);
         return sel && a.profileId === sel ? html.replace('class="stg-acct"', 'class="stg-acct sel"') : html;
       }).join('');
+      const reset = accts.find(a => a.dailyLimit > 0 && a.dailyResetAt);
+      if (reset) pills.innerHTML += `<small style="flex-basis:100%;color:var(--muted,#777);font-size:12px">${escHtml(dailyResetText(reset))}</small>`;
     }
     const drawer = _stgFld(root, 'stageDrawer');
     if (drawer) {
@@ -30343,7 +30359,7 @@ window.renderActiveCard = function(status) {
       liveEl.classList.remove('is-checking', 'is-waking', 'is-paused', 'is-outcome');
       liveEl.classList.toggle('is-interrupted', isNeedsReview);
       v3SetText('activeLiveIco', isDailyWait ? '◷' : '■');
-      v3SetText('activeLiveL1', isDailyWait ? 'Daily invitation limit reached' : 'Campaign needs attention');
+      v3SetText('activeLiveL1', isDailyWait ? 'Daily send limit reached' : 'Campaign needs attention');
       v3SetText('activeLiveL2', isDailyWait
         ? `${Math.max(0, total - done)} leads remain safely queued · resumes ${resumeLabel}`
         : 'Open the log for the named problem and its recommended action. Nothing retries in the background.');
@@ -33085,7 +33101,7 @@ function renderLiveConsole(s) {
   // Head — status label + campaign name + mode badge.
   const statusLabel = isMon ? 'Monitoring' : isPaused ? 'Paused' : isRunning ? 'Running' : (pill.state || 'idle');
   setText('[data-lc="hstatus"]', statusLabel.charAt(0).toUpperCase() + statusLabel.slice(1));
-  setText('[data-lc="title"]', (pill.name && pill.name !== '—') ? pill.name.toUpperCase() : 'Loading campaign…');
+  setText('[data-lc="title"]', campaignTitle(s, pill.name !== '—' ? pill.name : '').toUpperCase());
   // Short mode tag ("C+D") — pill.mode can be the full mode string for modes
   // missing from MODE_LABELS, which overflowed the badge into the × button.
   setText('[data-lc="badge"]', (typeof v3ModeBadge === 'function') ? v3ModeBadge(s.mode) : pill.mode);
@@ -35009,3 +35025,18 @@ if (typeof window !== 'undefined') {
   // And once on load, for a name restored from a draft or the last session.
   setTimeout(_maybeLoadByName, 2500);
 }
+
+async function retrySalesNavAccess(profileId, button) {
+  button.disabled = true;
+  try {
+    const r = await fetch(`/api/campaign/profile/${encodeURIComponent(profileId)}/sales-nav/retry`, { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok || !data.ok) throw new Error(data.error || 'Could not reset Sales Navigator check');
+    showCampaignToast('Sales Navigator will be checked again on the next eligible message.', 6000);
+    await pollStatus();
+  } catch (error) {
+    showCampaignToast(error.message, 6000);
+    button.disabled = false;
+  }
+}
+window.retrySalesNavAccess = retrySalesNavAccess;

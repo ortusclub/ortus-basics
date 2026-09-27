@@ -216,3 +216,6 @@ CREATE TABLE IF NOT EXISTS campaign_reply_state (
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (campaign_id, account)
 );
+
+-- Actual successful message route; unknown historical sends remain NULL.
+ALTER TABLE leads ADD COLUMN IF NOT EXISTS sent_via TEXT;
