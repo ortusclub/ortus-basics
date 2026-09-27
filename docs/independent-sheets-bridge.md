@@ -54,7 +54,23 @@ older sends remain blank. This is the independent bridge, not the shared default
 The deployment accepts unauthenticated HTTP transport so Electron can call it,
 but its entry points require a random 256-bit private key. The generated script,
 key, project ID, and `.env` remain local and ignored by Git. Do not share the
-key-bearing endpoint or package this local `.env` into a public release.
+developer `.env` into a public release.
+
+## Team desktop release 1.7.55
+
+On 2026-09-27 Sam explicitly authorized distributing the bridge key in the app so
+team members only need to update. Treat this credential as public/extractable,
+not as a private authentication boundary. The owner identity and Google scopes
+remain those of Sam's deployment. No other local credentials may be included.
+
+Run `node scripts/prepare-team-release-env.mjs <isolated-release-directory>`
+before building the Mac installers. It creates a minimal packaged `.env` with
+only `ORTUS_SHEETS_WEBAPP_URL`. Do not build the public release directly from
+the developer checkout. The source-only default remains the old bridge unless
+an override is supplied. Separate FG, Magellan and logging deployments are
+unchanged. This does not update the cloud engine. Sheets must be accessible to
+the deployment owner. Rollback requires another desktop configuration release;
+rotating the shared key invalidates installed copies until they update.
 
 ## Verification
 
