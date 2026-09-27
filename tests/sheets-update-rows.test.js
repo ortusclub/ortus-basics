@@ -1,3 +1,5 @@
+// These tests mock transport; provide a dummy configured workspace for gateway signing.
+process.env.GOLOGIN_API_TOKEN = 'test-only-workspace-credential';
 // updateSheetRows — the batched ledger write-back.
 //
 // The FG list reconcile re-emits EVERY actioned lead on every 30s tick (it is

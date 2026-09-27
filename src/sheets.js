@@ -1,3 +1,4 @@
+import { sheetsFetch } from './sheets-gateway-client.js';
 /**
  * Fetches rows from a publicly shared Google Sheet by converting it to CSV.
  * The sheet must be set to "Anyone with the link can view".
@@ -305,7 +306,7 @@ export async function listSheetTabs(sheetUrl) {
   // Mirror the redirect-aware POST pattern from sheets-writer.js
   let res;
   try {
-    const initial = await fetch(webAppUrl, {
+    const initial = await sheetsFetch(webAppUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,

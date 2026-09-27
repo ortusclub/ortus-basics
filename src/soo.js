@@ -1,3 +1,4 @@
+import { sheetsFetch } from './sheets-gateway-client.js';
 /**
  * Shared helper for fetching State of Operations data from the Apps Script
  * web app. Used by both the /api/soo-status endpoint and the signup allowlist
@@ -158,7 +159,7 @@ async function fetchSoOOnce() {
     // row writes is exactly the contention that trips the per-spreadsheet
     // simultaneous-invocation limit.
     data = await onWebappLane(async () => {
-      const initial = await fetch(webappUrl, {
+      const initial = await sheetsFetch(webappUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: payload,

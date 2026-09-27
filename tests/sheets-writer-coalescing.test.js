@@ -1,3 +1,5 @@
+// These tests mock transport; provide a dummy configured workspace for gateway signing.
+process.env.GOLOGIN_API_TOKEN = 'test-only-workspace-credential';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 

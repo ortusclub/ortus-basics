@@ -56,21 +56,15 @@ but its entry points require a random 256-bit private key. The generated script,
 key, project ID, and `.env` remain local and ignored by Git. Do not share the
 developer `.env` into a public release.
 
-## Team desktop release 1.7.55
+## Team desktop gateway release 1.7.56
 
-On 2026-09-27 Sam explicitly authorized distributing the bridge key in the app so
-team members only need to update. Treat this credential as public/extractable,
-not as a private authentication boundary. The owner identity and Google scopes
-remain those of Sam's deployment. No other local credentials may be included.
-
-Run `node scripts/prepare-team-release-env.mjs <isolated-release-directory>`
-before building the Mac installers. It creates a minimal packaged `.env` with
-only `ORTUS_SHEETS_WEBAPP_URL`. Do not build the public release directly from
-the developer checkout. The source-only default remains the old bridge unless
-an override is supplied. Separate FG, Magellan and logging deployments are
-unchanged. This does not update the cloud engine. Sheets must be accessible to
-the deployment owner. Rollback requires another desktop configuration release;
-rotating the shared key invalidates installed copies until they update.
+The proposed shared-key 1.7.55 installers were blocked by automatic approval
+review and were never published. Their staging artifacts were deleted.
+The replacement uses the authenticated Cloud Run gateway documented in
+`services/sheets-gateway/README.md`. The script and its private key remain
+server-side. Desktop builds contain no credentials; existing approved GoLogin
+workspace credentials authorize signed gateway requests without another login.
+The public release environment generator now writes a comment-only `.env`.
 
 ## Verification
 

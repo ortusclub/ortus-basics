@@ -1,3 +1,4 @@
+import { sheetsFetch } from './sheets-gateway-client.js';
 /**
  * Writes account status back to the State of Operations (SoO) "LinkedIn
  * Accounts" board. Companion to src/soo.js (which only READS the SoO).
@@ -300,7 +301,7 @@ async function _postOnceOnLane(payload) {
   // sheets-writer.js:88, log-writer.js:232). Sharing one signal meant the
   // second hop inherited whatever was left of the first, and since Apps Script
   // answers every POST with a 302 there is ALWAYS a second hop.
-  const initial = await fetch(SHEETS_WEBAPP_URL, {
+  const initial = await sheetsFetch(SHEETS_WEBAPP_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),

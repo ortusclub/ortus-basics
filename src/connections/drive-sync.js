@@ -1,3 +1,4 @@
+import { sheetsFetch } from '../sheets-gateway-client.js';
 // Drive folder sync for Team Connections. Pulls the team's <email>.csv network
 // exports from the Q2 2026 Drive folder into data/connections/ via the central
 // Apps Script web app (action: listConnections / getConnection), then refreshes
@@ -27,7 +28,7 @@ async function postWebApp(payload, { timeoutMs = 30000 } = {}) {
     // Apps Script's 302 points at a ONE-TIME URL. Fetching it ourselves spends
     // it outside its redirect and Google answers 404 — see the note in
     // magellan-sheet.js for the measurement. fetch follows it correctly.
-    const res = await fetch(SHEETS_WEBAPP_URL, {
+    const res = await sheetsFetch(SHEETS_WEBAPP_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,

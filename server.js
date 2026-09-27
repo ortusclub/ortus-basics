@@ -132,7 +132,7 @@ import { connectionsPropOptions, addConnectionsOptions, tokenScopes } from './sr
 import { normMonth } from './src/connections/fg-export.js';
 import { startSync as startConnectionsSync, getSyncState as getConnectionsSyncState, createWorkbookTab } from './src/connections/drive-sync.js';
 import { runFollowerInvites } from './src/linkedin/follower-invite.js';
-import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './src/sheets-webapp-url.js';
+import { ORTUS_PAGE_INVITE_URL, SHEETS_WEBAPP_URL, ENGINE_SHEETS_WEBAPP_URL, SOO_SHEET_ID, SOO_SHEET_GID } from './src/sheets-webapp-url.js';
 import { resolveSoOEmail, resolveSoOTarget, resolveOperatorStamp, flipAccountInUse, cloudFlipAction } from './src/soo-writer.js';
 import { reconcileCloudConnections, reconcileCloudInUse } from './src/cloud-soo-reconcile.js';
 import { cloudLeadToLocalSheetData } from './src/cloud-sheet-reconcile.js';
@@ -1599,7 +1599,7 @@ async function handleStartCloud(req, res) {
       // Sheet write-back: the engine pushes per-lead status back to this
       // operator's Apps Script web app (same one local campaigns use), matching
       // rows by this linkedin column — so cloud results land in the Sheet too.
-      sheetsWebappUrl: SHEETS_WEBAPP_URL,
+      sheetsWebappUrl: ENGINE_SHEETS_WEBAPP_URL,
       linkedinColumn: linkedinColumn || 'LinkedIn URL',
       // Ban-safety: randomized inter-send delay (seconds) the engine's worker
       // waits between sends per account — same knob local campaigns use. The

@@ -1,3 +1,4 @@
+import { sheetsFetch } from './sheets-gateway-client.js';
 /**
  * Google Sheets writer.
  *
@@ -91,7 +92,7 @@ async function _postOnce(url, body) {
     // redirect, hitting doGet() instead of doPost(). Handle manually.
     // P-05 fix (2.8.18): 15s timeout on both legs of the redirect chain.
     // Without it, an Apps Script hang stalls the campaign loop indefinitely.
-    const initial = await fetch(url, {
+    const initial = await sheetsFetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body,

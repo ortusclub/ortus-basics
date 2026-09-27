@@ -1,3 +1,5 @@
+// These tests mock transport; provide a dummy configured workspace for gateway signing.
+process.env.GOLOGIN_API_TOKEN = 'test-only-workspace-credential';
 // The SoO fetch is the launcher's whole source of truth: every account's first
 // name, its FREE/in-use state, and the Construction filter all come from it. When
 // it fails, sooData is EMPTY — so every account renders "no first name" and the

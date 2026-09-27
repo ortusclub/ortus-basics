@@ -16,13 +16,13 @@
  *     deployer, Antonio) can read/write it.
  */
 
-// Apps Script web app deployment — the single endpoint every operator's app
-// POSTs to for sheet reads/writes. Deployed under Antonio's Google account.
-// NOTE: v2.72 adds a `writeRecentMessages` action (Recent Messages tab). For
-// that tab to populate in production, Antonio must redeploy the updated
-// google-apps-script.js on this centralized deployment. Connections and all
-// existing sheet writes work regardless.
-export const SHEETS_WEBAPP_URL = process.env.ORTUS_SHEETS_WEBAPP_URL?.trim() || 'https://script.google.com/macros/s/AKfycbwZu0ormMlS2IfC7yarIZDBz0XJj_FbOcp5omJTWQPCGsQ8YO3_npqGUQojNc1fmHyXCg/exec';
+// Desktop calls use the authenticated team gateway; its upstream Apps Script
+// credential stays in Secret Manager. Explicit local overrides remain supported.
+export const SHEETS_GATEWAY_URL = 'https://ortus-sheets-gateway-329664205285.asia-southeast1.run.app/bridge';
+export const LEGACY_SHEETS_WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbwZu0ormMlS2IfC7yarIZDBz0XJj_FbOcp5omJTWQPCGsQ8YO3_npqGUQojNc1fmHyXCg/exec';
+export const SHEETS_WEBAPP_URL = process.env.ORTUS_SHEETS_WEBAPP_URL?.trim() || SHEETS_GATEWAY_URL;
+// The old cloud engine cannot sign gateway requests; retain its existing route until upgraded.
+export const ENGINE_SHEETS_WEBAPP_URL = SHEETS_WEBAPP_URL === SHEETS_GATEWAY_URL ? LEGACY_SHEETS_WEBAPP_URL : SHEETS_WEBAPP_URL;
 
 // State of Operations sheet — the team-wide dashboard of which LinkedIn
 // account is in use / cooling off / banned. Drives the SoO panel in the app
