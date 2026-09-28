@@ -1,7 +1,10 @@
 # Company Google sign-in for Sheets
 
-Status: implemented in source; requires an OAuth desktop client, gateway deployment,
-and a new Basics app release. Installed 1.7.56 is unchanged.
+Status: Google Desktop client configured and gateway revision
+`ortus-sheets-gateway-00002-k7r` deployed on 2026-09-28. Basics 1.7.57
+is prepared as a test prerelease; existing 1.7.56 installations are unchanged.
+Live configuration, unsigned/forged rejection and legacy spreadsheet reads passed.
+A real company-account sign-in and write remain to be tested by the operator.
 
 ## User experience
 
