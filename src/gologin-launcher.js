@@ -1,3 +1,4 @@
+import { recordWorkspaceVerification } from './gologin-credential-check.js';
 import GoLogin from 'gologin';
 import puppeteer from 'puppeteer-core';
 import { hideByPid } from './mac-window.js';
@@ -104,6 +105,9 @@ export function selectOrphanPids({ spawned, activePids, isAlive }) {
 // entire campaign. Keyed by account id since v2.160.138: the app lists more
 // than one GoLogin workspace and a single shared cache would let whichever
 // account refreshed last stand in for both.
+let profileCacheGeneration = 0;
+let profileLoadWarnings = [];
+export function getProfileLoadWarnings() { return profileLoadWarnings.map(warning => ({ ...warning })); }
 const profileCaches = new Map(); // accountId → { list, time }
 // accountId → the in-flight fetch, so callers that arrive while one workspace is
 // still listing WAIT for it instead of starting a second one. profileCaches only
@@ -230,6 +234,9 @@ async function fetchAccountProfiles(accountId, token) {
  */
 export async function getProfiles(_ignoredLegacyToken) {
   const out = [];
+  const generation = profileCacheGeneration;
+  const failures = [];
+  let successfulAccounts = 0;
   // Owner decided fresh on every run, then published in one go below — so a
   // profile that genuinely MOVES workspaces re-tags on the next list instead of
   // being frozen by the first answer we ever recorded.
@@ -241,29 +248,31 @@ export async function getProfiles(_ignoredLegacyToken) {
 
     if (cached && Date.now() - cached.time < CACHE_TTL) {
       list = cached.list;
+      successfulAccounts += 1;
     } else {
       try {
         let pending = profileFetches.get(acc.id);
         if (!pending) {
+          const generation = profileCacheGeneration;
           pending = fetchAccountProfiles(acc.id, tokenForAccount(acc.id))
             .then((fresh) => {
               // Stamped when the list ARRIVES, not when it was asked for, so a
               // slow page-through cannot spend most of its own TTL loading.
-              profileCaches.set(acc.id, { list: fresh, time: Date.now() });
+              if (generation === profileCacheGeneration) profileCaches.set(acc.id, { list: fresh, time: Date.now() });
               return fresh;
             })
-            .finally(() => profileFetches.delete(acc.id));
+            .finally(() => { if (generation === profileCacheGeneration) profileFetches.delete(acc.id); });
           profileFetches.set(acc.id, pending);
         }
         list = await pending;
+        successfulAccounts += 1;
       } catch (err) {
-        // A secondary account being down must never blank the primary roster —
-        // that would empty the picker for operators who have nothing to do with
-        // it. Serve its last known list (or nothing) and carry on. The default
-        // account still throws: an empty picker there is a real outage and has
-        // always surfaced as one.
-        if (acc.id === DEFAULT_ACCOUNT_ID) throw err;
-        console.warn(`[gologin] ${acc.id} profile list failed (${err.message}) — using ${cached ? 'stale cache' : 'no profiles'} for it`);
+        // One invalid workspace must not hide another valid workspace.
+        const status = /GoLogin API (401|403)/.exec(err.message)?.[1];
+        failures.push({ id: acc.id, label: acc.label, error: status
+          ? `GoLogin rejected this workspace's token (HTTP ${status}). Update or remove it in Settings.`
+          : 'This workspace could not be loaded. Check its connection and try again.' });
+        console.warn(`[gologin] ${acc.id} profile list failed — keeping other workspaces available`);
         list = cached ? cached.list : [];
       }
     }
@@ -288,6 +297,12 @@ export async function getProfiles(_ignoredLegacyToken) {
     }
   }
 
+  if (generation !== profileCacheGeneration) throw new Error('Workspace settings changed while loading. Refresh the account list.');
+  profileLoadWarnings = failures;
+  for (const failure of failures) recordWorkspaceVerification(failure.id, { ...failure, ok: false });
+  if (!successfulAccounts && failures.length) {
+    throw new Error('Could not load any workspace. ' + failures.map(f => `${f.label}: ${f.error}`).join(' '));
+  }
   for (const [id, accId] of owner) profileAccount.set(id, accId);
 
   console.log(`[gologin] Total: ${out.length} profiles across ${configuredAccounts().length} account(s)`);
@@ -320,6 +335,9 @@ export async function tokenForProfile(profileId) {
 }
 
 export function clearProfileCache() {
+  profileCacheGeneration += 1;
+  profileLoadWarnings = [];
+  profileFetches.clear();
   profileCaches.clear();
   profileAccount.clear();
 }

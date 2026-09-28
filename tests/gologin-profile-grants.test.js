@@ -61,10 +61,10 @@ test('the owning workspace still owns it — mode rules and token are unchanged'
 
 test('a granted profile still obeys its owner mode rules', () => {
   withGrants(`linkedvelocity:m1`, () => {
-    // m1 lives in marketing, which refuses everything but FG/Post Amp. The
+    // m1 lives in marketing, which refuses everything but Introduction Campaign. The
     // grant opens WHO, never WHAT.
     assert.equal(profileUsableFor('milee@linkedvelocity.com', 'marketing', 'connect_and_introduce', 'm1'), false);
-    assert.equal(profileUsableFor('milee@linkedvelocity.com', 'marketing', 'follower_growth', 'm1'), true);
+    assert.equal(profileUsableFor('milee@linkedvelocity.com', 'marketing', 'introduce_back', 'm1'), true);
   });
 });
 

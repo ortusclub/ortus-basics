@@ -34,7 +34,7 @@ import { withGid, extractSheetGid } from './utils.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab, flushSheetWrites } from './sheets-writer.js';
 import { INTRO_HELD_PRIMARY_NOT_CONNECTED, INTRO_HELD_NO_PRIMARY } from './linkedin/intro-constants.js';
 import { SHEETS_WEBAPP_URL } from './sheets-webapp-url.js';
-import { writeSheetWithRetry, getFailures, clearFailures, configure as configureSheetWriteTracker } from './sheet-write-tracker.js';
+import { queueSheetWrite, getPendingSheetWrites as getFailures, setSheetSyncReporter } from './sheet-sync.js';
 import { getPrefs as getOperatorPrefs, identityGateEnabled } from './operator-prefs.js';
 import { opsLogEvent, flushOpsLog, campaignLogAppendRun, dashboardUpsert } from './log-writer.js';
 import { classifyOutcome } from './linkedin/outcome-classify.js';
@@ -1362,67 +1362,32 @@ async function appendWarningLog(entry) {
   }
 }
 
-// Wire sheet-write-tracker's warning logger so persistent write failures are
-// surfaced in the operator warning log as well as the in-memory ledger.
-configureSheetWriteTracker({
-  warningLogger: (entry) => appendWarningLog({ ts: new Date().toISOString(), kind: 'sheet_write_failed', ...entry }).catch(() => {}),
+// Background recovery reports into the same log the operator copies.
+setSheetSyncReporter((entry, result) => {
+  if (result?.storageError) { log(`  ⚠ Sheet recovery storage could not be read: ${result.error}. Check local storage before continuing.`); return; }
+  if (result?.ok) log(`  ✓ Sheet result saved for ${entry.leadName || entry.url}.`);
+  else {
+    log(`  ⚠ Sheet result waiting to sync for ${entry.leadName || entry.url}: ${result?.error || 'Write not confirmed'}. Saved locally; retrying automatically.`);
+    appendWarningLog({ ts: new Date().toISOString(), kind: 'sheet_write_failed', ...entry }).catch(() => {});
+  }
 });
 
-/**
- * Second-level safety net for sheet write-backs. updateSheetRow already
- * retries transient errors internally (sheets-writer withWriteRetry, 3×/1s);
- * this wrapper retries ONCE more after 30s and, if still failing, records
- * the failure to the sheet-write-tracker ledger so the operator can see and
- * manually retry it (dashboard warning + /api/campaign/sheet-write-failures).
- * Never throws — a failed write must not stop the campaign loop.
- */
-// Writes still in flight. The campaign no longer waits for a sheet write before
-// moving to the next lead — see trackedSheetWrite — so something has to hold the
-// promises until the end of the run.
+// Only waits for current attempts when ending a run; failed results stay on disk.
 const _pendingSheetWrites = new Set();
 
-// Ortus Basics 1.0: the campaign used to AWAIT every sheet write inline. With
-// Apps Script slow or failing, that cost minutes per lead: WEBAPP_TIMEOUT_MS is
-// 60s and applies to both legs of the redirect, and writeSheetWithRetry does
-// attempt → 30s sleep → attempt. A single failing row could stall the loop for
-// ~4.5 minutes while the browser sat idle.
-//
-// The write is now fired and left to run. The result still lands in the sheet
-// and a failure still reaches the ledger; the loop simply stops waiting on it.
-// Ordering is safe: sheets-writer coalesces by sheet+column and merges rows
-// written inside the same window, so concurrent writes for different leads
-// batch rather than race.
+// Persist the full result first. Network attempts run in the background, with
+// ordered retries for the same lead and recovery across app restarts.
 async function trackedSheetWrite(sheetUrl, url, leadName, sheetData, linkedinColumn) {
-  // updateSheetRow returns a boolean (true=ok, false=failed) — never throws.
-  // When no webapp is configured, false is a no-op (nothing to track or retry).
-  if (!SHEETS_WEBAPP_URL) return;
-
-  const p = writeSheetWithRetry(
-    () => updateSheetRow(sheetUrl, url, sheetData, linkedinColumn)
-        .then((ok) => (ok ? {} : { error: 'sheet write failed (updateSheetRow returned false)' })),
-    {
-      url,
-      leadName,
-      column: linkedinColumn || '',
-      payload: JSON.stringify(sheetData),
-    },
-  ).catch((err) => {
-    // writeSheetWithRetry records its own failures; this only stops an unhandled
-    // rejection now that nobody is awaiting the promise.
-    console.warn(`[sheets-writer] write for ${leadName || url} threw: ${err?.message || err}`);
+  const p = queueSheetWrite({
+    sheetUrl, url, leadName, column: linkedinColumn || '', payload: JSON.stringify(sheetData),
+  }).catch((err) => {
+    log(`  ⚠ Could not save sheet result for recovery (${leadName || url}): ${err.message}. Keep this app open and check storage.`);
   }).finally(() => {
     _pendingSheetWrites.delete(p);
     campaign.sheetWriteFailures = getFailures().length;
   });
-
   _pendingSheetWrites.add(p);
-
-  // A hard ceiling so a stalled Apps Script cannot accumulate hundreds of
-  // in-flight writes. Well above a turn's BATCH_SIZE, so it never bites during
-  // normal running.
-  if (_pendingSheetWrites.size >= 40) {
-    await Promise.race([..._pendingSheetWrites]).catch(() => {});
-  }
+  if (_pendingSheetWrites.size >= 40) await Promise.race([..._pendingSheetWrites]).catch(() => {});
 }
 
 /** Let every outstanding write finish. Called before a run reports itself done. */
@@ -2275,8 +2240,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
   campaign._cooldown429 = new Map(); // profileId -> { until, pName, reason }
   campaign.softWarnings = [];
   campaign.profileEndReasons = [];
-  campaign.sheetWriteFailures = 0;
-  clearFailures();
+  campaign.sheetWriteFailures = getFailures().length;
   campaign.name = (typeof name === 'string' ? name : '').trim();
   // v2.13.14: stash the wizard inputs on the campaign object so the
   // monitoring path (runMonitoringCheck → runAutoIntros) can read them
@@ -6893,7 +6857,7 @@ export function getCampaignStatus() {
     // Local-browser re-login recovery: drives the "log into LinkedIn" popup.
     awaitingLogin: campaign.awaitingLogin || null,
     softWarnings: campaign.softWarnings.slice(),
-    sheetWriteFailures: campaign.sheetWriteFailures || 0,
+    sheetWriteFailures: getFailures().length,
     profileEndReasons: campaign.profileEndReasons.slice(),
     // v2.137: 429 cooldown surfacing — profileId -> { until, pName, reason:'429' }.
     // Expired entries filtered so the UI never renders a stale countdown.

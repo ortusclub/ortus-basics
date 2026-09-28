@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 
 import {
   updateSheetRow,
+  updateSheetRowResult,
   batchUpdateSheet,
   flushSheetWrites,
   isTransientWriteError,
@@ -154,5 +155,25 @@ test('flushSheetWrites lands rows that are still buffered', async () => {
     await flushSheetWrites();
     assert.equal(app.posts.length, 1, 'flush does not wait out the coalescing window');
     assert.equal(await pending, true);
+  });
+});
+
+
+test('detailed row results preserve failures while the legacy caller still receives a boolean', async () => {
+  await withMock(payload => ({ success: true, results: payload.rows.map(row =>
+    row.linkedinUrl.endsWith('missing') ? { error: 'Row not found in selected tab' } : { ok: true }) }), async () => {
+    const results = await Promise.all([
+      updateSheetRowResult(SHEET, 'https://linkedin.com/in/missing', { stage: 'DM Sent' }),
+      updateSheetRowResult(SHEET, 'https://linkedin.com/in/found', { stage: 'DM Sent' }),
+      updateSheetRow(SHEET, 'https://linkedin.com/in/missing', { stage: 'DM Sent' }),
+    ]);
+    assert.deepEqual(results, [{ ok: false, error: 'Row not found in selected tab' }, { ok: true }, false]);
+  });
+});
+
+test('unconfirmed batch writes report an actionable failure to every caller', async () => {
+  await withMock(() => ({ error: 'No LinkedIn URL column found in the sheet' }), async () => {
+    const result = await updateSheetRowResult(SHEET, 'lead', { stage: 'DM Sent' });
+    assert.deepEqual(result, { ok: false, error: 'No LinkedIn URL column found in the sheet' });
   });
 });

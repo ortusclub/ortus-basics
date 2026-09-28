@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=1.7.56" />
+  <link rel="stylesheet" href="/css/style.css?v=1.7.56-workspace-feedback" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.14" />
 </head>
 <body data-dashboard="v3">
@@ -4017,7 +4017,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=1.7.56"></script>
+<script type="module" src="/js/app.js?v=1.7.56-sheet-recovery"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before
@@ -4247,10 +4247,18 @@
       <div class="stop-choice-eyebrow">Settings</div>
       <h3 id="cred-title" class="modal-title">GoLogin workspace tokens</h3>
       <p class="stop-choice-sub">Paste the tokens you have. What you can use follows from what you add — a workspace with no token contributes no accounts, and its accounts never appear in the picker. Stored on this Mac only, never in the app itself.</p>
+      <section aria-label="Google Sheets connection" style="margin:16px 0;padding:16px;border:1px solid var(--border);border-radius:12px">
+        <h4>Google Sheets connection</h4>
+        <p>Sign in once with your company Google account to save campaign results. The shared writer needs editor access to the spreadsheet.</p>
+        <p id="sheets-google-status" role="status" aria-live="polite">Checking connection…</p>
+        <button type="button" class="btn btn-secondary" id="sheets-google-connect">Connect Google Sheets</button>
+        <button type="button" class="btn btn-secondary" id="sheets-google-disconnect" hidden>Disconnect Google</button>
+      </section>
       <div id="cred-fields"></div>
-      <div id="cred-msg" class="cred-msg" hidden></div>
+      <div id="cred-msg" class="cred-msg" role="status" aria-live="polite" hidden></div>
       <div class="stop-choice-cancel-row">
         <button type="button" class="btn btn-secondary" onclick="closeCredentialsModal()">Cancel</button>
+        <button type="button" class="btn btn-secondary" id="cred-check" onclick="checkSavedCredentials()">Check connection</button>
         <button type="button" class="btn" id="cred-save" onclick="saveCredentialsFromModal()">Save tokens</button>
       </div>
     </div>
@@ -4271,5 +4279,6 @@
       </div>
     </div>
   </div>
+  <script type="module" src="/js/sheets-google-settings.js"></script>
 </body>
 </html>

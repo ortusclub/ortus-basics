@@ -97,3 +97,25 @@ test('non-blocking: fn throws both times → writeSheetWithRetry resolves (does 
     writeSheetWithRetry(fn, {}, { retryDelayMs: 1, sleep: noSleep })
   );
 });
+
+
+test('failed message results retain complete replay JSON and original sheet', async () => {
+  const sheetUrl = 'https://docs.google.com/spreadsheets/d/ORIGINAL/edit#gid=42';
+  const data = { sender: 'sender@example.com', stage: 'DM Sent', message: 'confirmed message '.repeat(60) };
+  await writeSheetWithRetry(async () => ({ error: 'Row not found' }),
+    { sheetUrl, url: 'lead', payload: JSON.stringify(data) }, { sleep: noSleep });
+  const [failure] = getFailures();
+  assert.equal(failure.sheetUrl, sheetUrl);
+  assert.deepEqual(JSON.parse(failure.payload), data);
+  await retryFailures(async saved => {
+    assert.equal(saved.sheetUrl, sheetUrl);
+    assert.deepEqual(JSON.parse(saved.payload), data);
+    return { ok: true };
+  });
+  assert.equal(getFailures().length, 0);
+});
+
+test('thrown terminal failure remains available to campaign reporting', async () => {
+  const result = await writeSheetWithRetry(async () => { throw new Error('Gateway offline'); }, {}, { sleep: noSleep });
+  assert.equal(result.error, 'Gateway offline');
+});

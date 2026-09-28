@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   getProfiles,
+  getProfileLoadWarnings,
   clearProfileCache,
   accountOfProfile,
   tokenForProfile,
@@ -113,10 +114,13 @@ test('a Linked Velocity outage does not blank the Ortus roster', async () => {
   });
 });
 
-test('an Ortus outage still throws — an empty picker there is a real outage', async () => {
+test('an Ortus outage does not hide a working Linked Velocity workspace', async () => {
   await withAccounts({ ortus: ORTUS, lv: LV }, async () => {
     mockGologin({ [ORTUS]: { throws: 'ECONNRESET' }, [LV]: { profiles: [{ id: 'v1', name: 'lv' }] } });
-    await assert.rejects(() => getProfiles(), /ECONNRESET/);
+    const list = await getProfiles();
+    assert.deepEqual(list.map(p => p.id), ['v1']);
+    assert.equal(getProfileLoadWarnings()[0].id, 'ortus');
+    assert.equal(await tokenForProfile('v1'), LV);
   });
 });
 
@@ -226,5 +230,16 @@ test('a profile that genuinely moves workspaces re-tags on the next list', async
     });
     await getProfiles();
     assert.equal(accountOfProfile('p1'), 'marketing');
+  });
+});
+
+ test('all rejected workspaces fail clearly; an authenticated empty workspace is still a success', async () => {
+  await withAccounts({ortus:ORTUS,lv:LV},async()=>{
+    mockGologin({[ORTUS]:{throws:'rejected'},[LV]:{throws:'rejected'}});
+    await assert.rejects(()=>getProfiles(),/Could not load any workspace/);
+    clearProfileCache();
+    mockGologin({[ORTUS]:{throws:'rejected'},[LV]:{profiles:[]}});
+    assert.deepEqual(await getProfiles(),[]);
+    assert.equal(getProfileLoadWarnings().length,1);
   });
 });

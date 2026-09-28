@@ -43,3 +43,50 @@ test('desktop signs only the exact gateway, tries approved credentials only on 4
  calls=0;globalThis.fetch=async()=>{calls++;return {status:502}};await sheetsFetch(SHEETS_GATEWAY_URL,{method:'POST',body});assert.equal(calls,1);
  globalThis.fetch=async(url,opts)=>{assert.equal(opts.headers,undefined);return {status:200}};await sheetsFetch('https://example.com',{method:'POST',body});
 });
+
+
+test('an approved token saved under Other workspaces can authorize sheet writes', async t => {
+  const { sheetsFetch } = await import('../src/sheets-gateway-client.js');
+  const { setCustomAccounts, GL_ACCOUNTS } = await import('../src/gologin-accounts.js');
+  const { SHEETS_GATEWAY_URL } = await import('../src/sheets-webapp-url.js');
+  const originalFetch = globalThis.fetch;
+  const envName = 'GOLOGIN_API_TOKEN_OTHER_TEST';
+  const saved = new Map([...GL_ACCOUNTS.map(a => a.env), envName].map(name => [name, process.env[name]]));
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    setCustomAccounts([]);
+    for (const [name, value] of saved) {
+      if (value === undefined) delete process.env[name]; else process.env[name] = value;
+    }
+  });
+  for (const account of GL_ACCOUNTS) delete process.env[account.env];
+  process.env[envName] = 'approved-custom-workspace-test';
+  setCustomAccounts([{ id: 'other-test', label: 'Team workspace', env: envName }]);
+  const approved = workspaceKey(process.env[envName]);
+  const body = JSON.stringify({ action: 'updateRows', sheetId: 'test', rows: [] });
+  let calls = 0;
+  globalThis.fetch = async (url, options) => {
+    calls += 1;
+    assert.equal(url, SHEETS_GATEWAY_URL);
+    assert.ok(verifyRequest([approved], options.headers, body));
+    assert.doesNotMatch(JSON.stringify(options), /approved-custom-workspace-test/);
+    return { status: 200 };
+  };
+  assert.equal((await sheetsFetch(SHEETS_GATEWAY_URL, { method: 'POST', body })).status, 200);
+  assert.equal(calls, 1);
+});
+
+test('a different valid GoLogin token is not implicitly approved by the Sheets gateway', () => {
+  const body = JSON.stringify({ action: 'listTabs', sheetId: 'test' });
+  const approved = workspaceKey('approved-workspace');
+  const other = workspaceKey('another-valid-gologin-token');
+  assert.equal(verifyRequest([approved], signRequest(other, body), body), null);
+  assert.ok(verifyRequest([approved], signRequest(approved, body), body));
+});
+
+test('a computer clock more than two minutes off rejects even an approved token', () => {
+  const now = Date.now();
+  const body = '{}';
+  const approved = workspaceKey('approved-workspace');
+  assert.equal(verifyRequest([approved], signRequest(approved, body, now - 121000), body, now), null);
+});

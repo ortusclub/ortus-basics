@@ -62,14 +62,13 @@ export const GL_ACCOUNTS = Object.freeze([
   //                      INTO this workspace either — it is never somebody's
   //                      "own" account set, just a shared pool.
   //   modes: [...]     → the only protection, and it holds against everyone:
-  //                      these accounts refuse every mode except Follower
-  //                      Growth and Post Amplification.
+  //                      these accounts run Introduction Campaign only.
   Object.freeze({
     id: 'marketing',
     label: 'Marketing',
     env: 'GOLOGIN_API_TOKEN_MARKETING',
     domains: Object.freeze([]),
-    modes: Object.freeze(['follower_growth', POST_AMPLIFICATION_MODE]),
+    modes: Object.freeze(['introduce_back']),
     openToAll: true,
   }),
 ]);

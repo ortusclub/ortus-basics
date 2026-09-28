@@ -1,11 +1,20 @@
+import { sheetsGoogle } from './sheets-google-auth.js';
 import { workspaceKey, signRequest } from './sheets-gateway-protocol.mjs';
-import { GL_ACCOUNTS } from './gologin-accounts.js';
+import { allAccounts } from './gologin-accounts.js';
 import { SHEETS_GATEWAY_URL } from './sheets-webapp-url.js';
 // Only sign requests to the exact shipped gateway. Never forward signatures on redirects.
 export async function sheetsFetch(url, options = {}) {
   if (String(url) !== SHEETS_GATEWAY_URL || options.method !== 'POST') return fetch(url, options);
-  const tokens = GL_ACCOUNTS.map(a => process.env[a.env]?.trim()).filter(Boolean);
-  if (!tokens.length) throw Error('A configured company GoLogin workspace is required for the team Sheets bridge.');
+  // Once connected, Google authorization never falls back to workspace credentials.
+  if (sheetsGoogle.status().connected) {
+    const send = async force => fetch(url, {...options, redirect:'error', headers:{...options.headers, Authorization:'Bearer ' + await sheetsGoogle.token({force})}});
+    const response = await send(false);
+    return response.status === 401 ? send(true) : response;
+  }
+  if (!sheetsGoogle.status().legacyAllowed) throw Error('Connect Google Sheets with your company Google account in Settings.');
+  // Compatibility for existing installations during the gateway rollout.
+  const tokens = allAccounts().map(a => process.env[a.env]?.trim()).filter(Boolean);
+  if (!tokens.length) throw Error('Connect Google Sheets with your company Google account in Settings.');
   const body = options.body;
   if (typeof body !== 'string') throw Error('Sheets gateway requires a serialized JSON request');
   let response;

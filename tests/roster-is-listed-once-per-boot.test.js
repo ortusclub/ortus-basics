@@ -72,7 +72,7 @@ test('a failed listing is not cached, so the next caller retries', async () => {
     };
     // Caching the rejected promise would make one network blip at boot poison
     // the roster for the whole 5-minute TTL.
-    await assert.rejects(getProfiles(), /network down/);
+    await assert.rejects(getProfiles(), /Could not load any workspace/);
     const list = await getProfiles();
     assert.deepEqual(list.map((p) => p.id), ['p1']);
   });

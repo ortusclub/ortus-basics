@@ -1,21 +1,37 @@
 import express from 'express';
 import { verifyRequest } from './protocol.mjs';
 const actions = new Set(['prepareSheet','ensureColumns','updateRows','updateRow','batchUpdate','getStatus','getSoO','setSoO','bumpSoOConnections','writeRecentConnections','clearRecentConnections','writeRecentMessages','getRowStatus','listTabs','listConnections','getConnection','createLeadTab']);
-export function createApp({ keys, bridgeUrl, claimNonce, forward = fetch }) {
+export function createApp({ keys = [], bridgeUrl, claimNonce, forward = fetch, verifyGoogle, desktopClient }) {
   const upstream = new URL(bridgeUrl);
   if (upstream.origin !== 'https://script.google.com' || !/^\/macros\/s\/[\w-]+\/exec$/.test(upstream.pathname)) throw Error('Invalid bridge configuration');
   const app = express();
   app.disable('x-powered-by');
   app.get('/health', (_req,res) => res.json({ok:true,service:'ortus-sheets-gateway',protocol:1}));
+  app.get('/auth/config', (_req,res) => {
+    if (!verifyGoogle || !desktopClient?.clientId) return res.status(503).json({error:'Company Google sign-in has not been configured by the administrator yet.'});
+    // Installed-app OAuth metadata is public, not the confidential writer credential.
+    res.json(desktopClient);
+  });
+  async function identity(req) {
+    const match = /^Bearer ([^\s]+)$/.exec(req.headers.authorization || '');
+    if (!match || !verifyGoogle) return null;
+    try { return await verifyGoogle(match[1]); } catch { return null; }
+  }
+  app.get('/auth/me', async (req,res) => {
+    const user = await identity(req);
+    if (!user) return res.status(401).json({error:'Sign in with an approved company Google Workspace account.'});
+    res.json({ok:true,email:user.email});
+  });
   app.post('/bridge', express.raw({type:'application/json',limit:'5mb'}), async (req,res) => {
     if (!Buffer.isBuffer(req.body)) return res.status(400).json({error:'JSON body required'});
-    const auth = verifyRequest(keys, req.headers, req.body);
-    if (!auth) return res.status(401).json({error:'Sheets gateway authorization failed. Your workspace must be approved by the administrator.'});
+    const google = await identity(req);
+    const auth = google ? {google:true} : (req.headers.authorization ? null : verifyRequest(keys, req.headers, req.body));
+    if (!auth) return res.status(401).json({error:'Sheets gateway authorization failed. Connect Google Sheets using your company Google account in Settings.'});
     let data;
     try { data = JSON.parse(req.body.toString('utf8')); } catch { return res.status(400).json({error:'Invalid JSON'}); }
     if (!data || !actions.has(data.action)) return res.status(400).json({error:'Unsupported bridge action'});
     try {
-      if (!await claimNonce(auth)) return res.status(409).json({error:'Request already received'});
+      if (!auth.google && !await claimNonce(auth)) return res.status(409).json({error:'Request already received'});
     } catch { return res.status(503).json({error:'Gateway authorization storage unavailable'}); }
     try {
       const response = await forward(upstream, {method:'POST',headers:{'Content-Type':'application/json'},body:req.body,signal:AbortSignal.timeout(55000)});

@@ -1,3 +1,4 @@
+import { getWorkspaceVerification } from './gologin-credential-check.js';
 /**
  * src/gologin-credentials.js — operator-entered GoLogin workspace tokens.
  *
@@ -78,7 +79,7 @@ export function readOthers() {
   const others = readCredentials()[OTHERS_KEY];
   return (Array.isArray(others) ? others : [])
     .filter((o) => o && String(o.token || '').trim())
-    .map((o, i) => ({ id: otherId(i), label: String(o.label || `Other ${i + 1}`), hint: `••••${String(o.token).trim().slice(-4)}` }));
+    .map((o, i) => ({ id: otherId(i), label: String(o.label || `Other ${i + 1}`), hint: `••••${String(o.token).trim().slice(-4)}`, verification: getWorkspaceVerification(otherId(i)) }));
 }
 
 /** Replace the whole custom-workspace list. Entries: { label, token }. */
@@ -138,6 +139,7 @@ export function credentialStatus() {
       env: f.env,
       required: f.required,
       set: !!v,
+      verification: getWorkspaceVerification(f.id),
       // Enough to recognise a token, useless to steal.
       hint: v ? `••••${v.slice(-4)}` : '',
       fromEnvironment: !!process.env[f.env] && !creds[f.env],

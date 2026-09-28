@@ -1,3 +1,4 @@
+import { completeCredentialUpdate } from './credential-feedback.mjs';
 import { dailyCountText, batchCountText, dailyResetText } from '/js/campaign-counters.mjs';
 import { campaignTitle } from '/js/campaign-title.mjs';
 import { campaignLifecycle, sameCampaign, withCampaignLifecycle, campaignActionSpecs } from '/js/campaign-lifecycle.mjs';
@@ -2081,10 +2082,11 @@ async function loadSoOStatus({ force = false } = {}) {
 // and its owner would lose their account from the picker. A duplicate is only a
 // duplicate inside one workspace anyway — that is where the operator goes to
 // delete it.
-// "Follower Growth and Post Amplification" from the raw mode ids the server
+// Human-readable campaign names from the raw mode ids the server
 // ships. Only the marketing workspace has a list today; the fallback keeps this
 // honest if another restricted workspace is ever added.
 const MODE_DISPLAY_NAMES = {
+  introduce_back: 'Introduction Campaign',
   follower_growth: 'Follower Growth',
   post_amplification: 'Post Amplification',
 };
@@ -2374,14 +2376,14 @@ async function loadProfiles() {
 
   try {
     // Fetch profiles first — render immediately, don't wait for SoO
-    const profilesRes = await fetch('/api/profiles');
+    const profilesRes = await fetch('/api/profiles', { signal: AbortSignal.timeout(20000) });
     const profiles = await profilesRes.json();
-    if (profiles.error) { loading.textContent = `Error: ${profiles.error}`; return; }
+    if (!profilesRes.ok || profiles.error) throw new Error(profiles.error || `HTTP ${profilesRes.status}`);
     _indexProfileNames(profiles); // BEFORE the dedupe — hidden duplicates keep their labels
     allProfilesData = dedupeProfilesByEmail(profiles);
     loading.classList.add('hidden');
     grid.classList.remove('hidden');
-    await loadPrimaryStatusForPicker();
+    loadPrimaryStatusForPicker().then(() => renderProfiles(allProfilesData)).catch(() => {});
     renderProfiles(allProfilesData);
     renderPassoverBanner();
     updateChipCounts();
@@ -2409,8 +2411,13 @@ async function loadProfiles() {
     if (!window.__passoverInterval) {
       window.__passoverInterval = setInterval(renderPassoverBanner, 60000);
     }
+    let warnings = [];
+    try { warnings = JSON.parse(decodeURIComponent(profilesRes.headers.get('X-GoLogin-Warnings') || '[]')); } catch { /* older backend */ }
+    return { ok: true, count: allProfilesData.length, warnings };
   } catch (err) {
-    loading.textContent = `Failed: ${err.message}`;
+    const error = ['TimeoutError', 'AbortError'].includes(err.name) ? 'GoLogin account loading timed out after 20 seconds.' : err.message;
+    loading.textContent = `Failed: ${error}`;
+    return { ok: false, error };
   }
 }
 
@@ -2480,6 +2487,11 @@ function renderProfiles(profiles) {
   // both sort (usable accounts first) and render from the same value. State comes
   // only from classifyAccountState (SoO) — no invented status.
   const _mode = document.getElementById('campaign-mode')?.value || '';
+  // Prune against the full roster, including accounts hidden by the search.
+  const unusable = new Set(allProfilesData.filter((p) => p.available === false
+    || (Array.isArray(p.allowedModes) && !p.allowedModes.includes(_mode))).map((p) => p.id));
+  selectedProfileIds = selectedProfileIds.filter((id) => !unusable.has(id));
+  for (const id of unusable) delete selectedProfileNames[id];
   const _passover = getPassoverStatus();
   const _meId = getMyIdentifier();
   // Breakdown modes (Message Campaign / Direct Messages / InMail Only) don't use
@@ -2519,8 +2531,8 @@ function renderProfiles(profiles) {
     // Another GoLogin workspace's account — visible, never selectable, and
     // locked for a reason SoO knows nothing about, so it's OR'd in separately.
     const _foreign = p.available === false;
-    // Right workspace, wrong job: the marketing accounts run Follower Growth
-    // and Post Amplification only. Tracked apart from _foreign because it is
+    // Right workspace, wrong job: Marketing accounts run Introduction Campaign
+    // only. Tracked apart from _foreign because it is
     // fixable — switching campaign type unlocks the tile — and the copy has to
     // say so rather than implying the operator lacks access.
     const _wrongMode = !_foreign && Array.isArray(p.allowedModes) && !p.allowedModes.includes(_mode);
@@ -2548,14 +2560,10 @@ function renderProfiles(profiles) {
     // until their credits/restrictions can actually be checked. A stale snapshot
     // remains usable and is visibly labelled at the panel level.
     // Ortus Basics 1.0: the SoO does not gate the picker — the operator
-    // decides what is usable. Locking is disabled entirely.
+    // decides what is usable. SoO locking is disabled.
     const _sooLock = false;
     const _locked = _foreign || _wrongMode || _sooLock;
-    // Defensive: a restored preset/schedule must not keep a now-unusable account
-    // selected — drop it (before building the tile so `checked` reflects reality).
-    // Ortus Basics 1.0: nothing is locked in this build, so a re-render (a new
-    // search, a roster refresh) must not silently drop an already-picked account.
-    // (was: _locked → prune from selectedProfileIds)
+    // Workspace and mode restrictions apply independently of the SoO.
     if (selectedProfileIds.includes(p.id)) selectedProfileNames[p.id] = p.name;
     const _checked = selectedProfileIds.includes(p.id) ? 'checked' : '';
     const _disabled = _locked ? 'disabled' : '';
@@ -2678,7 +2686,7 @@ function renderProfiles(profiles) {
         <span class="jt-word">${_word}</span>
       </div>`;
       // Name-only tiles: no status-derived tinting or locking either.
-      _classes = 'profile-item jt' + (_checked ? ' selected' : '');
+      _classes = 'profile-item jt' + (_locked ? ' muted' : '') + (_checked ? ' selected' : '');
       // No name resolves for this account (no SoO row, or a row with a blank
       // First Name) — offer to type one, because the send-time fallback is the
       // account's email and it goes out in the message body. Only on tiles the
@@ -2697,9 +2705,10 @@ function renderProfiles(profiles) {
       _inner = `
       <div class="jt-det">
         <div class="jt-top">
-          <input type="checkbox" value="${p.id}" ${_checked} />
-          <span class="jt-email">${escHtml(p.name)}</span>
+          <input type="checkbox" value="${p.id}" ${_checked} ${_disabled} />
+          <span class="jt-email">${escHtml(p.name)}</span>${_wsPill}
         </div>
+        ${_locked ? `<div class="jt-sub">${_sub}</div>` : ''}
       </div>`;
     }
 
@@ -2723,8 +2732,7 @@ function renderProfiles(profiles) {
       });
     }
     cb.addEventListener('change', () => {
-      // Ortus Basics 1.0: tiles show the account name only, so nothing is locked
-      // on a SoO verdict the operator can no longer see. (was: _locked → refuse)
+      if (_locked) { cb.checked = false; return; }
       try { if (_acctAdd) _acctAddTouched = true; } catch (_) { /* */ }
       if (cb.checked) {
         if (!selectedProfileIds.includes(p.id)) {
@@ -28373,7 +28381,7 @@ function renderSheetWriteWarn(status) {
   el.innerHTML =
     `<div class="sw-warn-line">` +
       `<em class="sw-glyph">⚠</em>` +
-      `<span>${n} sheet write${n === 1 ? '' : 's'} failed —</span>` +
+      `<span>${n} sheet result${n === 1 ? '' : 's'} waiting to sync · saved locally, retrying automatically —</span>` +
       `<button class="sw-btn" id="sw-btn-view" type="button">${__swWarnExpanded ? 'hide' : 'view'}</button>` +
       `<button class="sw-btn" id="sw-btn-retry" type="button">retry</button>` +
     `</div>` +
@@ -28390,7 +28398,7 @@ function renderSheetWriteWarn(status) {
           ? '<div class="sw-item"><span>No details available.</span></div>'
           : items.map(function(f) {
               const nm = escHtml(f.leadName || f.url || '(unknown)');
-              const err = escHtml(f.errorMessage || '');
+              const err = escHtml(f.errorMessage || 'Waiting for Google Sheets');
               return `<div class="sw-item"><span>${nm}</span><span class="sw-item-err">${err}</span></div>`;
             }).join('');
         list.innerHTML = html;
@@ -34653,7 +34661,8 @@ async function renderCredentialsModal() {
   wrap.innerHTML = '<div class="cred-loading">Loading…</div>';
   let creds = [];
   try {
-    const r = await fetch('/api/credentials');
+    const r = await fetch('/api/credentials', { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
     creds = d.credentials || [];
     _credOthers = d.others || [];
@@ -34662,9 +34671,11 @@ async function renderCredentialsModal() {
     return;
   }
   wrap.innerHTML = creds.map((c) => {
-    const state = c.set
-      ? `<span class="cred-state is-set">set · ${escHtml(c.hint)}</span>`
-      : `<span class="cred-state is-unset">${c.required ? 'required' : 'not set'}</span>`;
+    const check = c.verification;
+    const state = check
+      ? `<span class="cred-state ${check.ok ? 'is-set' : 'is-error'}">${check.ok ? `Connected · ${Number(check.profileCount) || 0} accounts` : 'Error'}</span><span class="cred-state is-unset">${escHtml(c.hint || '')}</span>`
+      : `<span class="cred-state is-unset">${c.set ? `Saved · not checked · ${escHtml(c.hint)}` : 'Not set'}</span>`;
+    const errorNote = check && !check.ok ? `<div class="cred-note cred-error" role="status">${escHtml(check.error || 'Connection check failed.')}</div>` : '';
     const envNote = c.fromEnvironment
       ? '<div class="cred-note">Currently supplied by the environment (dev launcher). Saving here overrides it.</div>'
       : '';
@@ -34678,7 +34689,7 @@ async function renderCredentialsModal() {
       <input type="password" class="cred-input" id="cred-${escHtml(c.id)}"
              data-env="${escHtml(c.env)}" autocomplete="off" spellcheck="false"
              placeholder="${c.set ? 'Leave blank to keep the saved token' : 'Paste the GoLogin API token'}">
-      ${envNote}
+      ${envNote}${errorNote}
     </div>`;
   }).join('');
 
@@ -34689,7 +34700,8 @@ async function renderCredentialsModal() {
   // you can drive". Saved rows show only the last four characters.
   const rows = _credOthers.map((o) => `<div class="cred-other-row" data-id="${escHtml(o.id)}">
       <span class="cred-other-name">${escHtml(o.label)}</span>
-      <span class="cred-state is-set">${escHtml(o.hint)}</span>
+      <span class="cred-state ${o.verification ? (o.verification.ok ? 'is-set' : 'is-error') : 'is-unset'}">${o.verification ? (o.verification.ok ? 'Connected' : 'Error') : 'Not checked'} · ${escHtml(o.hint)}</span>
+      ${o.verification && !o.verification.ok ? `<span class="cred-note cred-error">${escHtml(o.verification.error)}</span>` : ''}
       <button type="button" class="cred-other-del" title="Remove this workspace" onclick="removeCredOther('${escHtml(o.id)}')">Remove</button>
     </div>`).join('');
   wrap.insertAdjacentHTML('beforeend', `
@@ -34708,115 +34720,113 @@ async function renderCredentialsModal() {
 // The list is replaced wholesale on save, so both add and remove rebuild it
 // from what is on screen plus the change being made. Saved tokens are never
 // echoed to the browser, so an existing row is preserved by id, not by value.
-async function _saveCredOthers(list) {
-  const r = await fetch('/api/credentials', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ others: list }),
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!d.ok) throw new Error(d.error || `HTTP ${r.status}`);
-  return d;
-}
-
-async function addCredOther() {
-  const labelEl = document.getElementById('cred-other-label');
-  const tokEl = document.getElementById('cred-other-token');
-  const label = (labelEl?.value || '').trim();
-  const token = (tokEl?.value || '').trim();
+let _credentialsBusy = false;
+function showCredentialResult(text, bad = false) {
   const msg = document.getElementById('cred-msg');
-  const show = (t, bad) => { if (msg) { msg.textContent = t; msg.className = 'cred-msg' + (bad ? ' is-bad' : ' is-ok'); msg.hidden = false; } };
-  if (!token) return show('Paste the token for the new workspace.', true);
-  try {
-    // Existing rows must be re-sent with their tokens, which the browser does
-    // not have — so ask the server to keep them by id.
-    await _saveCredOthers([
-      ..._credOthers.map((o) => ({ keep: o.id, label: o.label })),
-      { label: label || 'Other', token },
-    ]);
-    if (labelEl) labelEl.value = ''; if (tokEl) tokEl.value = '';
-    show('Workspace added.', false);
-    await renderCredentialsModal();
-    if (typeof loadProfiles === 'function') { try { await loadProfiles(); } catch (_) { /* */ } }
-  } catch (e) { show('Could not add: ' + e.message, true); }
+  if (!msg) return;
+  msg.textContent = text;
+  msg.className = 'cred-msg' + (bad ? ' is-bad' : ' is-ok');
+  msg.hidden = false;
 }
-
-async function removeCredToken(env, label) {
-  const msg = document.getElementById('cred-msg');
-  const show = (t, bad) => { if (msg) { msg.textContent = t; msg.className = 'cred-msg' + (bad ? ' is-bad' : ' is-ok'); msg.hidden = false; } };
-  if (!confirm(`Remove the saved ${label} token?\n\nIts accounts disappear from the picker until a token is pasted again. Campaigns already running are not affected.`)) return;
+function setCredentialBusy(busy) {
+  _credentialsBusy = busy;
+  document.querySelectorAll('#cred-fields button, #cred-save, #cred-check').forEach(btn => { btn.disabled = busy; });
+  const save = document.getElementById('cred-save');
+  if (save) save.textContent = busy ? 'Working…' : 'Save tokens';
+}
+async function credentialRequest(path, body) {
   try {
-    // An empty value is how the store deletes a token.
-    const r = await fetch('/api/credentials', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ [env]: '' }),
+    const r = await fetch(path, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), signal: AbortSignal.timeout(20000),
     });
-    const d = await r.json().catch(() => ({}));
-    if (!d.ok) throw new Error(d.error || `HTTP ${r.status}`);
-    show(`${label} token removed.`, false);
-    await renderCredentialsModal();
-    if (typeof loadProfiles === 'function') { try { await loadProfiles(); } catch (_) { /* */ } }
-  } catch (e) { show('Could not remove: ' + e.message, true); }
-}
-
-async function removeCredOther(id) {
-  const msg = document.getElementById('cred-msg');
-  try {
-    await _saveCredOthers(_credOthers.filter((o) => o.id !== id).map((o) => ({ keep: o.id, label: o.label })));
-    if (msg) { msg.textContent = 'Workspace removed.'; msg.className = 'cred-msg is-ok'; msg.hidden = false; }
-    await renderCredentialsModal();
-    if (typeof loadProfiles === 'function') { try { await loadProfiles(); } catch (_) { /* */ } }
-  } catch (e) {
-    if (msg) { msg.textContent = 'Could not remove: ' + e.message; msg.className = 'cred-msg is-bad'; msg.hidden = false; }
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    return data;
+  } catch (error) {
+    if (['AbortError', 'TimeoutError'].includes(error.name)) throw new Error('The request timed out. Please try again.');
+    throw error;
   }
 }
-
+async function updateCredentials(body, savedMessage = 'Saved.') {
+  if (_credentialsBusy) return;
+  setCredentialBusy(true);
+  try {
+    return await completeCredentialUpdate({
+      savedMessage, show: showCredentialResult,
+      save: async () => {
+        const data = await credentialRequest('/api/credentials', body);
+        if (!data.ok) throw new Error(data.error || 'The token was not saved.');
+        // Clear submitted secrets as soon as the server confirms storage.
+        document.querySelectorAll('#cred-fields input[type="password"]').forEach(input => { input.value = ''; });
+        try { await renderCredentialsModal(); } catch { /* verification below remains authoritative */ }
+        setCredentialBusy(true);
+        return data;
+      },
+      verify: async (saved) => saved.changedAccounts?.length
+        ? (await credentialRequest('/api/credentials/check', { ids: saved.changedAccounts })).checks
+        : [],
+      refresh: () => loadProfiles(),
+    });
+  } finally { try { await renderCredentialsModal(); } finally { setCredentialBusy(false); } }
+}
+async function addCredOther() {
+  const label = (document.getElementById('cred-other-label')?.value || '').trim();
+  const token = (document.getElementById('cred-other-token')?.value || '').trim();
+  if (!token) return showCredentialResult('Paste the token for the new workspace.', true);
+  return updateCredentials({ others: [..._credOthers.map(o => ({ keep: o.id, label: o.label })), { label: label || 'Other', token }] }, 'Workspace saved.');
+}
+async function removeCredToken(env, label) {
+  if (_credentialsBusy) return;
+  if (!confirm(`Remove the saved ${label} token?\n\nIts accounts disappear from the picker until a token is pasted again.`)) return;
+  return updateCredentials({ [env]: '' }, `${label} token removed.`);
+}
+async function removeCredOther(id) {
+  return updateCredentials({ others: _credOthers.filter(o => o.id !== id).map(o => ({ keep: o.id, label: o.label })) }, 'Workspace removed.');
+}
 function openCredentialsModal() {
-  const m = document.getElementById('credentials-modal');
-  if (!m) return;
-  const msg = document.getElementById('cred-msg');
-  if (msg) { msg.hidden = true; msg.textContent = ''; }
-  m.classList.remove('hidden');
-  renderCredentialsModal();
+  const modal = document.getElementById('credentials-modal');
+  if (!modal) return;
+  if (!_credentialsBusy) {
+    const msg = document.getElementById('cred-msg');
+    if (msg) { msg.hidden = true; msg.textContent = ''; }
+    renderCredentialsModal();
+  }
+  modal.classList.remove('hidden');
 }
 function closeCredentialsModal() {
   document.getElementById('credentials-modal')?.classList.add('hidden');
 }
-
 async function saveCredentialsFromModal() {
-  const btn = document.getElementById('cred-save');
-  const msg = document.getElementById('cred-msg');
-  const show = (text, bad) => {
-    if (!msg) return;
-    msg.textContent = text;
-    msg.className = 'cred-msg' + (bad ? ' is-bad' : ' is-ok');
-    msg.hidden = false;
-  };
-  // Blank means "leave the saved token alone", so only send what was typed.
+  if (_credentialsBusy) return;
   const body = {};
-  document.querySelectorAll('#cred-fields .cred-input').forEach((el) => {
-    const v = (el.value || '').trim();
-    if (v) body[el.dataset.env] = v;
+  document.querySelectorAll('#cred-fields .cred-input[data-env]').forEach(el => {
+    const value = (el.value || '').trim();
+    if (value) body[el.dataset.env] = value;
   });
-  if (!Object.keys(body).length) return show('Nothing to save — paste a token first.', true);
-
-  const prev = btn ? btn.textContent : '';
-  if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
-  try {
-    const r = await fetch('/api/credentials', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-    });
-    const d = await r.json().catch(() => ({}));
-    if (!d.ok) throw new Error(d.error || `HTTP ${r.status}`);
-    show('Saved. Reloading the account list…', false);
-    await renderCredentialsModal();
-    // Tokens are read per call server-side, so the roster only needs re-reading.
-    if (typeof loadProfiles === 'function') { try { await loadProfiles(); } catch (_) { /* */ } }
-    if (typeof showCampaignToast === 'function') showCampaignToast('GoLogin tokens saved');
-  } catch (e) {
-    show('Could not save: ' + e.message, true);
-  } finally {
-    if (btn) { btn.disabled = false; btn.textContent = prev || 'Save tokens'; }
-  }
+  if (!Object.keys(body).length) return showCredentialResult('Nothing to save — paste a token, or use Check connection to test the saved tokens.', true);
+  return updateCredentials(body);
 }
+async function checkSavedCredentials() {
+  if (_credentialsBusy) return;
+  setCredentialBusy(true);
+  showCredentialResult('Checking saved GoLogin connections…');
+  try {
+    const r = await fetch('/api/credentials', { signal: AbortSignal.timeout(10000) });
+    if (!r.ok) throw new Error('Could not read saved workspace settings.');
+    const d = await r.json();
+    const ids = [...(d.credentials || []).filter(c => c.set), ...(d.others || [])].map(c => c.id);
+    if (!ids.length) return showCredentialResult('No tokens saved. Add a token first.', true);
+    await completeCredentialUpdate({
+      savedMessage: 'Connection check.', initialMessage: 'Checking saved GoLogin connections…', show: showCredentialResult,
+      save: async () => ({}),
+      verify: async () => (await credentialRequest('/api/credentials/check', { ids })).checks,
+      refresh: () => loadProfiles(),
+    });
+  } catch (error) { showCredentialResult(`Could not check: ${error.message}`, true); }
+  finally { try { await renderCredentialsModal(); } finally { setCredentialBusy(false); } }
+}
+window.checkSavedCredentials = checkSavedCredentials;
 
 if (typeof window !== 'undefined') {
   window.openCredentialsModal = openCredentialsModal;

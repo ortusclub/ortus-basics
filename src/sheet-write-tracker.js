@@ -101,12 +101,13 @@ export async function writeSheetWithRetry(
   }
 
   // ── Record failure ──
-  const payload = typeof meta.payload === 'string'
-    ? meta.payload.slice(0, 200)
-    : (meta.payload ?? '');
+  // This is the replay payload, not a display preview. Truncating JSON makes
+  // normal message results impossible to retry.
+  const payload = meta.payload ?? '';
 
   recordFailure({
     url: meta.url ?? null,
+    sheetUrl: meta.sheetUrl ?? null,
     leadName: meta.leadName ?? null,
     column: meta.column ?? null,
     payload,
@@ -115,7 +116,7 @@ export async function writeSheetWithRetry(
     attempts: 2,
   });
 
-  return result ?? undefined;
+  return result ?? { error: errorMessage || 'Unknown sheet write failure' };
 }
 
 // ─── retryFailures ────────────────────────────────────────────────────────────

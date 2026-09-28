@@ -251,10 +251,13 @@ export async function prepareSheet(sheetUrl, mode) {
  * @param {object} tracking - Fields to update
  */
 export async function updateSheetRow(sheetUrl, linkedinUrl, tracking, linkedinColumn) {
-  if (!getWebAppUrl()) {
-    console.log('[sheets-writer] No SHEETS_WEBAPP_URL configured — skipping');
-    return false;
-  }
+  const result = await updateSheetRowResult(sheetUrl, linkedinUrl, tracking, linkedinColumn);
+  return result.ok;
+}
+
+/** Detailed result for callers that must show and retry the actual failure. */
+export async function updateSheetRowResult(sheetUrl, linkedinUrl, tracking, linkedinColumn) {
+  if (!getWebAppUrl()) return { ok: false, error: 'No Sheets bridge configured.' };
   return enqueueRowUpdate(sheetUrl, linkedinUrl, tracking, linkedinColumn);
 }
 
@@ -353,7 +356,7 @@ async function _writeChunk(buf, items) {
   });
 
   if (!result) {                                  // no webapp configured
-    items.forEach((it) => it.resolve(false));
+    items.forEach((it) => it.resolve({ ok: false, error: 'No Sheets bridge configured.' }));
     return;
   }
 
@@ -369,7 +372,7 @@ async function _writeChunk(buf, items) {
     // count: 1,772 rows once vanished here with nothing but a per-row warning
     // scrolling past, which is how a >50% loss rate went unnoticed for months.
     console.warn(`[sheets-writer] ✗ LOST ${items.length} row write(s) for sheet ${buf.sheetId}: ${err || 'no success flag'}`);
-    items.forEach((it) => it.resolve(false));
+    items.forEach((it) => it.resolve({ ok: false, error: err || 'Sheets bridge did not confirm the row updates.' }));
     return;
   }
 
@@ -385,7 +388,7 @@ async function _writeChunk(buf, items) {
       failed++;
       console.warn(`[sheets-writer] row not written (${it.row.linkedinUrl}): ${one.error}`);
     }
-    it.resolve(ok);
+    it.resolve(ok ? { ok: true } : { ok: false, error: one.error });
   });
   console.log(`[sheets-writer] ✓ ${items.length - failed}/${items.length} row(s) updated in sheet ${buf.sheetId}${failed ? ` — ${failed} not found` : ''}`);
 }
@@ -401,9 +404,9 @@ async function _writeOneRow(buf, row) {
     urlColumnName: buf.col,
     ...tracking,
   });
-  if (result?.success) return true;
+  if (result?.success) return { ok: true };
   if (result?.error) console.warn(`[sheets-writer] Update failed for ${linkedinUrl}: ${result.error}`);
-  return false;
+  return { ok: false, error: result?.error || 'Sheets bridge did not confirm the row update.' };
 }
 
 // One updateRows POST carries at most this many rows. The POST aborts at 15s

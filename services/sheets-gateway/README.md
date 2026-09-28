@@ -1,5 +1,9 @@
 # Ortus team Sheets gateway
 
+Company Google sign-in is implemented alongside legacy HMAC authentication.
+See [setup and rollout](../../docs/company-google-sheets-auth.md). The legacy
+flow below remains for existing installations during migration.
+
 Project: `ortusbot` (display name Ortus Basics); region: `asia-southeast1`.
 Service: `ortus-sheets-gateway`. Desktop endpoint: `/bridge`; public health: `/health`.
 

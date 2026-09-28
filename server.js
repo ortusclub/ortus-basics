@@ -1,3 +1,5 @@
+import { sheetsGoogle } from './src/sheets-google-auth.js';
+import { checkWorkspaceCredential } from './src/gologin-credential-check.js';
 import { getSalesNavAccess, setSalesNavAccess } from './src/linkedin/sales-nav-access.js';
 import { ensureCampaignIdentity, getConfigById } from './src/campaign-configs.js';
 import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
@@ -72,7 +74,7 @@ import { runCloudPreflightHandshake } from './src/cloud-preflight-handshake.js';
 import { aggregateTeamStatus, bucketForCloudStatus, countLeadsSentToday } from './src/team-status.js';
 import { spreadsheetIdFromUrl, extractSheetGid, withGid } from './src/utils.js';
 import { INTRO_FAILED_PRIMARY_NOT_CONNECTED, INTRO_RETRY_RECONNECT, INTRO_HELD_NO_PRIMARY } from './src/linkedin/intro-constants.js';
-import { getProfiles, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
+import { getProfiles, getProfileLoadWarnings, clearProfileCache, closeAllProfiles, getActiveBrowserPids, getProfilePid, launchProfile, closeProfile, accountOfProfile, resolveProfileId } from './src/gologin-launcher.js';
 import { accountForEmail, canOperatorUseProfile, usesProfileAsGuest, accountLabel, configuredAccounts, accountAllowsMode, accountModes, POST_AMPLIFICATION_MODE } from './src/gologin-accounts.js';
 import { launchLocalBrowser, closeLocalBrowser } from './src/local-launcher.js';
 import { clampCadenceMinutes, isRetiredMode } from './public/js/campaign-modes.mjs';
@@ -81,7 +83,7 @@ import { unhideByPids } from './src/mac-window.js';
 import { preventSleep, allowSleep } from './src/caffeinate.js';
 import { initNotifier, notifyAll, notifyEmail, getRecentNotifications } from './src/notifier.js';
 import { flushOpsLog, _setAlertImpl } from './src/log-writer.js';
-import { getFailures, retryFailures } from './src/sheet-write-tracker.js';
+import { getPendingSheetWrites as getFailures, retryPendingSheetWrites, startSheetSync } from './src/sheet-sync.js';
 import { getSkips } from './src/skip-ledger.js';
 import { createStopWatchdog } from './src/stop-watchdog.js';
 import { clearRuntimeInterruption, readRuntimeInterruption } from './src/runtime-interruption.js';
@@ -360,15 +362,15 @@ function viewerAccount(req) {
  * history all carry raw ids. Without this the request would reach GoLogin with
  * the wrong workspace's token and fail as an opaque 404 mid-campaign.
  *
- * Fail-open on purpose. A single-account install and an unlistable GoLogin API
- * both mean "we cannot prove this profile is foreign" — and blocking every
- * launch on that would turn a second-account outage into a total outage.
+ * Known workspace restrictions apply even with one configured token or an API
+ * outage. Unknown profiles retain the legacy default-workspace fallback.
  */
 async function rejectIfForeignProfiles(req, res, profileIds, mode) {
   const ids = (profileIds || []).filter((id) => id && id !== 'local-browser');
   if (!ids.length) return false;
-  if (configuredAccounts().length < 2) return false;
-  try { await getProfiles(); } catch { return false; }
+  // Even a sole Marketing workspace has mode restrictions. If refresh fails,
+  // enforce the ownership already known in the profile cache.
+  try { await getProfiles(); } catch { /* use known profile ownership */ }
 
   const email = viewerEmail(req);
 
@@ -391,7 +393,8 @@ async function rejectIfForeignProfiles(req, res, profileIds, mode) {
   if (wrongMode.length) {
     const label = accountLabel(accountOfProfile(wrongMode[0]));
     const allowed = (accountModes(accountOfProfile(wrongMode[0])) || [])
-      .map((m) => (m === POST_AMPLIFICATION_MODE ? 'Post Amplification' : 'Follower Growth'))
+      .map((m) => ({ introduce_back: 'Introduction Campaign', follower_growth: 'Follower Growth',
+        [POST_AMPLIFICATION_MODE]: 'Post Amplification' }[m] || m))
       .join(' and ');
     res.status(403).json({
       error: `${wrongMode.length} selected account(s) are ${label} accounts, which can only run ${allowed}.`,
@@ -719,6 +722,7 @@ app.get('/api/profiles', async (req, res) => {
   try {
     const profiles = await getProfiles();
     const email = viewerEmail(req);
+    res.set('X-GoLogin-Warnings', encodeURIComponent(JSON.stringify(getProfileLoadWarnings())));
     res.json(profiles.map((p) => ({
       ...p,
       available: canOperatorUseProfile(email, p.account, p.id),
@@ -2888,6 +2892,14 @@ app.post('/api/campaign/cloud/:id/check/stop', async (req, res) => {
 app.post('/api/campaign/cloud/:id/accounts', async (req, res) => {
   const b = req.body || {};
   const add = Array.isArray(b.add) ? b.add : [];
+  if (add.length) {
+    const detail = await getCloudCampaign(req.params.id);
+    if (detail?.error) return res.status(detail.status || 502).json(detail);
+    const current = detail?.campaign || detail;
+    const mode = current?.mode || current?.config?.mode;
+    if (!mode) return res.status(502).json({ error: 'Could not determine campaign type.' });
+    if (await rejectIfForeignProfiles(req, res, add.map((a) => a.profileId), mode)) return;
+  }
   // Resolve each added account's REAL SoO email here, exactly as handleStartCloud
   // does at launch (fuzzy match + skip-on-doubt). The client can only offer the
   // GoLogin profile NAME, which is not always the SoO email — sending that through
@@ -5683,6 +5695,7 @@ app.post('/api/campaign/resume/reload-sheet', async (req, res) => {
 app.post('/api/campaign/resume/accounts', async (req, res) => {
   if (!_resumeGuard(res)) return;
   const { bench, add } = req.body || {};
+  if (Array.isArray(add) && await rejectIfForeignProfiles(req, res, add.map((a) => a.id), campaign.mode)) return;
   // Validate everything BEFORE mutating staging, so a 400 leaves nothing partially staged.
   const benchEntries = (bench && typeof bench === 'object') ? Object.entries(bench) : [];
   for (const [id] of benchEntries) {
@@ -6242,18 +6255,7 @@ app.get('/api/campaign/sheet-write-failures', (_req, res) => {
 
 app.post('/api/campaign/sheet-write-failures/retry', async (_req, res) => {
   try {
-    const { updateSheetRow } = await import('./src/sheets-writer.js');
-    const result = await retryFailures(async (failure) => {
-      let payload;
-      try {
-        payload = JSON.parse(failure.payload);
-      } catch {
-        return { error: 'payload unrecoverable — cannot retry' };
-      }
-      const ok = await updateSheetRow(campaign.sheetUrl, failure.url, payload, failure.column || undefined);
-      if (!ok) return { error: 'sheet write failed' };
-      return {};
-    });
+    const result = await retryPendingSheetWrites();
     campaign.sheetWriteFailures = getFailures().length;
     res.json(result);
   } catch (err) {
@@ -8690,6 +8692,17 @@ app.post('/api/campaign-configs', async (req, res) => {
 // The app ships with no secrets. These two routes are the Settings stage: the
 // operator pastes the tokens they hold, and the workspaces those tokens unlock
 // become selectable. Nothing here ever echoes a token back.
+// OAuth tokens stay in the local server; the renderer only sees status and the consent URL.
+app.get('/api/sheets/google', (_req,res) => res.json({...sheetsGoogle.status(), pendingWrites:getFailures().length}));
+app.post('/api/sheets/google/connect', async (req,res) => {
+  if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) return res.status(403).json({error:'Invalid origin'});
+  try { res.json({url:await sheetsGoogle.begin()}); } catch(e) { res.status(400).json({error:e.message}); }
+});
+app.post('/api/sheets/google/disconnect', (req,res) => {
+  if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) return res.status(403).json({error:'Invalid origin'});
+  try { sheetsGoogle.disconnect(); res.json({ok:true}); } catch(e) { res.status(500).json({error:e.message}); }
+});
+
 app.get('/api/credentials', async (_req, res) => {
   try {
     const { credentialStatus, readOthers } = await import('./src/gologin-credentials.js');
@@ -8697,6 +8710,13 @@ app.get('/api/credentials', async (_req, res) => {
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
+});
+
+app.post('/api/credentials/check', async (req, res) => {
+  const ids = [...new Set(Array.isArray(req.body?.ids) ? req.body.ids : [])].filter(id => typeof id === 'string').slice(0, 13);
+  if (!ids.length) return res.status(400).json({ error: 'Choose a workspace to check.' });
+  const checks = await Promise.all(ids.map(id => checkWorkspaceCredential(id)));
+  res.json({ ok: checks.every(check => check.ok), checks });
 });
 
 app.post('/api/credentials', async (req, res) => {
@@ -8713,16 +8733,18 @@ app.post('/api/credentials', async (req, res) => {
     if (Array.isArray(body.others)) {
       const { saveOthers } = await import('./src/gologin-credentials.js');
       saveOthers(body.others);
+      clearProfileCache();
     }
     if (!Object.keys(input).length && !Array.isArray(body.others)) {
       return res.status(400).json({ ok: false, error: 'No known token fields in the request.' });
     }
     if (!Object.keys(input).length) {
       const { readOthers } = await import('./src/gologin-credentials.js');
-      return res.json({ ok: true, credentials: credentialStatus(), others: readOthers() });
+      return res.json({ ok: true, credentials: credentialStatus(), others: readOthers(), changedAccounts: readOthers().map(o => o.id) });
     }
     saveCredentials(input);
-    res.json({ ok: true, credentials: credentialStatus() });
+    clearProfileCache();
+    res.json({ ok: true, credentials: credentialStatus(), changedAccounts: credentialFields().filter(f => input[f.env]).map(f => f.id) });
   } catch (err) {
     console.error('[credentials] save failed:', err);
     res.status(500).json({ ok: false, error: err.message });
@@ -8735,6 +8757,7 @@ app.post('/api/credentials', async (req, res) => {
 migrateCampaignIdentities();
 
 app.listen(PORT, '127.0.0.1', async () => {
+  startSheetSync();
   console.log(`\n  ✦ Ortus Basics — Version ${APP_VERSION}`);
   console.log(`  ✦ build: v${APP_VERSION}`);
   console.log(`  ✦ Dashboard: http://localhost:${PORT}`);

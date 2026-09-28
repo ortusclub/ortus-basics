@@ -99,16 +99,14 @@ test('an unconfigured second account simply is not there', () => {
 
 
 // ── Marketing workspace (2026-08-07) ────────────────────────────────────────
-// The third team, and the first account gated on TWO axes: a domain like the
-// others, PLUS a mode whitelist. It exists for Follower Growth and Post
-// Amplification and must refuse everything else — including to its own team.
+// Marketing is a shared pool reserved for Introduction Campaign.
 
-test('marketing accounts run Follower Growth and Post Amplification only', () => {
-  assert.deepEqual(accountModes('marketing'), ['follower_growth', POST_AMPLIFICATION_MODE]);
-  assert.ok(accountAllowsMode('marketing', 'follower_growth'));
-  assert.ok(accountAllowsMode('marketing', POST_AMPLIFICATION_MODE));
+test('marketing accounts run Introduction Campaign only', () => {
+  assert.deepEqual(accountModes('marketing'), ['introduce_back']);
+  assert.ok(accountAllowsMode('marketing', 'introduce_back'));
   for (const m of ['connect_only', 'connect_and_introduce', 'connect_and_message',
-    'introduce_back', 'open_profile_only']) {
+    'follower_growth', POST_AMPLIFICATION_MODE, 'open_profile_only', 'message_only',
+    'inmail_only', 'check_status', 'unknown']) {
     assert.equal(accountAllowsMode('marketing', m), false, `marketing must refuse ${m}`);
   }
 });
@@ -124,8 +122,8 @@ test('the other workspaces stay unrestricted', () => {
 
 test('a blank mode never makes an account look unusable', () => {
   // The account list and status polls have no mode in hand. Answering false
-  // there would grey every marketing tile permanently, including in the Post
-  // Amp picker where they are exactly the right accounts.
+  // there would grey every marketing tile permanently, including in the
+  // Introduction Campaign picker where they are allowed.
   for (const m of [undefined, null, '']) assert.ok(accountAllowsMode('marketing', m));
 });
 
@@ -155,8 +153,9 @@ test('the mode gate holds even though the domain gate is open', () => {
   // refused every mode outside the whitelist.
   assert.equal(profileUsableFor('antonio@ortusclub.com', 'marketing', 'connect_and_introduce'), false);
   assert.equal(profileUsableFor('milee@linkedvelocity.com', 'marketing', 'connect_only'), false);
-  assert.ok(profileUsableFor('antonio@ortusclub.com', 'marketing', 'follower_growth'));
-  assert.ok(profileUsableFor('milee@linkedvelocity.com', 'marketing', POST_AMPLIFICATION_MODE));
+  assert.ok(profileUsableFor('antonio@ortusclub.com', 'marketing', 'introduce_back'));
+  assert.ok(profileUsableFor('milee@linkedvelocity.com', 'marketing', 'introduce_back'));
+  assert.equal(profileUsableFor('milee@linkedvelocity.com', 'marketing', POST_AMPLIFICATION_MODE), false);
   // The other workspaces keep their domain gate untouched.
   assert.equal(profileUsableFor('antonio@ortusclub.com', 'linkedvelocity', 'follower_growth'), false);
   assert.ok(profileUsableFor('antonio@ortusclub.com', 'ortus', POST_AMPLIFICATION_MODE));

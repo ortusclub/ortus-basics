@@ -8935,3 +8935,7 @@ body.route-dashboard #live-console {
   display: none !important;
 }
 #campaigns-board .sn-compact { display: block !important; }
+
+#credentials-modal .cred-state.is-error, #credentials-modal .cred-error { color: var(--red, #c83030); }
+#credentials-modal .cred-other-row { flex-wrap: wrap; }
+#credentials-modal .cred-other-row .cred-error { flex-basis: 100%; }
