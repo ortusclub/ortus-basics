@@ -8939,3 +8939,17 @@ body.route-dashboard #live-console {
 #credentials-modal .cred-state.is-error, #credentials-modal .cred-error { color: var(--red, #c83030); }
 #credentials-modal .cred-other-row { flex-wrap: wrap; }
 #credentials-modal .cred-other-row .cred-error { flex-basis: 100%; }
+
+/* Sheets uses the same compact labels, field and actions as workspace tokens. */
+#credentials-modal .sheets-connection { margin: 18px 0 20px; }
+#credentials-modal .sheets-connection-heading { flex-wrap: wrap; align-items: center; }
+#credentials-modal .sheets-connection-actions { display: flex; gap: 12px; margin-left: auto; }
+#credentials-modal .sheets-connection-actions button { margin: 0; padding: 3px 0; }
+#credentials-modal .sheets-connection-actions [hidden] { display: none; }
+#credentials-modal .sheets-connection-actions button:focus-visible { outline: 2px solid var(--gold, #d4a24c); outline-offset: 3px; }
+#credentials-modal .sheets-connection-account {
+  min-height: 34px; box-sizing: border-box; display: flex; align-items: center;
+  padding: 8px 10px; border: 1px solid var(--hairline); border-radius: 7px;
+  background: var(--card-bg, var(--bg)); color: var(--ink); font-family: var(--mono);
+  font-size: 12px; line-height: 1.5; overflow-wrap: anywhere;
+}

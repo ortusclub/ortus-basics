@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=1.7.57-workspace-feedback" />
+  <link rel="stylesheet" href="/css/style.css?v=1.7.58-connections" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.14" />
 </head>
 <body data-dashboard="v3">
@@ -74,7 +74,7 @@
              always reachable because a fresh install has no tokens at all. -->
         <button type="button" class="operator-chip settings-chip" onclick="openCredentialsModal()">
           <span class="operator-chip-label">Settings</span>
-          <strong id="settings-chip-state">GoLogin tokens</strong>
+          <strong id="settings-chip-state">Google Sheets &amp; GoLogin</strong>
         </button>
         <!-- v2.106.0 — per-machine operator identity. Stamped as the reserver
              in the SoO 'CC User App' column; click to set/change. Highlighted
@@ -4017,7 +4017,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=1.7.57-google-sheets"></script>
+<script type="module" src="/js/app.js?v=1.7.58-connections"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before
@@ -4245,14 +4245,19 @@
     <div class="modal-card cred-card" role="dialog" aria-modal="true" aria-labelledby="cred-title">
       <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeCredentialsModal()">&times;</button>
       <div class="stop-choice-eyebrow">Settings</div>
-      <h3 id="cred-title" class="modal-title">GoLogin workspace tokens</h3>
-      <p class="stop-choice-sub">Paste the tokens you have. What you can use follows from what you add — a workspace with no token contributes no accounts, and its accounts never appear in the picker. Stored on this Mac only, never in the app itself.</p>
-      <section aria-label="Google Sheets connection" style="margin:16px 0;padding:16px;border:1px solid var(--border);border-radius:12px">
-        <h4>Google Sheets connection</h4>
-        <p>Sign in once with your company Google account to save campaign results. The shared writer needs editor access to the spreadsheet.</p>
-        <p id="sheets-google-status" role="status" aria-live="polite">Checking connection…</p>
-        <button type="button" class="btn btn-secondary" id="sheets-google-connect">Connect Google Sheets</button>
-        <button type="button" class="btn btn-secondary" id="sheets-google-disconnect" hidden>Disconnect Google</button>
+      <h3 id="cred-title" class="modal-title">Account connections</h3>
+      <p class="stop-choice-sub">Connect Google Sheets to save results, then add the GoLogin tokens for the accounts you use. Connections are saved on this Mac.</p>
+      <section class="cred-row sheets-connection" aria-label="Google Sheets connection">
+        <div class="cred-label sheets-connection-heading">
+          <span>Google Sheets</span>
+          <span id="sheets-google-state" class="cred-state is-unset">Checking</span>
+          <div class="sheets-connection-actions">
+            <button type="button" class="cred-other-del" id="sheets-google-connect" aria-label="Connect Google Sheets">Connect</button>
+            <button type="button" class="cred-other-del" id="sheets-google-disconnect" aria-label="Disconnect Google Sheets" hidden>Disconnect</button>
+          </div>
+        </div>
+        <div id="sheets-google-status" class="sheets-connection-account" role="status" aria-live="polite">Checking connection…</div>
+        <p class="cred-note">Saves results to spreadsheets the shared writer can edit.</p>
       </section>
       <div id="cred-fields"></div>
       <div id="cred-msg" class="cred-msg" role="status" aria-live="polite" hidden></div>
@@ -4279,6 +4284,6 @@
       </div>
     </div>
   </div>
-  <script type="module" src="/js/sheets-google-settings.js"></script>
+  <script type="module" src="/js/sheets-google-settings.js?v=1.7.58"></script>
 </body>
 </html>
