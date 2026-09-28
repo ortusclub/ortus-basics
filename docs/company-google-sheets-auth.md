@@ -2,9 +2,11 @@
 
 Status: Google Desktop client configured and gateway revision
 `ortus-sheets-gateway-00002-k7r` deployed on 2026-09-28. Basics 1.7.57
-is prepared as a test prerelease; existing 1.7.56 installations are unchanged.
+was promoted to production; 1.7.58 adds compact connection settings.
 Live configuration, unsigned/forged rejection and legacy spreadsheet reads passed.
-A real company-account sign-in and write remain to be tested by the operator.
+A real company-account sign-in also successfully authorized a campaign spreadsheet
+read through the Google bearer-token path. A write using that connection has not
+yet been separately verified.
 
 ## User experience
 
