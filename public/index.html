@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=1.7.59-welcome" />
+  <link rel="stylesheet" href="/css/style.css?v=1.7.61-shared-sheets" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.14" />
 </head>
 <body data-dashboard="v3">
@@ -4017,7 +4017,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=1.7.59-welcome"></script>
+<script type="module" src="/js/app.js?v=1.7.61-shared-sheets"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before
@@ -4246,10 +4246,10 @@
       <button type="button" class="past-campaign-modal-close" aria-label="Close" onclick="closeCredentialsModal()">&times;</button>
       <div class="stop-choice-eyebrow">Settings</div>
       <h3 id="cred-title" class="modal-title">Account connections</h3>
-      <p class="stop-choice-sub">Connect Google Sheets to save results, then add the GoLogin tokens for the accounts you use. Connections are saved on this Mac.</p>
+      <p class="stop-choice-sub">Sheets access is available automatically. You can connect a Google account and add GoLogin tokens below. Connections are saved on this Mac.</p>
       <section class="cred-row sheets-connection" aria-label="Google Sheets connection">
         <div class="cred-label sheets-connection-heading">
-          <span>Google Sheets</span>
+          <span>Google account</span>
           <span id="sheets-google-state" class="cred-state is-unset">Checking</span>
           <div class="sheets-connection-actions">
             <button type="button" class="cred-other-del" id="sheets-google-connect" aria-label="Connect Google Sheets">Connect</button>
@@ -4257,7 +4257,7 @@
           </div>
         </div>
         <div id="sheets-google-status" class="sheets-connection-account" role="status" aria-live="polite">Checking connection…</div>
-        <p class="cred-note">Saves results to spreadsheets the shared writer can edit.</p>
+        <p class="cred-note">Optional sign-in. Results can be saved to any spreadsheet the shared writer can edit.</p>
       </section>
       <div id="cred-fields"></div>
       <div id="cred-msg" class="cred-msg" role="status" aria-live="polite" hidden></div>
@@ -4287,7 +4287,7 @@
   <dialog id="google-welcome" aria-labelledby="google-welcome-title" aria-describedby="google-welcome-description">
     <div class="stop-choice-eyebrow">Welcome to Ortus Basics</div>
     <h2 id="google-welcome-title">Connect your Google account</h2>
-    <p id="google-welcome-description">Sign in with your company Google account so Basics can save your campaign results to Google Sheets.</p>
+    <p id="google-welcome-description">You can sign in with your company Google account. Sheets access is available automatically, even if you choose Later.</p>
     <p class="google-welcome-domains">ortusclub.com · ortus.solutions<br>linkedvelocity.com · apexstrategy.io</p>
     <p id="google-welcome-status" role="status" aria-live="polite"></p>
     <div class="google-welcome-actions">
@@ -4296,6 +4296,6 @@
     </div>
     <p class="google-welcome-note">Already connected? Basics remembers your sign-in on this computer.</p>
   </dialog>
-  <script type="module" src="/js/sheets-google-settings.js?v=1.7.59"></script>
+  <script type="module" src="/js/sheets-google-settings.js?v=1.7.61"></script>
 </body>
 </html>

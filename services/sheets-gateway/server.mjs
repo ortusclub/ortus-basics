@@ -8,9 +8,10 @@ const claimNonce = async ({id,nonce}) => {
   try { await db.collection('gatewayNonces').doc(id+'-'+nonce).create({expiresAt:Timestamp.fromMillis(Date.now()+300000)}); return true; }
   catch(e) { if(e.code===6) return false; throw e; }
 };
+const publicAccess = process.env.ALLOW_PUBLIC_SHEETS === 'true';
 const clientId = process.env.GOOGLE_DESKTOP_CLIENT_ID;
-if (!keys.length && !clientId) throw Error('No gateway authentication configured');
-createApp({keys,bridgeUrl:process.env.BRIDGE_URL,claimNonce,
+if (!publicAccess && !keys.length && !clientId) throw Error('No gateway authentication configured');
+createApp({publicAccess,keys,bridgeUrl:process.env.BRIDGE_URL,claimNonce,
   verifyGoogle: clientId ? googleVerifier(clientId) : undefined,
   desktopClient: clientId ? {clientId,clientSecret:process.env.GOOGLE_DESKTOP_CLIENT_SECRET || ''} : undefined,
 }).listen(Number(process.env.PORT || 8080),'0.0.0.0');

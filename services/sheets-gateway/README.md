@@ -1,5 +1,23 @@
 # Ortus team Sheets gateway
 
+## Public access configuration (1.7.61)
+
+The owner explicitly requested public shared-writer access on 2026-09-29.
+Set `ALLOW_PUBLIC_SHEETS=true` to allow all supported `/bridge` actions without
+Google identity, email-domain, GoLogin-token or nonce authorization. This also
+permits callers outside the app. The action allowlist, request size limit,
+upstream error masking and existing Google spreadsheet permissions still apply.
+`/auth/me` remains authenticated for Google app login; it cannot mint app sessions
+anonymously. No bridge secret is shipped to clients.
+
+The 1.7.61 desktop client sends sheet requests without credentials. Deploy public
+mode before releasing it. Disabling public mode later requires migrating these
+clients back to an authenticated transport; it will otherwise block their writes.
+
+The following documents the earlier authenticated modes, which remain available
+when public access is disabled.
+
+
 Company Google sign-in is implemented alongside legacy HMAC authentication.
 See [setup and rollout](../../docs/company-google-sheets-auth.md). The legacy
 flow below remains for existing installations during migration.

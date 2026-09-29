@@ -31,14 +31,14 @@ async function refresh() {
   try {
     const data = await api('');
     updateWelcome(data);
-    status.textContent = data.error || lastError || (data.pending ? 'Finish Google sign-in in your browser…' : data.connected ? `Connected as ${data.email}` : 'Connect your company Google account.');
+    status.textContent = data.error || lastError || (data.pending ? 'Finish Google sign-in in your browser…' : data.connected ? `Connected as ${data.email}` : 'Optional — shared Sheets access is already available.');
     if (data.pendingWrites) status.textContent += ` · ${data.pendingWrites} results saved locally, waiting to sync.`;
     const hasError = !!(data.error || lastError);
     state.textContent = hasError ? 'Needs attention' : data.pending ? 'Signing in' : data.connected ? 'Connected' : 'Not connected';
     state.className = 'cred-state ' + (hasError ? 'is-error' : data.connected && !data.pending ? 'is-set' : 'is-unset');
     disconnect.hidden = !data.connected && !data.pending;
     connect.textContent = data.connected ? 'Change' : data.pending ? 'Restart' : 'Connect';
-    connect.setAttribute('aria-label', data.connected ? 'Change Google account' : data.pending ? 'Restart Google sign-in' : 'Connect Google Sheets');
+    connect.setAttribute('aria-label', data.connected ? 'Change Google account' : data.pending ? 'Restart Google sign-in' : 'Connect Google account');
   } catch(e) { status.textContent = e.message; state.textContent = 'Needs attention'; state.className = 'cred-state is-error'; }
 }
 connect.addEventListener('click', async () => {

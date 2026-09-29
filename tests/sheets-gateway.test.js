@@ -31,49 +31,37 @@ test('nonce storage failure never forwards writes',async t=>{
  let called=false;const server=createApp({keys:[key],bridgeUrl:'https://script.google.com/macros/s/test/exec',claimNonce:async()=>{throw Error('down')},forward:async()=>{called=true;}}).listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>server.close());
  const body='{"action":"listTabs"}';const r=await fetch(`http://127.0.0.1:${server.address().port}/bridge`,{method:'POST',headers:{'Content-Type':'application/json',...signRequest(key,body)},body});assert.equal(r.status,503);assert.equal(called,false);
 });
-test('desktop signs only the exact gateway, tries approved credentials only on 401, and never sends raw tokens',async t=>{
+test('desktop Sheets requests do not need or send Google or GoLogin credentials',async t=>{
  const {sheetsFetch}=await import('../src/sheets-gateway-client.js');
  const {SHEETS_GATEWAY_URL}=await import('../src/sheets-webapp-url.js');
- const original=globalThis.fetch;const old=process.env.GOLOGIN_API_TOKEN;const oldLV=process.env.GOLOGIN_API_TOKEN_LINKEDVELOCITY;
- t.after(()=>{globalThis.fetch=original;if(old===undefined)delete process.env.GOLOGIN_API_TOKEN;else process.env.GOLOGIN_API_TOKEN=old;if(oldLV===undefined)delete process.env.GOLOGIN_API_TOKEN_LINKEDVELOCITY;else process.env.GOLOGIN_API_TOKEN_LINKEDVELOCITY=oldLV;});
- process.env.GOLOGIN_API_TOKEN='first-test-token';process.env.GOLOGIN_API_TOKEN_LINKEDVELOCITY='second-test-token';
- let calls=0;const body='{"action":"listTabs"}';
- globalThis.fetch=async(url,opts)=>{calls++;assert.equal(String(url),SHEETS_GATEWAY_URL);assert.equal(opts.redirect,'error');assert.doesNotMatch(JSON.stringify(opts),/first-test-token|second-test-token/);const token=calls===1?'first-test-token':'second-test-token';assert.ok(verifyRequest([workspaceKey(token)],opts.headers,body));return {status:calls===1?401:200};};
- assert.equal((await sheetsFetch(SHEETS_GATEWAY_URL,{method:'POST',body})).status,200);assert.equal(calls,2);
- calls=0;globalThis.fetch=async()=>{calls++;return {status:502}};await sheetsFetch(SHEETS_GATEWAY_URL,{method:'POST',body});assert.equal(calls,1);
- globalThis.fetch=async(url,opts)=>{assert.equal(opts.headers,undefined);return {status:200}};await sheetsFetch('https://example.com',{method:'POST',body});
+ const original=globalThis.fetch;t.after(()=>globalThis.fetch=original);
+ let calls=0;
+ globalThis.fetch=async(url,options)=>{
+   calls++;assert.equal(url,SHEETS_GATEWAY_URL);assert.equal(options.redirect,'error');
+   assert.equal(options.headers.Authorization,undefined);
+   assert.equal(options.headers['x-ortus-signature'],undefined);
+   return {status:200};
+ };
+ assert.equal((await sheetsFetch(SHEETS_GATEWAY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,200);
+ assert.equal(calls,1);
+ await assert.rejects(sheetsFetch(SHEETS_GATEWAY_URL,{method:'POST',body:{}}),/serialized JSON/);
 });
-
-
-test('an approved token saved under Other workspaces can authorize sheet writes', async t => {
-  const { sheetsFetch } = await import('../src/sheets-gateway-client.js');
-  const { setCustomAccounts, GL_ACCOUNTS } = await import('../src/gologin-accounts.js');
-  const { SHEETS_GATEWAY_URL } = await import('../src/sheets-webapp-url.js');
-  const originalFetch = globalThis.fetch;
-  const envName = 'GOLOGIN_API_TOKEN_OTHER_TEST';
-  const saved = new Map([...GL_ACCOUNTS.map(a => a.env), envName].map(name => [name, process.env[name]]));
-  t.after(() => {
-    globalThis.fetch = originalFetch;
-    setCustomAccounts([]);
-    for (const [name, value] of saved) {
-      if (value === undefined) delete process.env[name]; else process.env[name] = value;
-    }
-  });
-  for (const account of GL_ACCOUNTS) delete process.env[account.env];
-  process.env[envName] = 'approved-custom-workspace-test';
-  setCustomAccounts([{ id: 'other-test', label: 'Team workspace', env: envName }]);
-  const approved = workspaceKey(process.env[envName]);
-  const body = JSON.stringify({ action: 'updateRows', sheetId: 'test', rows: [] });
-  let calls = 0;
-  globalThis.fetch = async (url, options) => {
-    calls += 1;
-    assert.equal(url, SHEETS_GATEWAY_URL);
-    assert.ok(verifyRequest([approved], options.headers, body));
-    assert.doesNotMatch(JSON.stringify(options), /approved-custom-workspace-test/);
-    return { status: 200 };
-  };
-  assert.equal((await sheetsFetch(SHEETS_GATEWAY_URL, { method: 'POST', body })).status, 200);
-  assert.equal(calls, 1);
+test('public access accepts unsigned and stale-auth requests but retains action and upstream checks',async t=>{
+ let calls=0,fail=false;
+ const server=createApp({publicAccess:true,bridgeUrl:'https://script.google.com/macros/s/test/exec?key=PRIVATE',
+ verifyGoogle:async()=>{throw Error('Must not depend on Google');},claimNonce:async()=>{throw Error('Must not depend on GoLogin');},
+ forward:async(_url,options)=>{calls++;assert.equal(options.headers.Authorization,undefined);return {ok:true,json:async()=>fail?{error:'PRIVATE',stack:'PRIVATE'}:{ok:true}};}
+ }).listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>server.close());
+ const base=`http://127.0.0.1:${server.address().port}`;
+ for(const extra of [{},{Authorization:'Bearer expired'},...['bad'].map(v=>({'x-ortus-signature':v}))]) {
+  assert.equal((await fetch(base+'/bridge',{method:'POST',headers:{'Content-Type':'application/json',...extra},body:'{"action":"updateRow"}'})).status,200);
+ }
+ assert.equal(calls,3);
+ assert.equal((await fetch(base+'/auth/me')).status,401);
+ for(const body of ['{"action":"selfTestBridge"}','not json']) assert.equal((await fetch(base+'/bridge',{method:'POST',headers:{'Content-Type':'application/json'},body})).status,400);
+ assert.equal(calls,3);fail=true;
+ const r=await fetch(base+'/bridge',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"action":"updateRow"}'});
+ assert.equal(r.status,502);assert.doesNotMatch(await r.text(),/PRIVATE/);
 });
 
 test('a different valid GoLogin token is not implicitly approved by the Sheets gateway', () => {
