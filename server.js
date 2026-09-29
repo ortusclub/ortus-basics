@@ -1,3 +1,5 @@
+import { configureSharedGoLogin, ensureSharedGoLogin } from './src/shared-gologin.js';
+import { SHEETS_GATEWAY_URL as SHARED_GOLOGIN_GATEWAY } from './src/sheets-webapp-url.js';
 import { installEmailPasswordAuth } from './src/email-password-auth.js';
 import { installGoogleAppLogin } from './src/google-app-login.js';
 import { sheetsGoogle } from './src/sheets-google-auth.js';
@@ -16,12 +18,13 @@ import 'dotenv/config';
 // pastes what they have into Settings and the app applies it live. Exiting here
 // would mean a downloaded app could never reach the screen that fixes it.
 const { applyCredentials } = await import('./src/gologin-credentials.js');
+configureSharedGoLogin({connection:sheetsGoogle,url:new URL('/gologin/shared',SHARED_GOLOGIN_GATEWAY).href,onChange:()=>clearProfileCache()});
 const _appliedCreds = applyCredentials();
 if (_appliedCreds.length) {
   console.log(`  ✦ GoLogin workspaces from Settings: ${_appliedCreds.join(', ')}`);
 }
 if (!process.env.GOLOGIN_API_TOKEN) {
-  console.warn('\n  ⚠ No GoLogin token yet — open Settings in the app and paste one.\n    Which accounts you can use follows from which tokens you add.\n');
+  console.warn('\n  ⚠ No local Ortus GoLogin token — shared access will be checked after company Google sign-in.\n');
 }
 
 import express from 'express';
@@ -808,7 +811,6 @@ app.get('/api/check-status/preview', async (req, res) => {
         try {
           const { getProfiles } = await import('./src/gologin-launcher.js');
           const token = process.env.GOLOGIN_API_TOKEN;
-          if (!token) return [];
           return await getProfiles(token);
         } catch { return []; }
       })(),
@@ -3216,7 +3218,7 @@ app.post('/api/campaign/preflight-ic-senders', async (req, res) => {
 
     const rows = await fetchSheet(sheetUrl);
     const token = process.env.GOLOGIN_API_TOKEN;
-    const profiles = token ? await getProfiles(token) : [];
+    const profiles = await getProfiles(token);
     const nameToId = {};
     for (const p of profiles) nameToId[p.name] = p.id;
     nameToId['You'] = 'local-browser';
@@ -7406,7 +7408,7 @@ app.post('/api/check-dms/start', async (req, res) => {
     let profiles = [];
     try {
       const token = process.env.GOLOGIN_API_TOKEN;
-      if (token) profiles = await getProfiles(token);
+      profiles = await getProfiles(token);
     } catch (err) {
       console.warn(`[check-dms] getProfiles failed: ${err.message}`);
     }
@@ -7576,7 +7578,6 @@ app.get('/api/check-dms/preview', async (req, res) => {
       (async () => {
         try {
           const token = process.env.GOLOGIN_API_TOKEN;
-          if (!token) return [];
           return await getProfiles(token);
         } catch { return []; }
       })(),
@@ -8662,6 +8663,7 @@ app.post('/api/sheets/google/disconnect', (req,res) => {
 app.get('/api/credentials', async (_req, res) => {
   try {
     const { credentialStatus, readOthers } = await import('./src/gologin-credentials.js');
+    await ensureSharedGoLogin();
     res.json({ ok: true, credentials: credentialStatus(), others: readOthers() });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
@@ -8699,6 +8701,7 @@ app.post('/api/credentials', async (req, res) => {
       return res.json({ ok: true, credentials: credentialStatus(), others: readOthers(), changedAccounts: readOthers().map(o => o.id) });
     }
     saveCredentials(input);
+    await ensureSharedGoLogin();
     clearProfileCache();
     res.json({ ok: true, credentials: credentialStatus(), changedAccounts: credentialFields().filter(f => input[f.env]).map(f => f.id) });
   } catch (err) {
@@ -8718,7 +8721,7 @@ app.listen(PORT, '127.0.0.1', async () => {
   console.log(`  ✦ build: v${APP_VERSION}`);
   console.log(`  ✦ Dashboard: http://localhost:${PORT}`);
   startAmbientSampling(getActiveBrowserPids);
-  console.log(`  ✦ GoLogin token: ${process.env.GOLOGIN_API_TOKEN ? '✓ loaded' : '✗ MISSING'}`);
+  console.log(`  ✦ GoLogin: ${process.env.GOLOGIN_API_TOKEN ? 'local Ortus token loaded' : 'shared access will be checked after company Google sign-in'}`);
   console.log(`  ✦ Sheet tracking: ✓ centralized (Antonio's Apps Script)`);
 
   await initNotifier();

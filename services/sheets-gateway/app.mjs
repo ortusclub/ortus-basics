@@ -2,7 +2,7 @@ import {installEmailVerification} from './email-verification.mjs';
 import express from 'express';
 import { verifyRequest } from './protocol.mjs';
 const actions = new Set(['prepareSheet','ensureColumns','updateRows','updateRow','batchUpdate','getStatus','getSoO','setSoO','bumpSoOConnections','writeRecentConnections','clearRecentConnections','writeRecentMessages','getRowStatus','listTabs','listConnections','getConnection','createLeadTab']);
-export function createApp({ keys = [], bridgeUrl, claimNonce, forward = fetch, verifyGoogle, desktopClient, publicAccess = false, emailVerification }) {
+export function createApp({ keys = [], bridgeUrl, claimNonce, forward = fetch, verifyGoogle, desktopClient, publicAccess = false, emailVerification, sharedGoLogin = {} }) {
   const upstream = new URL(bridgeUrl);
   if (upstream.origin !== 'https://script.google.com' || !/^\/macros\/s\/[\w-]+\/exec$/.test(upstream.pathname)) throw Error('Invalid bridge configuration');
   const app = express();
@@ -23,6 +23,17 @@ export function createApp({ keys = [], bridgeUrl, claimNonce, forward = fetch, v
     const user = await identity(req);
     if (!user) return res.status(401).json({error:'Sign in with an approved company Google Workspace account.'});
     res.json({ok:true,email:user.email});
+  });
+  // Public Sheets access never grants access to reusable GoLogin credentials.
+  app.get('/gologin/shared', async (req,res) => {
+    res.set('Cache-Control','no-store');
+    const user = await identity(req);
+    if (!user) return res.status(401).json({error:'Company Google sign-in required.'});
+    const tokens = {};
+    for (const id of ['ortus','marketing']) {
+      if (typeof sharedGoLogin[id] === 'string' && sharedGoLogin[id].trim()) tokens[id] = sharedGoLogin[id].trim();
+    }
+    res.json({tokens});
   });
   app.post('/bridge', express.raw({type:'application/json',limit:'5mb'}), async (req,res) => {
     if (!Buffer.isBuffer(req.body)) return res.status(400).json({error:'JSON body required'});

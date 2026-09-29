@@ -240,10 +240,8 @@ async function tick() {
   let nameToId = {};
   try {
     const token = process.env.GOLOGIN_API_TOKEN;
-    if (token) {
-      const profiles = await getProfiles(token);
-      for (const p of profiles) nameToId[p.name] = p.id;
-    }
+    const profiles = await getProfiles(token);
+    for (const p of profiles) nameToId[p.name] = p.id;
   } catch (err) {
     console.warn(`[reply-check] getProfiles failed: ${err.message}`);
   }

@@ -1,3 +1,4 @@
+import { ensureSharedGoLogin } from './shared-gologin.js';
 import { createHash } from 'node:crypto';
 import { accountById, tokenForAccount } from './gologin-accounts.js';
 
@@ -38,6 +39,7 @@ export function recordWorkspaceVerification(id, result) {
   checks.set(id, { fingerprint: fingerprint(id), result: { ...result, checkedAt: new Date().toISOString() } });
 }
 export async function checkWorkspaceCredential(id, options) {
+  await ensureSharedGoLogin();
   const initial = fingerprint(id);
   const result = await checkWorkspaceCredentialOnce(id, options);
   if (initial === fingerprint(id)) recordWorkspaceVerification(id, result);

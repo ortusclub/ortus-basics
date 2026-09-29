@@ -34661,7 +34661,7 @@ async function renderCredentialsModal() {
   wrap.innerHTML = '<div class="cred-loading">Loading…</div>';
   let creds = [];
   try {
-    const r = await fetch('/api/credentials', { signal: AbortSignal.timeout(10000) });
+    const r = await fetch('/api/credentials', { signal: AbortSignal.timeout(35000) });
     if (!r.ok) throw new Error(`HTTP ${r.status}`);
     const d = await r.json();
     creds = d.credentials || [];
@@ -34674,22 +34674,22 @@ async function renderCredentialsModal() {
     const check = c.verification;
     const state = check
       ? `<span class="cred-state ${check.ok ? 'is-set' : 'is-error'}">${check.ok ? `Connected · ${Number(check.profileCount) || 0} accounts` : 'Error'}</span><span class="cred-state is-unset">${escHtml(c.hint || '')}</span>`
-      : `<span class="cred-state is-unset">${c.set ? `Saved · not checked · ${escHtml(c.hint)}` : 'Not set'}</span>`;
+      : `<span class="cred-state is-unset">${c.shared ? 'Shared server access' : c.set ? `Saved · not checked · ${escHtml(c.hint)}` : 'Not set'}</span>`;
     const errorNote = check && !check.ok ? `<div class="cred-note cred-error" role="status">${escHtml(check.error || 'Connection check failed.')}</div>` : '';
     const envNote = c.fromEnvironment
       ? '<div class="cred-note">Currently supplied by the environment (dev launcher). Saving here overrides it.</div>'
       : '';
     // A saved token can be removed outright — the workspace then contributes
     // no accounts until a token is pasted again.
-    const removeBtn = c.set
+    const removeBtn = c.set && !c.shared
       ? `<button type="button" class="cred-other-del cred-remove" title="Remove the saved ${escHtml(c.label)} token" onclick="removeCredToken('${escHtml(c.env)}', '${escHtml(c.label)}')">Remove</button>`
       : '';
     return `<div class="cred-row">
       <label class="cred-label" for="cred-${escHtml(c.id)}">${escHtml(c.label)} ${state} ${removeBtn}</label>
       <input type="password" class="cred-input" id="cred-${escHtml(c.id)}"
              data-env="${escHtml(c.env)}" autocomplete="off" spellcheck="false"
-             placeholder="${c.set ? 'Leave blank to keep the saved token' : 'Paste the GoLogin API token'}">
-      ${envNote}${errorNote}
+             placeholder="${c.sharedEligible && !c.set || c.shared ? 'Leave blank to use shared server access' : c.set ? 'Leave blank to keep the saved token' : 'Paste the GoLogin API token'}">
+      ${envNote}${errorNote}${c.sharedMessage ? `<div class="cred-note">${escHtml(c.sharedMessage)}</div>` : c.shared ? '<div class="cred-note">Provided by the server. Paste your own token to override.</div>' : c.sharedEligible && !c.set ? '<div class="cred-note">No shared token is configured on the server yet.</div>' : ''}
     </div>`;
   }).join('');
 
@@ -34812,11 +34812,11 @@ async function checkSavedCredentials() {
   setCredentialBusy(true);
   showCredentialResult('Checking saved GoLogin connections…');
   try {
-    const r = await fetch('/api/credentials', { signal: AbortSignal.timeout(10000) });
+    const r = await fetch('/api/credentials', { signal: AbortSignal.timeout(35000) });
     if (!r.ok) throw new Error('Could not read saved workspace settings.');
     const d = await r.json();
     const ids = [...(d.credentials || []).filter(c => c.set), ...(d.others || [])].map(c => c.id);
-    if (!ids.length) return showCredentialResult('No tokens saved. Add a token first.', true);
+    if (!ids.length) return showCredentialResult('No GoLogin access is available yet. Connect your company Google account for shared access, or add a token.', true);
     await completeCredentialUpdate({
       savedMessage: 'Connection check.', initialMessage: 'Checking saved GoLogin connections…', show: showCredentialResult,
       save: async () => ({}),

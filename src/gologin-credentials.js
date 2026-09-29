@@ -1,3 +1,4 @@
+import { sharedGoLoginStatus } from './shared-gologin.js';
 import { getWorkspaceVerification } from './gologin-credential-check.js';
 /**
  * src/gologin-credentials.js — operator-entered GoLogin workspace tokens.
@@ -138,7 +139,10 @@ export function credentialStatus() {
       label: f.label,
       env: f.env,
       required: f.required,
-      set: !!v,
+      set: !!v || sharedGoLoginStatus(f.id).active,
+      shared: !v && sharedGoLoginStatus(f.id).active,
+      sharedEligible: sharedGoLoginStatus(f.id).eligible,
+      sharedMessage: !v ? sharedGoLoginStatus(f.id).message : '',
       verification: getWorkspaceVerification(f.id),
       // Enough to recognise a token, useless to steal.
       hint: v ? `••••${v.slice(-4)}` : '',

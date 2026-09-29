@@ -1,3 +1,4 @@
+import { sharedGoLoginToken } from './shared-gologin.js';
 /**
  * GoLogin accounts registry — the app talks to MORE THAN ONE GoLogin account.
  *
@@ -128,7 +129,7 @@ export function accountLabel(id) {
 export function tokenForAccount(id) {
   const acc = accountById(id);
   if (!acc) return '';
-  return process.env[acc.env] || '';
+  return String(process.env[acc.env] || '').trim() || sharedGoLoginToken(id);
 }
 
 /**

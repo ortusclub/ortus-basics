@@ -1,3 +1,4 @@
+import { ensureSharedGoLogin } from './shared-gologin.js';
 import { recordWorkspaceVerification } from './gologin-credential-check.js';
 import GoLogin from 'gologin';
 import puppeteer from 'puppeteer-core';
@@ -233,6 +234,7 @@ async function fetchAccountProfiles(accountId, token) {
  * more than one.
  */
 export async function getProfiles(_ignoredLegacyToken) {
+  await ensureSharedGoLogin();
   const out = [];
   const generation = profileCacheGeneration;
   const failures = [];
@@ -328,6 +330,7 @@ export function accountOfProfile(profileId) {
  * again; only then do we fall back.
  */
 export async function tokenForProfile(profileId) {
+  await ensureSharedGoLogin();
   if (!profileAccount.has(profileId)) {
     try { await getProfiles(); } catch { /* fall through to the default token */ }
   }
