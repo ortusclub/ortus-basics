@@ -3063,7 +3063,13 @@
                  Back only — it is the mode whose intros depend on acceptances.
                  Shown/hidden by onModeChange via refreshLaunchCheckBtn(). -->
             <button type="button" id="btn-launch-check" class="btn btn-secondary" onclick="window.launchCheckNow()" title="Open each selected account and check who accepted — fires any due introductions. Does not start the campaign." hidden>⚡ Run check now</button>
+            <!-- Message Campaign only: one manual pass over each sender's inbox
+                 (regular + Sales Nav) that marks leads who wrote back as Replied.
+                 Runs ONLY when clicked — never on a schedule. Shown/hidden by
+                 refreshLaunchReplyBtn(). -->
+            <button type="button" id="btn-launch-replies" class="btn btn-secondary" onclick="window.launchReplyCheck()" title="Open each sender's inbox (LinkedIn + Sales Navigator) and mark everyone on this tab who replied. Does not start the campaign or send anything." hidden>Check for replies</button>
           </div>
+          <div id="launch-reply-note" class="launch-run-note" hidden></div>
           <div id="launch-run-note" class="launch-run-note"></div>
           <!-- Cloud campaigns (beta): when ON, "Start a campaign" dispatches to
                the GKE engine instead of running locally — the campaign keeps

@@ -33347,6 +33347,7 @@ function rsweepRender(s) {
     eyebrow.style.display = (s.phase === 'done' || s.phase === 'error') ? '' : 'none';
     if (s.phase === 'done') eyebrow.textContent = `Done · ${camp.length} reply(ies), ${unm.length} unmatched${s.dryRun ? '' : ` · ${s.wrote || 0} written`}`;
     if (s.phase === 'error') eyebrow.textContent = `Error — ${rsweepEsc(s.error || '')}`;
+    if (s.summary) eyebrow.textContent = s.summary;
     if (runBtn) runBtn.disabled = false;
     if (stopBtn) stopBtn.style.display = 'none';
   }
@@ -33364,7 +33365,7 @@ function rsweepRender(s) {
   if (logHead) {
     logHead.textContent = s.running
       ? `Live log · scanning ${s.currentProfile || '…'} · ${s.doneProfiles || 0}/${s.totalProfiles || 0} accounts`
-      : (logs.length ? `Live log · last ${Math.min(logs.length, 30)} events (finished)` : 'Live log');
+      : (s.summary ? s.summary.split(' — ')[0] : (logs.length ? `Live log · last ${Math.min(logs.length, 30)} events (finished)` : 'Live log'));
   }
 
   // Per-account live status card (who's scanning / done / closed / errored).
@@ -34639,14 +34640,99 @@ async function _launchCheckRun(scope) {
   }
 }
 
+// ── Launch panel: "Check for replies" (Message Campaign) ─────────────────────
+// One manual pass over each sender's inbox (regular + Sales Nav) via the reply
+// sweep, with write-back ON so repliers are marked Replied on the tab. Accounts
+// come from the tab's Sender column — replies land with whoever sent. Runs only
+// on click; while it runs the same button stops it.
+let _replyCheckTimer = null;
+function refreshLaunchReplyBtn() {
+  const btn = document.getElementById('btn-launch-replies');
+  if (!btn) return;
+  const mode = document.getElementById('campaign-mode')?.value || '';
+  btn.hidden = mode !== 'open_profile_only';
+}
+if (typeof window !== 'undefined') window.refreshLaunchReplyBtn = refreshLaunchReplyBtn;
+
+function _replyNote(text) {
+  const note = document.getElementById('launch-reply-note');
+  if (!note) return;
+  note.hidden = !text;
+  note.textContent = text || '';
+}
+
+window.launchReplyCheck = async function() {
+  const toast = (m, ms) => { if (typeof showCampaignToast === 'function') showCampaignToast(m, ms); };
+  const btn = document.getElementById('btn-launch-replies');
+  if (btn && btn.dataset.mode === 'stop') {
+    btn.disabled = true; btn.textContent = 'Stopping…';
+    try { await fetch('/api/reply-sweep/stop', { method: 'POST' }); } catch (_) { /* poll reports the end */ }
+    return;
+  }
+  const sheetUrl = (document.getElementById('sheet-url')?.value || '').trim();
+  if (!sheetUrl) return toast('Paste the Google Sheet URL first.');
+  try {
+    const r = await fetch('/api/reply-sweep/start', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        sheetUrl,
+        linkedinColumn: document.getElementById('linkedin-col-select')?.value || '',
+        dryRun: false,
+      }),
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return toast(d.error || `Could not start the reply check (HTTP ${r.status})`, 4000);
+    if (!d.profiles) {
+      _replyNote('No sent messages on this tab yet — nothing to check.');
+      await pollStatus();
+      return;
+    }
+    if (btn) { btn.dataset.mode = 'stop'; btn.textContent = '■ Stop reply check'; btn.disabled = false; }
+    _replyNote(`Checking ${d.profiles} account(s) for replies…`);
+    if (_replyCheckTimer) clearInterval(_replyCheckTimer);
+    _replyCheckTimer = setInterval(_pollLaunchReplyCheck, 1000);
+  } catch (e) {
+    toast('Reply check failed: ' + e.message, 4000);
+  }
+};
+
+async function _pollLaunchReplyCheck() {
+  let s;
+  try { s = await (await fetch('/api/reply-sweep/status')).json(); } catch (_) { return; }
+  const done = s.doneProfiles || 0;
+  const total = s.totalProfiles || 0;
+  const last = (s.logs || []).slice(-1)[0] || '';
+  if (s.running) {
+    _replyNote(`Checking ${Math.min(done + 1, total)} of ${total} · ${last.replace(/^\[[^\]]+\]\s*/, '')}`);
+    return;
+  }
+  clearInterval(_replyCheckTimer); _replyCheckTimer = null;
+  const btn = document.getElementById('btn-launch-replies');
+  if (btn) { btn.dataset.mode = ''; btn.textContent = 'Check for replies'; btn.disabled = false; }
+  const found = (s.campaignReplies || []).length;
+  const failed = (s.perProfile || []).filter((p) => p.status === 'error');
+  let msg = found
+    ? `${found} repl${found === 1 ? 'y' : 'ies'} found — ${s.wrote || 0} marked Replied in the sheet`
+    : 'No new replies found';
+  msg += ` · ${total} account(s) checked`;
+  if (failed.length) msg += ` · couldn't read: ${failed.map((p) => p.profileName).join(', ')}`;
+  msg = s.summary || msg;
+  _replyNote(msg);
+  if (typeof showCampaignToast === 'function') showCampaignToast(msg, 5000);
+  // A standalone reply check can finish while campaign polling is idle.
+  // Fetch its final campaign-log entry before leaving the check idle too.
+  await pollStatus();
+}
+
 // Keep it in step with the mode picker, and paint the right state on load.
 if (typeof window !== 'undefined') {
-  document.getElementById('campaign-mode')?.addEventListener('change', refreshLaunchCheckBtn);
-  setTimeout(refreshLaunchCheckBtn, 800);
+  const _refreshLaunchBtns = () => { refreshLaunchCheckBtn(); refreshLaunchReplyBtn(); };
+  document.getElementById('campaign-mode')?.addEventListener('change', _refreshLaunchBtns);
+  setTimeout(_refreshLaunchBtns, 800);
   // renderModeSelector() sets #campaign-mode.value programmatically, which fires
   // no change event, so a listener alone goes stale. Re-checking one select is
   // cheap — same approach as the sidebar campaign name.
-  setInterval(refreshLaunchCheckBtn, 700);
+  setInterval(_refreshLaunchBtns, 700);
 }
 
 // ── Settings: GoLogin workspace tokens (Ortus Basics 1.0) ──────────────────

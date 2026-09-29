@@ -224,7 +224,8 @@ export function classifyConversations(convs, candidateRows, linkedinColumn) {
 // ── Dependency injection (test hook; mirrors check-dms.js) ───────────────────
 const _realDeps = {
   async getConversationsPage(page, opts) { return helpers.getConversationsPage(page, opts); },
-  async getSalesNavThreadsPage(page) { return helpers.getSalesNavThreadsPage(page); },
+  async getInboxCategoryPage(page, opts) { return helpers.getInboxCategoryPage(page, opts); },
+  async getSalesNavThreadsPage(page, opts) { return helpers.getSalesNavThreadsPage(page, opts); },
   async getSheetRowStatus(sheetUrl, url, col) { return sheetsWriter.getSheetRowStatus(sheetUrl, url, col); },
   async updateSheetRow(sheetUrl, url, tracking, col) { return updateSheetRow(sheetUrl, url, tracking, col); },
   async appendReplyRow(sheetUrl, reply) { return _appendReplyRow(sheetUrl, reply); },
@@ -267,7 +268,7 @@ export async function applyReplyWriteBack({ sheetUrl, linkedinColumn, campaignRe
         leadUrl: url, timestamp: tsIso, direction: 'in', sender: r.leadName || 'lead', body: String(r.snippet || ''),
       });
       await _deps.updateSheetRow(sheetUrl, url, {
-        Reply: 'yes', ReplyAt: tsIso, ReplyPreview: String(r.snippet || '').slice(0, 100), stage: 'Replied',
+        Reply: 'yes', ReplyAt: tsIso, ReplyPreview: String(r.snippet || '').slice(0, 100), stage: 'Replied', responded: 'Y',
       }, linkedinColumn);
       wrote++;
     } catch (e) {
@@ -275,6 +276,68 @@ export async function applyReplyWriteBack({ sheetUrl, linkedinColumn, campaignRe
     }
   }
   return { wrote, skipped, errors };
+}
+
+// Paging bounds for the manual reply check: 20 threads a page, so 40 pages
+// reaches ~800 threads back — far past any single campaign — while a short
+// pause between pages keeps the reads looking like someone scrolling.
+const MAX_INBOX_PAGES = 40;
+const PAGE_DELAY_MS = 400;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function oldestActivity(elements) {
+  const ts = (Array.isArray(elements) ? elements : []).map((e) => e.lastActivityAt || 0);
+  return ts.length ? Math.min(...ts) : 0;
+}
+
+function dedupeConvs(convs) {
+  const seen = new Map();
+  for (const c of convs) {
+    const k = c.threadId || c.entityUrn;
+    if (!k) { seen.set(Symbol('conv'), c); continue; }
+    if (!seen.has(k)) seen.set(k, c);
+  }
+  return [...seen.values()];
+}
+
+/**
+ * Walk the regular inbox back past `watermark` with the cursor-paged category
+ * query. That query only fires once the conversation list is scrolled, so
+ * scroll first and wait for it. Returns [] when it can't be discovered — the
+ * caller still has page 1.
+ */
+async function pageInboxBack(page, watermark, log) {
+  if (typeof page.evaluate === 'function' && typeof page.waitForFunction === 'function') {
+    try {
+      await page.evaluate(() => {
+        document.querySelectorAll('*').forEach((e) => {
+          if (e.scrollHeight > e.clientHeight + 100 && /auto|scroll/.test(getComputedStyle(e).overflowY)) e.scrollTop = e.scrollHeight;
+        });
+      });
+      await page.waitForFunction(
+        () => performance.getEntriesByType('resource').some((e) => {
+          try { return decodeURIComponent(e.name).includes('conversationCategoryPredicate'); } catch { return false; }
+        }),
+        { timeout: 15000 },
+      );
+    } catch { /* fall through — the first category fetch returns null */ }
+  }
+  const out = [];
+  let complete = false;
+  let cursor = null;
+  for (let pages = 0; pages < MAX_INBOX_PAGES; pages++) {
+    if (pages) await sleep(PAGE_DELAY_MS);
+    let batch;
+    try { batch = await _deps.getInboxCategoryPage(page, { cursor }); }
+    catch { break; }
+    if (!batch || !Array.isArray(batch.elements)) break;
+    if (batch.elements.length === 0) { complete = true; break; }
+    out.push(...batch.elements);
+    if (oldestActivity(batch.elements) <= watermark || !batch.nextCursor) { complete = true; break; }
+    cursor = batch.nextCursor;
+  }
+  try { log(`📬 Inbox: read ${out.length} thread(s)${out.length ? ` back to ${new Date(oldestActivity(out)).toISOString().slice(0, 10)}` : ' (paging unavailable — newest 20 only)'}`); } catch (_) {}
+  return { convs: out, complete };
 }
 
 /** Navigate /messaging/, wait for the conversations XHR, fetch + paginate, filter by watermark. */
@@ -311,24 +374,15 @@ export async function loadInboxConversations(page, { watermark = 0, log = () => 
       return { convs: [], error: "couldn't load inbox for this account (rate-limited or session expired) — try again" };
     }
 
-    const convs = (first.elements || []).filter((el) => (el.lastActivityAt || 0) > watermark);
-    const firstOldest = (first.elements || []).reduce((min, e) => Math.min(min, e.lastActivityAt || 0), Number.POSITIVE_INFINITY);
-    const paging = first.paging;
-    const maybeMore = firstOldest > watermark && (!paging || !paging.total || 20 < paging.total);
-    if (maybeMore && (first.elements || []).length >= 20) {
-      let start = 20;
-      for (let pages = 0; pages < 9; pages++) {
-        let batch;
-        try { batch = await _deps.getConversationsPage(page, { start, count: 20 }); }
-        catch { break; }
-        if (!batch || !Array.isArray(batch.elements) || batch.elements.length === 0) break;
-        for (const el of batch.elements) { if ((el.lastActivityAt || 0) > watermark) convs.push(el); }
-        const oldest = batch.elements.reduce((min, e) => Math.min(min, e.lastActivityAt || 0), Number.POSITIVE_INFINITY);
-        if (oldest <= watermark) break;
-        start += 20;
-      }
-    }
-    return { convs, error: '' };
+    // Page 1 (sync-token query) is only ever the newest 20 threads. Go further
+    // back with the cursor-paged category query until we pass the watermark.
+    const firstEls = first.elements || [];
+    const deeper = (firstEls.length >= 20 && oldestActivity(firstEls) > watermark)
+      ? await pageInboxBack(page, watermark, log)
+      : { convs: [], complete: true };
+    const convs = dedupeConvs([...firstEls, ...deeper.convs])
+      .filter((el) => (el.lastActivityAt || 0) > watermark);
+    return { convs, error: '', complete: deeper.complete };
   } catch (e) {
     return { convs: [], error: `inbox scan failed: ${e.message}` };
   }
@@ -341,9 +395,12 @@ export function hasSalesNavChannel(rows) {
   const re = /\bop\b|open profile|in[\s-]?mail|sales nav/i;
   return (Array.isArray(rows) ? rows : []).some((r) => {
     if (!r) return false;
-    const vals = [r.Stage, r['OP Status'], r['Op Status'], r['Last Action'], r['Last Acti'], r.Channel]
+    const sentVia = String(r['Sent via'] || '').trim().toLowerCase();
+    if (sentVia === 'linkedin') return false;
+    if (sentVia === 'sales navigator') return true;
+    const vals = [r.Stage, r['OP Status'], r['Op Status'], r['InM Status'], r['Last Action'], r['Last Acti'], r.Channel]
       .filter(Boolean).map(String);
-    return vals.some((v) => re.test(v));
+    return vals.some((v) => re.test(v) || /^InM Sent$/i.test(v));
   });
 }
 
@@ -376,8 +433,27 @@ export async function loadSalesNavConversations(page, { watermark = 0, log = () 
     if (res === null || res === undefined) {
       return { convs: [], error: "couldn't load Sales Nav inbox (no seat, rate-limited, or session expired)" };
     }
-    const convs = (res.elements || []).filter((el) => (el.lastActivityAt || 0) > watermark);
-    return { convs, error: '' };
+    // Newest-first, 20 per page. Keep paging until a page reaches back past the
+    // watermark — a busy account can have several pages of newer sends on top.
+    const all = [...(res.elements || [])];
+    let next = res.nextPageStartsAt || null;
+    let complete = !next || oldestActivity(res.elements) <= watermark;
+    for (let pages = 1; pages < MAX_INBOX_PAGES && next && oldestActivity(res.elements) > watermark; pages++) {
+      await sleep(PAGE_DELAY_MS);
+      let batch;
+      try { batch = await _deps.getSalesNavThreadsPage(page, { pageStartsAt: next }); }
+      catch { break; }
+      if (!batch || !Array.isArray(batch.elements)) break;
+      if (batch.elements.length === 0) { complete = true; break; }
+      all.push(...batch.elements);
+      complete = !batch.nextPageStartsAt || oldestActivity(batch.elements) <= watermark;
+      if (!batch.nextPageStartsAt || batch.nextPageStartsAt === next) break;
+      res = batch;
+      next = batch.nextPageStartsAt;
+    }
+    try { log(`🧭 Sales Nav: read ${all.length} thread(s) back to ${new Date(oldestActivity(all)).toISOString().slice(0, 10)}`); } catch (_) {}
+    const convs = dedupeConvs(all).filter((el) => (el.lastActivityAt || 0) > watermark);
+    return { convs, error: '', complete };
   } catch (e) {
     return { convs: [], error: `Sales Nav scan failed: ${e.message}` };
   }
@@ -391,18 +467,34 @@ export async function loadSalesNavConversations(page, { watermark = 0, log = () 
  * failure is logged but does not fail the regular sweep.
  */
 export async function sweepProfileInbox({ page, sheetUrl, linkedinColumn, candidateRows, watermark = 0, log = () => {}, includeSalesNav } = {}) {
-  const { convs, error } = await loadInboxConversations(page, { watermark, log });
+  const { convs, error, complete } = await loadInboxConversations(page, { watermark, log });
   if (error) return { campaignReplies: [], unmatched: [], conversationsScanned: 0, error };
 
   let allConvs = convs;
+  const channelChecks = { linkedin: complete ? 'Done' : 'Incomplete' };
   const wantSalesNav = includeSalesNav === undefined ? hasSalesNavChannel(candidateRows) : !!includeSalesNav;
   if (wantSalesNav) {
     try { log('🧭 Also scanning Sales Navigator inbox (OP / InMail)…'); } catch (_) {}
     const sn = await loadSalesNavConversations(page, { watermark, log });
+    channelChecks.salesnav = sn.error ? 'Failed' : sn.complete ? 'Done' : 'Incomplete';
     if (sn.error) { try { log(`⚠ Sales Nav inbox skipped — ${sn.error}`); } catch (_) {} }
     else { allConvs = convs.concat(sn.convs); try { log(`🧭 Sales Nav: ${sn.convs.length} thread(s)`); } catch (_) {} }
   }
 
   const { campaignReplies, unmatched } = classifyConversations(allConvs, candidateRows, linkedinColumn);
-  return { campaignReplies, unmatched, conversationsScanned: allConvs.length, error: '' };
+  return { campaignReplies, unmatched, conversationsScanned: allConvs.length, error: '', channelChecks };
+}
+
+export function replyCheckResultsForRows(rows, linkedinColumn, outcome, checkedAt, stopped = false) {
+  const replies = new Set((outcome.campaignReplies || []).map((r) => r.row));
+  return rows.map((row) => {
+    const channel = hasSalesNavChannel([row]) ? 'salesnav' : 'linkedin';
+    const status = stopped ? 'Stopped' : outcome.error ? 'Failed'
+      : (outcome.channelChecks?.[channel] || 'Incomplete');
+    return {
+      linkedinUrl: rowLinkedinUrl(row, linkedinColumn), status, checkedAt,
+      result: replies.has(row) ? 'Reply found'
+        : status === 'Done' ? 'No reply found in scanned messages' : 'Unknown — check not completed',
+    };
+  });
 }

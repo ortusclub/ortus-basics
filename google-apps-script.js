@@ -344,6 +344,9 @@ var FIELD_MAP = {
   Reply:           'Reply',
   ReplyAt:         'Reply At',
   ReplyPreview:    'Reply Preview',
+  // Manual "Check for replies": operator-kept yes/no column on Message
+  // Campaign tabs. Written only where the tab already has the header.
+  responded:       'Responded',
   // ── Follower Growth ledger (2026-08-10) ──
   // FG now fires from the operator's OWN sheet rather than a tab in the central
   // FG spreadsheet (fg-apps-script.js is container-bound and cannot reach it),
@@ -446,6 +449,9 @@ function doPost(e) {
 
       case 'updateRows':
         return handleUpdateRows(sheet, data);
+
+      case 'writeReplyCheckResults':
+        return handleReplyCheckResults(sheet, data);
 
       case 'updateRow':
       default:
@@ -1160,6 +1166,36 @@ function columnToLetter(n) {
  * Reply: { success, results:[ {ok:true,row,rows,updated} | {error} ] } — index-aligned
  * with `rows`, so one lead missing from the sheet never fails the rest of the batch.
  */
+// Reply checks have their own timestamps; never change outreach dates or Stage.
+function handleReplyCheckResults(sheet, data) {
+  var headers = getHeaders(sheet);
+  var urlCol = data.urlColumnName ? headers.indexOf(data.urlColumnName) : -1;
+  if (urlCol < 0) urlCol = findUrlColumn(headers, sheet);
+  if (urlCol < 0) return jsonResponse({ error: 'No LinkedIn URL column found' });
+  var columns = ['Reply Check Status', 'Reply Last Checked At', 'Reply Check Result'];
+  columns.forEach(function(name) {
+    if (headers.indexOf(name) < 0) {
+      sheet.getRange(1, headers.length + 1).setValue(name).setFontWeight('bold');
+      headers.push(name);
+    }
+  });
+  var lastRow = sheet.getLastRow();
+  var urls = lastRow >= 2 ? sheet.getRange(2, urlCol + 1, lastRow - 1, 1).getValues() : [];
+  var results = (data.rows || []).map(function(item) {
+    if (!item.linkedinUrl) return { error: 'Missing LinkedIn URL' };
+    var rows = findRowsByUrl(sheet, urlCol, item.linkedinUrl, urls);
+    if (!rows.length) return { error: 'Lead row not found' };
+    rows.forEach(function(row) {
+      var values = [item.status, item.checkedAt, item.result];
+      columns.forEach(function(name, i) {
+        sheet.getRange(row, headers.indexOf(name) + 1).setValue(values[i]);
+      });
+    });
+    return { ok: true };
+  });
+  return jsonResponse({ success: true, results: results });
+}
+
 function handleUpdateRows(sheet, data) {
   var rows = data.rows;
   if (!rows || !rows.length) {

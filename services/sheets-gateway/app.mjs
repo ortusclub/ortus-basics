@@ -1,7 +1,7 @@
 import {installEmailVerification} from './email-verification.mjs';
 import express from 'express';
 import { verifyRequest } from './protocol.mjs';
-const actions = new Set(['prepareSheet','ensureColumns','updateRows','updateRow','batchUpdate','getStatus','getSoO','setSoO','bumpSoOConnections','writeRecentConnections','clearRecentConnections','writeRecentMessages','getRowStatus','listTabs','listConnections','getConnection','createLeadTab']);
+const actions = new Set(['appendReply','writeReplyCheckResults','prepareSheet','ensureColumns','updateRows','updateRow','batchUpdate','getStatus','getSoO','setSoO','bumpSoOConnections','writeRecentConnections','clearRecentConnections','writeRecentMessages','getRowStatus','listTabs','listConnections','getConnection','createLeadTab']);
 export function createApp({ keys = [], bridgeUrl, claimNonce, forward = fetch, verifyGoogle, desktopClient, publicAccess = false, emailVerification, sharedGoLogin = {} }) {
   const upstream = new URL(bridgeUrl);
   if (upstream.origin !== 'https://script.google.com' || !/^\/macros\/s\/[\w-]+\/exec$/.test(upstream.pathname)) throw Error('Invalid bridge configuration');

@@ -1666,38 +1666,98 @@ export async function getConversationsPage(page, { start = 0, count = 20 } = {})
     }, { start, count });
 
     if (!raw || typeof raw !== 'object') return null;
-
-    // ── Normalize the `normalized+json+2.1` envelope → internal shape ──
-    // Real schema (captured live 2026-06-29 — see docs/manual-bulk-reply-check-SCHEMA.md):
-    //   { data: { data: { messengerConversationsBySyncToken: { "*elements": [URN refs] } } },
-    //     included: [ Conversation | Message | MessagingParticipant ... ] }
-    // The conversation node only holds URN string REFERENCES (`*elements`); the real
-    // objects live in the flat `included[]` array. We index `included` by entityUrn and
-    // resolve references by hand.
-    const dataData = raw.data?.data ?? raw.data ?? {};
-    const convKey = Object.keys(dataData).find(k => /messengerConversations/i.test(k));
-    const convNode = convKey ? dataData[convKey] : null;
-
-    // `*elements` = URN refs; older shape `elements` = inline objects (kept as a fallback).
-    const refs = Array.isArray(convNode?.['*elements']) ? convNode['*elements']
-               : Array.isArray(convNode?.elements) ? convNode.elements
-               : [];
-
-    const index = new Map();
-    for (const e of (Array.isArray(raw.included) ? raw.included : [])) {
-      if (e && e.entityUrn) index.set(e.entityUrn, e);
-    }
-
-    const elements = refs
-      .map(ref => (typeof ref === 'string' ? index.get(ref) : ref))
-      .map(rawConv => normalizeConversation(rawConv, index))
-      .filter(Boolean);
-
-    return { elements, metadata: convNode?.metadata || null };
+    return normalizeConversationsEnvelope(raw);
   } catch (err) {
     console.warn(`[helpers] getConversationsPage failed: ${err.message || err}`);
     return null;
   }
+}
+
+/**
+ * Fetch one page of the PRIMARY inbox by cursor (newest first). LinkedIn's own
+ * list pages with `messengerConversationsByCategoryQuery` + `nextCursor`; the
+ * sync-token query getConversationsPage replays only ever returns the newest 20,
+ * and its start/count/lastUpdatedBefore are ignored (verified live 2026-09-29 —
+ * every "page" came back identical). The category queryId only fires once the
+ * conversation list has been scrolled, so the caller scrolls first; the mailbox
+ * URN comes from any messengerConversations request on the page.
+ *
+ * Returns { elements, nextCursor } or null when the query can't be discovered
+ * or the fetch fails.
+ */
+export async function getInboxCategoryPage(page, { cursor = null } = {}) {
+  try {
+    const raw = await page.evaluate(async ({ cursor }) => {
+      try {
+        const names = performance.getEntriesByType('resource')
+          .map(e => e.name)
+          .filter(n => typeof n === 'string' && n.includes('queryId=messengerConversations'));
+        const decoded = names.map(n => { try { return decodeURIComponent(n); } catch { return n; } });
+        const tmplIdx = decoded.findIndex(n => n.includes('conversationCategoryPredicate'));
+        if (tmplIdx === -1) return null;
+        const mbox = decoded.map(n => n.match(/mailboxUrn:([^,)]+)/)?.[1]).find(Boolean);
+        if (!mbox) return null;
+        const u = new URL(names[tmplIdx]);
+        const queryId = u.searchParams.get('queryId');
+        const vars = '(query:(predicateUnions:List((conversationCategoryPredicate:(category:PRIMARY_INBOX)))),count:20,'
+          + `mailboxUrn:${encodeURIComponent(mbox)}`
+          + (cursor ? `,nextCursor:${encodeURIComponent(cursor)}` : '')
+          + ')';
+        const csrf = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('JSESSIONID='));
+        if (!csrf) return null;
+        const token = csrf.split('=')[1]?.replace(/"/g, '');
+        const resp = await fetch(`${u.origin}${u.pathname}?queryId=${queryId}&variables=${vars}`, {
+          headers: {
+            'accept': 'application/vnd.linkedin.normalized+json+2.1',
+            'csrf-token': token,
+            'x-restli-protocol-version': '2.0.0',
+          },
+          credentials: 'include',
+        });
+        if (!resp.ok) return null;
+        return await resp.json();
+      } catch {
+        return null;
+      }
+    }, { cursor });
+    if (!raw || typeof raw !== 'object') return null;
+    const { elements, metadata } = normalizeConversationsEnvelope(raw);
+    return { elements, nextCursor: metadata?.nextCursor || null };
+  } catch (err) {
+    console.warn(`[helpers] getInboxCategoryPage failed: ${err.message || err}`);
+    return null;
+  }
+}
+
+/** Pure: messenger GraphQL `normalized+json+2.1` envelope → { elements, metadata }. */
+function normalizeConversationsEnvelope(raw) {
+  // ── Normalize the `normalized+json+2.1` envelope → internal shape ──
+  // Real schema (captured live 2026-06-29 — see docs/manual-bulk-reply-check-SCHEMA.md):
+  //   { data: { data: { messengerConversationsBySyncToken: { "*elements": [URN refs] } } },
+  //     included: [ Conversation | Message | MessagingParticipant ... ] }
+  // The conversation node only holds URN string REFERENCES (`*elements`); the real
+  // objects live in the flat `included[]` array. We index `included` by entityUrn and
+  // resolve references by hand.
+  const dataData = raw.data?.data ?? raw.data ?? {};
+  const convKey = Object.keys(dataData).find(k => /messengerConversations/i.test(k));
+  const convNode = convKey ? dataData[convKey] : null;
+
+  // `*elements` = URN refs; older shape `elements` = inline objects (kept as a fallback).
+  const refs = Array.isArray(convNode?.['*elements']) ? convNode['*elements']
+             : Array.isArray(convNode?.elements) ? convNode.elements
+             : [];
+
+  const index = new Map();
+  for (const e of (Array.isArray(raw.included) ? raw.included : [])) {
+    if (e && e.entityUrn) index.set(e.entityUrn, e);
+  }
+
+  const elements = refs
+    .map(ref => (typeof ref === 'string' ? index.get(ref) : ref))
+    .map(rawConv => normalizeConversation(rawConv, index))
+    .filter(Boolean);
+
+  return { elements, metadata: convNode?.metadata || null };
 }
 
 /** Extract the fsd_profile token from any messaging/participant/conversation URN. */
@@ -1904,17 +1964,24 @@ export function normalizeSalesNavThreads(raw) {
  * (so the decoration/query params stay current) with the JSESSIONID csrf token.
  * Requires the Sales Nav inbox to already be loaded so the XHR has fired.
  */
-export async function getSalesNavThreadsPage(page) {
+export async function getSalesNavThreadsPage(page, { pageStartsAt = null } = {}) {
   try {
-    const raw = await page.evaluate(async () => {
+    const raw = await page.evaluate(async ({ pageStartsAt }) => {
       try {
         const entries = performance.getEntriesByType('resource')
           .filter(e => typeof e.name === 'string' && e.name.includes('salesApiMessagingThreads'))
           .sort((a, b) => b.startTime - a.startTime);
         if (entries.length === 0) return null; // inbox not loaded yet
         // Use the list endpoint (no trailing /<threadId>) which embeds messages.
-        const listUrl = entries.map(e => e.name).find(u => !/salesApiMessagingThreads\/[^?]/.test(u));
+        let listUrl = entries.map(e => e.name).find(u => !/salesApiMessagingThreads\/[^?]/.test(u));
         if (!listUrl) return null;
+        // Paging: the list is newest-first; each thread carries nextPageStartsAt,
+        // and the LAST thread's value is the next page's pageStartsAt.
+        if (pageStartsAt) {
+          const u = new URL(listUrl);
+          u.searchParams.set('pageStartsAt', String(pageStartsAt));
+          listUrl = u.toString();
+        }
         const csrf = document.cookie.split(';').map(c => c.trim()).find(c => c.startsWith('JSESSIONID='));
         if (!csrf) return null;
         const token = csrf.split('=')[1]?.replace(/"/g, '');
@@ -1934,9 +2001,12 @@ export async function getSalesNavThreadsPage(page) {
       } catch {
         return null;
       }
-    });
+    }, { pageStartsAt });
     if (!raw || typeof raw !== 'object') return null;
-    return normalizeSalesNavThreads(raw);
+    const out = normalizeSalesNavThreads(raw);
+    const rawThreads = Array.isArray(raw.data?.elements) ? raw.data.elements : [];
+    out.nextPageStartsAt = rawThreads.length ? (rawThreads[rawThreads.length - 1].nextPageStartsAt || null) : null;
+    return out;
   } catch (err) {
     console.warn(`[helpers] getSalesNavThreadsPage failed: ${err.message || err}`);
     return null;

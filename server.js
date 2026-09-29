@@ -69,7 +69,9 @@ import { startAmbientSampling } from './src/resource-monitor.js';
 import { personalizeTemplate } from './src/linkedin/helpers.js';
 import { primaryKeyFromUrl, loadPrimaryStatus, seedConnectedIds } from './src/primary-status-store.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
-import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations } from './src/linkedin/inbox-sweep.js';
+import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations, replyCheckResultsForRows } from './src/linkedin/inbox-sweep.js';
+import { writeReplyCheckResults } from './src/sheets-writer.js';
+import { replyWatermarkForRows, detectLinkedinColumn } from './src/reply-check-window.js';
 import { runAmplification as runPostAmplification } from './src/linkedin/post-amplification.js';
 import { fetchSheet, fetchSheetWithRows, listSheetTabs } from './src/sheets.js';
 import { processedLeadUrls, sheetProcessedUrls, handoverTargetForCampaign, reclaimableCloudId, reclaimRefusal } from './src/handover.js';
@@ -5022,7 +5024,6 @@ app.post('/api/reply-sweep/start', async (req, res) => {
     linkedinColumn = linkedinColumn || campaign.linkedinColumn || '';
   }
   if (!sheetUrl) return res.status(400).json({ error: 'sheetUrl required' });
-  linkedinColumn = linkedinColumn || 'Linkedin URL';
 
   // Load + group sent rows by sender (same grouping as /api/reply-check-now).
   const token = process.env.GOLOGIN_API_TOKEN;
@@ -5039,6 +5040,9 @@ app.post('/api/reply-sweep/start', async (req, res) => {
   } catch { /* fall back to id-as-name */ }
 
   const candidateRows = replyEligibleRows(rows);
+  // Tabs name the link column differently (OPI keeps it under "Linkedin Bio");
+  // matching + write-back both need the real one.
+  linkedinColumn = detectLinkedinColumn(candidateRows, linkedinColumn);
 
   const wanted = Array.isArray(profileIds) && profileIds.length ? profileIds.slice() : null;
   const leadsByProfile = new Map();
@@ -5058,10 +5062,22 @@ app.post('/api/reply-sweep/start', async (req, res) => {
   _replySweep = makeInitialSweepStatus(names, dryRun);
   _replySweepAbort = false;
 
-  // Scan window: campaign first send-out − 12h, else 14 days back.
-  const startMs = campaign.startedAt ? Date.parse(campaign.startedAt) : NaN;
-  const watermark = (Number.isFinite(startMs) ? startMs : (Date.now() - 14 * 86400000)) - 12 * 60 * 60 * 1000;
+  // Scan window per account: back to that account's earliest send on this tab
+  // (read off the sheet — a finished campaign has no start time in memory).
+  const watermarkFor = (pid) => replyWatermarkForRows(leadsByProfile.get(pid));
   const stamp = (m) => { _replySweep.logs.push(`[${new Date().toISOString()}] ${m}`); if (_replySweep.logs.length > 200) _replySweep.logs.shift(); try { campaignLog(`[reply-sweep] ${m}`); } catch (_) {} };
+  const saveCheckResults = async (pid, slot, outcome) => {
+    const results = replyCheckResultsForRows(leadsByProfile.get(pid), linkedinColumn, outcome, new Date().toISOString(), _replySweepAbort);
+    slot.incomplete = results.some((r) => r.status !== 'Done');
+    if (dryRun) return;
+    try {
+      await writeReplyCheckResults(sheetUrl, linkedinColumn, results);
+      stamp(`✍ [${slot.profileName}] Reply-check status and time saved for ${results.length} lead(s)`);
+    } catch (err) {
+      slot.writeErrors = (slot.writeErrors || 0) + 1;
+      stamp(`⚠ [${slot.profileName}] Could not save reply-check results: ${err.message}`);
+    }
+  };
 
   (async () => {
     setBulkCheckInProgress(true);
@@ -5073,12 +5089,13 @@ app.post('/api/reply-sweep/start', async (req, res) => {
         const pid = pids[i];
         const slot = _replySweep.perProfile[i];
         const pName = names[i];
-        if (_replySweepAbort) { slot.status = 'skipped'; slot.error = 'stopped'; stamp(`⊘ [${pName}] Stopped`); continue; }
+        if (_replySweepAbort) { slot.status = 'skipped'; slot.error = 'stopped'; stamp(`⊘ [${pName}] Stopped — not checked`); continue; }
         _replySweep.currentProfile = pName;
         slot.status = 'running';
         const wasRunning = !!getProfilePid(pid);
         const isLocal = pid === 'local-browser';
         let launched = null, handle = null;
+        let checkOutcome = { error: 'Account could not be checked', campaignReplies: [] };
         try {
           stamp(`📬 [${pName}] Scanning inbox…`);
           launched = isLocal ? await launchLocalBrowser() : await launchProfile(pid, token);
@@ -5086,10 +5103,13 @@ app.post('/api/reply-sweep/start', async (req, res) => {
           handle = { close: async () => { try { await (isLocal ? closeLocalBrowser() : closeProfile(pid)); } catch (_) {} } };
           _replySweepHandle = handle;
 
+          const watermark = watermarkFor(pid);
+          stamp(`📅 [${pName}] Reading back to ${new Date(watermark).toISOString().slice(0, 10)} · ${leadsByProfile.get(pid).length} sent lead(s) · column "${linkedinColumn}"`);
           const out = await sweepProfileInbox({
             page: launched.page, sheetUrl, linkedinColumn,
             candidateRows: leadsByProfile.get(pid), watermark, log: stamp,
           });
+          checkOutcome = out;
           if (out.error) { slot.status = 'error'; slot.error = out.error; stamp(`⚠ [${pName}] ${out.error}`); }
           else {
             slot.replies = out.campaignReplies.length;
@@ -5102,6 +5122,7 @@ app.post('/api/reply-sweep/start', async (req, res) => {
             if (!dryRun && out.campaignReplies.length) {
               const wb = await applyReplyWriteBack({ sheetUrl, linkedinColumn, campaignReplies: out.campaignReplies });
               _replySweep.wrote += wb.wrote;
+              slot.writeErrors = wb.errors.length;
               stamp(`✍ [${pName}] wrote ${wb.wrote}, skipped ${wb.skipped}${wb.errors.length ? `, ${wb.errors.length} error(s)` : ''}`);
             }
           }
@@ -5109,6 +5130,7 @@ app.post('/api/reply-sweep/start', async (req, res) => {
           if (_replySweepAbort) { slot.status = 'skipped'; slot.error = 'stopped'; stamp(`⊘ [${pName}] Stopped`); }
           else { slot.status = 'error'; slot.error = err.message; stamp(`✗ [${pName}] ${err.message}`); }
         } finally {
+          await saveCheckResults(pid, slot, checkOutcome);
           _replySweepHandle = null;
           // Always close what WE opened (sweep only runs when no campaign is active,
           // so wasRunning should be false; we still respect an operator-opened browser).
@@ -5131,13 +5153,29 @@ app.post('/api/reply-sweep/start', async (req, res) => {
         if (getProfilePid(pid)) { stamp(`⏏ Safety close — ${nameByProfileId.get(pid) || pid}`); try { await closeProfile(pid); } catch (_) {} }
       }
       _replySweep.phase = 'done';
-      stamp(`■ Reply sweep complete — ${_replySweep.campaignReplies.length} reply(ies), ${_replySweep.unmatched.length} unmatched${dryRun ? '' : `, ${_replySweep.wrote} written`}`);
     } catch (err) {
-      _replySweep.phase = 'error'; _replySweep.error = err.message; stamp(`✗ Fatal — ${err.message}`);
+      _replySweep.phase = 'error'; _replySweep.error = err.message;
     } finally {
       _replySweep.running = false; _replySweep.currentProfile = null;
       setBulkCheckInProgress(false);
       try { allowSleep(); } catch (_) {}
+      const checked = _replySweep.perProfile.filter((p) => p.status === 'done').length;
+      const failed = _replySweep.perProfile.filter((p) => p.status === 'error').length;
+      const writeErrors = _replySweep.perProfile.reduce((n, p) => n + (p.writeErrors || 0), 0);
+      const incomplete = _replySweep.perProfile.filter((p) => p.incomplete).length;
+      const outcome = _replySweep.error ? '✗ REPLY CHECK FAILED'
+        : _replySweepAbort ? '■ REPLY CHECK STOPPED'
+        : failed || writeErrors || incomplete ? '⚠ REPLY CHECK FINISHED WITH ERRORS'
+        : '✓ REPLY CHECK COMPLETE';
+      _replySweep.summary = `${outcome} — ${checked}/${pids.length} accounts checked · ${_replySweep.campaignReplies.length} replies found · ${_replySweep.unmatched.length} unmatched`
+        + (dryRun ? ' · preview only; sheet unchanged' : ` · ${_replySweep.wrote} marked Replied in the sheet`)
+        + (failed ? ` · ${failed} account(s) failed` : '')
+        + (writeErrors ? ` · ${writeErrors} sheet write error(s)` : '')
+        + (incomplete ? ` · ${incomplete} account(s) with incomplete checks` : '')
+        + (_replySweep.error ? ` · ${_replySweep.error}` : '')
+        + (!pids.length ? ' · no eligible accounts to check' : '')
+        + ' · No reply check is running.';
+      stamp(_replySweep.summary);
     }
   })();
 });

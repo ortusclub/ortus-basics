@@ -250,6 +250,21 @@ export async function prepareSheet(sheetUrl, mode) {
  * @param {string} linkedinUrl - LinkedIn profile URL (used to find the row)
  * @param {object} tracking - Fields to update
  */
+export async function writeReplyCheckResults(sheetUrl, linkedinColumn, rows) {
+  for (let i = 0; i < rows.length; i += 25) {
+    const batch = rows.slice(i, i + 25);
+    const result = await postToWebApp({
+      action: 'writeReplyCheckResults', sheetId: extractSheetId(sheetUrl),
+      gid: extractSheetGid(sheetUrl), urlColumnName: linkedinColumn, rows: batch,
+    });
+    if (!result?.success || result.results?.length !== batch.length) {
+      throw new Error(result?.error || 'Reply-check columns were not confirmed. Update the Sheets bridge deployment.');
+    }
+    const failed = result.results.filter((r) => !r.ok);
+    if (failed.length) throw new Error(`${failed.length} reply-check row(s) could not be saved: ${failed[0].error}`);
+  }
+}
+
 export async function updateSheetRow(sheetUrl, linkedinUrl, tracking, linkedinColumn) {
   const result = await updateSheetRowResult(sheetUrl, linkedinUrl, tracking, linkedinColumn);
   return result.ok;
