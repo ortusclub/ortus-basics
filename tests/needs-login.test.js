@@ -68,10 +68,10 @@ test('clearing login flag does not overwrite IC outcome columns', () => {
   assert.ok(updates.every(u => u.stage === undefined && u.introStatus === undefined));
 });
 
-test('only blank or the specific login warning is retryable for IC', async () => {
+test('only blank Intro Status allows another IC attempt', async () => {
   const { canRetryIntroStatus, IC_NEEDS_LOGIN_STATUS } = await import('../src/campaign.js');
   assert.equal(canRetryIntroStatus(''), true);
-  assert.equal(canRetryIntroStatus(IC_NEEDS_LOGIN_STATUS), true);
+  assert.equal(canRetryIntroStatus(IC_NEEDS_LOGIN_STATUS), false);
   for (const s of ['IC Sent', 'Introduction Made', 'Skipped: unavailable', 'Do not contact']) assert.equal(canRetryIntroStatus(s), false);
 });
 
@@ -99,10 +99,10 @@ test('IC profile-list outages and missing senders do not falsely claim an accoun
   assert.equal(blank.stage, IC_MISSING_SENDER_STATUS);
 });
 
-test('GoLogin access warnings are retryable, without overwriting completed IC rows', async () => {
+test('GoLogin access outcomes require manual clearing and preserve completed IC rows', async () => {
   const { buildUnavailableIcUpdates, canRetryIntroStatus, IC_NO_GOLOGIN_STATUS, IC_GOLOGIN_UNVERIFIED_STATUS } = await import('../src/campaign.js');
-  assert.equal(canRetryIntroStatus(IC_NO_GOLOGIN_STATUS), true);
-  assert.equal(canRetryIntroStatus(IC_GOLOGIN_UNVERIFIED_STATUS), true);
+  assert.equal(canRetryIntroStatus(IC_NO_GOLOGIN_STATUS), false);
+  assert.equal(canRetryIntroStatus(IC_GOLOGIN_UNVERIFIED_STATUS), false);
   for (const extra of [{ 'Intro Status': 'IC Sent' }, { 'Introduction Status': 'Do not contact' }, { Stage: 'Replied' }]) {
     assert.deepEqual(buildUnavailableIcUpdates([{ ...rows()[0], ...extra }], {}, '', 'LinkedIn URL'), []);
   }

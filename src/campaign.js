@@ -76,6 +76,7 @@ import { blocklistExcludedUrls } from './preflight-lint.js';
 import { CampaignRegistry } from './campaign-registry.js';
 import { checkDiskFree, isDiskSpaceError } from './disk-check.js';
 import { createCampaignLoopGuard } from './campaign-loop-guard.js';
+import { rotationAccountFinished, rotationFinished } from './campaign-rotation.js';
 import { plainLine } from './log-voice.js';
 import { readRuntimeInterruption, writeRuntimeInterruption, clearRuntimeInterruption, interruptionCopy, isInterruption, interruptionMatches } from './runtime-interruption.js';
 import { readJson, writeJsonAtomic, updateJsonAtomic } from './atomic-json-store.js';
@@ -417,9 +418,8 @@ export const IC_GOLOGIN_UNVERIFIED_STATUS = 'Could not verify GoLogin access —
 export const IC_MISSING_SENDER_STATUS = 'Sender missing — cannot identify GoLogin account';
 export const IC_LAUNCH_FAILURE_PREFIX = 'Not sent — browser failed to open: ';
 export function canRetryIntroStatus(status) {
-  const value = String(status || '').trim();
-  return value.startsWith(IC_LAUNCH_FAILURE_PREFIX)
-    || ['', IC_NEEDS_LOGIN_STATUS, IC_NO_GOLOGIN_STATUS, IC_GOLOGIN_UNVERIFIED_STATUS, IC_MISSING_SENDER_STATUS].includes(value);
+  // Any recorded outcome is final until the operator clears the cell.
+  return String(status || '').trim() === '';
 }
 
 export function buildIcLaunchFailureUpdates(rows, accountName, senderColumn, linkedinColumn, error) {
@@ -2805,7 +2805,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       if (!url) return false;
 
       if (icAllConnectedBypass) {
-        // Intro Status is one-shot except for our retryable login warning. Other non-empty values
+        // Intro Status is one-shot. All non-empty values
         // is terminal — 'IC Sent', 'Introduction Made', 'Failed — …',
         // 'Skipped — …', operator notes, anything. Operator must clear
         // the cell manually to re-enable a retry. Both header aliases
@@ -2858,7 +2858,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         if (mode === 'introduce_back') {
           // v2.59: IC tabs are separate from connection tabs and don't
           // necessarily have a Stage column. Filter reads only from the
-          // Intro Status column — blank/login warning = process; other values (IC Sent,
+          // Intro Status column — blank = process; all other values (IC Sent,
           // Failed — …, operator note, anything) = skip.
           // Header name per google-apps-script.js:319 is 'Intro Status';
           // long-form aliases kept for back-compat. Mirrored in the
@@ -3327,6 +3327,9 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         const diskPaused = pauseForDiskSpaceError(err);
         log(`✗ ${pName}: failed to open — ${err.message}`);
         if (mode === 'introduce_back' && !campaign._abort) {
+          // A failed account gets one recorded outcome, never another send
+          // attempt just because its failure status is non-empty.
+          weeklyLimited.add(profileId);
           const updates = buildIcLaunchFailureUpdates(targets, pName, senderColumn, linkedinColumn, err);
           const signature = JSON.stringify(updates);
           if (updates.length && savedLaunchFailures.get(profileId) !== signature) {
@@ -3728,8 +3731,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         const candidate = profileQueue[i];
         if (profilesBeingRun.has(candidate)) continue;
         // v2.78: operator benched this account for the rest of the run.
-        if (campaign._skippedProfiles && campaign._skippedProfiles.has(candidate)) continue;
-        if (weeklyLimited.has(candidate)) continue;
+        if (rotationAccountFinished(candidate, rotationState())) continue;
         if (!skipsDailyLimit && getCampaignQuotaCount(candidate) >= campaign.dailyLimit) continue;
         if (now < (profileCooldownUntil.get(candidate) || 0)) continue;
         // Clear stale _cooldown429 entry once the cooldown window has passed
@@ -3743,16 +3745,16 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       return null;
     }
 
+    function rotationState() {
+      return { exhausted: _checkStatusExhausted, unavailable: weeklyLimited, skipped: campaign._skippedProfiles };
+    }
+
     function noProfilesLeftEver() {
       // True only when nobody can ever run again: nobody mid-turn AND every
       // queued profile is permanently out (weekly-limited or daily-capped).
       // Cooldown alone doesn't count as "out" — that's a wait, not exhaustion.
-      if (profilesBeingRun.size > 0) return false;
-      if (profileQueue.length === 0) return true;
-      return profileQueue.every(id =>
-        weeklyLimited.has(id) ||
-        (!skipsDailyLimit && getCampaignQuotaCount(id) >= campaign.dailyLimit)
-      );
+      return rotationFinished(profileQueue, profilesBeingRun, rotationState(),
+        id => !skipsDailyLimit && getCampaignQuotaCount(id) >= campaign.dailyLimit);
     }
 
     /**
@@ -5678,7 +5680,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
           // doesn't get re-picked instantly by another worker.
           profileCooldownUntil.set(profileId, Date.now() + Math.max(cooldownMs, guard.retryDelayMs));
           // Re-enqueue at the back unless the profile got ejected mid-turn.
-          if (!weeklyLimited.has(profileId) && !campaign._abort && !leadsExhausted) {
+          if (!rotationAccountFinished(profileId, rotationState()) && !campaign._abort && !leadsExhausted) {
             profileQueue.push(profileId);
           }
         }
@@ -6293,8 +6295,13 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     // 'Skipped — Stop pressed' (repro 2026-05-17T20:19:11: manual bulk
     // check called runAutoIntros, log shows 'Auto-introducing 3' then
     // 'Stop detected — marking remaining 3' in the SAME millisecond).
+    const wasStopped = campaign._abort;
     campaign._abort = false;
-    log('=== Campaign ended ===');
+    if (!wasStopped && endReason === 'completed' && !campaign.dailyResetNeeded) {
+      log('=== Campaign finished — no eligible accounts or pending leads remain in this run. ===');
+      if (mode === 'introduce_back') log('To retry an IC lead, clear its Intro Status in the sheet and start a new campaign.');
+      if (getFailures().length) log(`⚠ ${getFailures().length} sheet update(s) still waiting to sync; saved results will retry automatically.`);
+    } else log('=== Campaign ended ===');
     campaign.currentAction = null; // clear cockpit
     const journal = readRuntimeInterruption();
     if (!journal || journal.reason === 'active-run') clearRuntimeInterruption();
