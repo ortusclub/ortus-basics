@@ -3668,7 +3668,25 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         if (campaign._abort || isOrphan()) return;
         if (leadsExhausted) return;
 
-        const restriction = await restrictionForProfile(profileId);
+        const availabilityName = profileNameCache[profileId] || profileId;
+        const availabilityStarted = Date.now();
+        setAction('Checking account availability', {
+          account: availabilityName, phase: 'starting', step: 'checking_account_availability',
+          stepDetail: 'Reading account restrictions from the shared State of Operations sheet',
+        });
+        log(`Checking account availability for ${availabilityName} in the shared State of Operations sheet…`);
+        const availabilityTimer = setInterval(() => {
+          if (campaign._abort || isOrphan()) return;
+          log(`  ⏳ Still checking ${availabilityName} — ${Math.round((Date.now() - availabilityStarted) / 1000)}s waiting for the shared roster. The read may be queued or retrying.`);
+        }, 15000);
+        availabilityTimer.unref?.();
+        let restriction;
+        try { restriction = await restrictionForProfile(profileId); }
+        finally { clearInterval(availabilityTimer); }
+        if (campaign._abort || isOrphan()) return;
+        if (Date.now() - availabilityStarted >= 5000) {
+          log(`  ✓ Account availability check finished for ${availabilityName} after ${Math.round((Date.now() - availabilityStarted) / 1000)}s.`);
+        }
         if (restriction) {
           const name = profileNameCache[profileId] || profileId;
           const wasKnown = campaign._restrictedProfiles?.has(profileId);
