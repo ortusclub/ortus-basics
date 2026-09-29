@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/style.css?v=1.7.58-connections" />
+  <link rel="stylesheet" href="/css/style.css?v=1.7.59-welcome" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.14" />
 </head>
 <body data-dashboard="v3">
@@ -4017,7 +4017,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=1.7.58-connections"></script>
+<script type="module" src="/js/app.js?v=1.7.59-welcome"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before
@@ -4284,6 +4284,18 @@
       </div>
     </div>
   </div>
-  <script type="module" src="/js/sheets-google-settings.js?v=1.7.58"></script>
+  <dialog id="google-welcome" aria-labelledby="google-welcome-title" aria-describedby="google-welcome-description">
+    <div class="stop-choice-eyebrow">Welcome to Ortus Basics</div>
+    <h2 id="google-welcome-title">Connect your Google account</h2>
+    <p id="google-welcome-description">Sign in with your company Google account so Basics can save your campaign results to Google Sheets.</p>
+    <p class="google-welcome-domains">ortusclub.com · ortus.solutions<br>linkedvelocity.com · apexstrategy.io</p>
+    <p id="google-welcome-status" role="status" aria-live="polite"></p>
+    <div class="google-welcome-actions">
+      <button type="button" class="btn" id="google-welcome-signin" autofocus>Sign in with Google</button>
+      <button type="button" class="btn btn-secondary" id="google-welcome-later">Later</button>
+    </div>
+    <p class="google-welcome-note">Already connected? Basics remembers your sign-in on this computer.</p>
+  </dialog>
+  <script type="module" src="/js/sheets-google-settings.js?v=1.7.59"></script>
 </body>
 </html>
