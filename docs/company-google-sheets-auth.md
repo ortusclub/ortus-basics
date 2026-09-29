@@ -1,8 +1,8 @@
 # Company Google sign-in for Sheets
 
 **1.7.61 update:** the owner has chosen public shared-writer access. Sheets writes
-no longer depend on Google sign-in, email domain or GoLogin tokens after the public
-gateway configuration is deployed. Google sign-in is optional for app identity;
+no longer depend on Google sign-in, email domain or GoLogin tokens with public
+gateway revision `ortus-sheets-gateway-00003-7j4` deployed on 2026-09-29. Google sign-in is optional for app identity;
 it remains restricted to the configured company domains. The earlier flow below
 is retained as historical setup documentation. See the gateway README for public
 mode and rollback implications.

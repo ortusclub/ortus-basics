@@ -3,6 +3,8 @@
 ## Public access configuration (1.7.61)
 
 The owner explicitly requested public shared-writer access on 2026-09-29.
+Deployed as `ortus-sheets-gateway-00003-7j4`, serving all traffic with
+`ALLOW_PUBLIC_SHEETS=true`.
 Set `ALLOW_PUBLIC_SHEETS=true` to allow all supported `/bridge` actions without
 Google identity, email-domain, GoLogin-token or nonce authorization. This also
 permits callers outside the app. The action allowlist, request size limit,
