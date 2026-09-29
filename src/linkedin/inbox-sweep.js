@@ -233,10 +233,17 @@ const _realDeps = {
 let _deps = { ..._realDeps };
 export function _setDeps(stubs) { _deps = stubs === null ? { ..._realDeps } : { ..._realDeps, ...stubs }; }
 
-/** Non-destructive: don't overwrite a row already marked Reply=yes. */
+/**
+ * Non-destructive: don't rewrite a row already marked as replied — by the Reply
+ * column, a Replied stage, or a Y in the operator's Responded column (tabs
+ * without a Reply column would otherwise be rewritten on every check).
+ */
 export function shouldWriteReply(currentStatus, _newReply) {
   if (!currentStatus) return true;
-  return String(currentStatus.Reply || '').toLowerCase().trim() !== 'yes';
+  if (String(currentStatus.Reply || '').toLowerCase().trim() === 'yes') return false;
+  if (String(currentStatus.Stage || '').trim().toLowerCase() === 'replied') return false;
+  if (/^y(es)?$/i.test(String(currentStatus.Responded || '').trim())) return false;
+  return true;
 }
 
 export function makeInitialSweepStatus(profileNames, dryRun) {

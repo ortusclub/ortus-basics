@@ -530,6 +530,8 @@ export async function getSheetRowStatus(sheetUrl, linkedinUrl, linkedinColumn) {
       Reply: result.row.Reply || result.row.reply || '',
       ReplyAt: result.row['Reply At'] || result.row.replyAt || '',
       ReplyPreview: result.row['Reply Preview'] || result.row.replyPreview || '',
+      Stage: result.row.Stage || '',
+      Responded: result.row.Responded || '',
     };
   }
 

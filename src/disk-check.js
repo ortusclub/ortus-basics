@@ -7,6 +7,11 @@ import { dataPath } from './paths.js';
 
 const DEFAULT_THRESHOLD_BYTES = Number(process.env.DISK_FREE_THRESHOLD_BYTES) || (1 * 1024 * 1024 * 1024); // 1 GB
 
+export function isDiskSpaceError(error) {
+  return error?.code === 'ENOSPC' || error?.code === 'LOW_DISK_SPACE'
+    || /disk space too low|no space left on device|\bENOSPC\b/i.test(String(error?.message || error || ''));
+}
+
 export async function checkDiskFree(thresholdBytes = DEFAULT_THRESHOLD_BYTES) {
   try {
     const stats = await statfs(dataPath('.'));

@@ -5014,8 +5014,17 @@ app.post('/api/reply-sweep/open-thread', async (req, res) => {
   }
 });
 
+let _replySweepStarting = false;
 app.post('/api/reply-sweep/start', async (req, res) => {
-  if (_replySweep.running) return res.status(409).json({ error: 'A reply sweep is already running.' });
+  // `running` is only set once the sheet has loaded, so a double click used to
+  // slip two sweeps in that then fought over the same browser. Claim the slot
+  // synchronously, before any await.
+  if (_replySweep.running || _replySweepStarting) return res.status(409).json({ error: 'A reply check is already running.' });
+  _replySweepStarting = true;
+  try { await _startReplySweep(req, res); } finally { _replySweepStarting = false; }
+});
+
+async function _startReplySweep(req, res) {
   const b = req.body || {};
   let { sheetUrl, linkedinColumn, profileIds } = b;
   const dryRun = b.dryRun !== false; // default ON (preview-only) unless explicitly false
@@ -5046,10 +5055,12 @@ app.post('/api/reply-sweep/start', async (req, res) => {
 
   const wanted = Array.isArray(profileIds) && profileIds.length ? profileIds.slice() : null;
   const leadsByProfile = new Map();
+  const unknownSenders = new Map();   // Sender values that aren't a GoLogin profile (e.g. a pasted LinkedIn link)
   for (const row of candidateRows) {
     const acct = String(row['Sender'] || row['sender'] || row['Account Used'] || row['account used'] || '').trim();
     if (!acct) continue;
-    const pid = nameToId[acct.toLowerCase()] || acct;
+    const pid = nameToId[acct.toLowerCase()] || (nameByProfileId.has(acct) || acct === 'local-browser' ? acct : null);
+    if (!pid) { unknownSenders.set(acct, (unknownSenders.get(acct) || 0) + 1); continue; }
     if (wanted && !wanted.includes(pid)) continue;
     if (!leadsByProfile.has(pid)) leadsByProfile.set(pid, []);
     leadsByProfile.get(pid).push(row);
@@ -5057,7 +5068,7 @@ app.post('/api/reply-sweep/start', async (req, res) => {
 
   const pids = [...leadsByProfile.keys()];
   const names = pids.map((pid) => nameByProfileId.get(pid) || pid);
-  res.json({ started: true, profiles: names.length });
+  res.json({ started: true, profiles: names.length, unknownSenders: [...unknownSenders.keys()] });
 
   _replySweep = makeInitialSweepStatus(names, dryRun);
   _replySweepAbort = false;
@@ -5178,7 +5189,7 @@ app.post('/api/reply-sweep/start', async (req, res) => {
       stamp(_replySweep.summary);
     }
   })();
-});
+}
 
 // v2.59.x — Atomic full-order reorder for drag-and-drop in the dashboard.
 // Body: { ids: ["q_xxx", "q_yyy", ...] } in the desired new order. Validates
