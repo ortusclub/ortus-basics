@@ -1236,6 +1236,17 @@
                 </div>
               </div>
 
+              <div class="throttle-row" id="message-inmail-row" style="display:none">
+                <label class="alpha-toggle" title="Send InMail when the lead is not an Open Profile member">
+                  <input type="checkbox" id="pace-op-spend-inmail" aria-label="Send InMail" oninput="syncMessageInMail(this.checked)" />
+                  <span class="alpha-toggle-track"></span>
+                </label>
+                <div class="tr-text">
+                  <div class="tr-label">Send InMail</div>
+                  <div class="tr-help">Spend an InMail credit if the lead is not an Open Profile member. This is the same setting shown below the message.</div>
+                </div>
+              </div>
+
               <!-- "Free for all 25th" — Open Profile / InMail campaigns only (toggled in onModeChange). -->
               <div class="throttle-row" id="monthly-cutoff-row" style="display:none">
                 <label class="alpha-toggle" title="Stop this campaign just before LinkedIn's monthly message allowance renews">
@@ -2823,8 +2834,8 @@
         Plain profile links (linkedin.com/in/name) are resolved automatically — the bot opens the profile, then opens Sales Navigator before sending.
       </div>
       <label style="display:flex; align-items:center; gap:8px; margin-top:12px; font-weight:400; cursor:pointer">
-        <input type="checkbox" id="tpl-op-spend-inmail" style="width:auto; margin:0" />
-        <span>Spend an InMail credit if the lead is <strong>not</strong> an Open Profile member</span>
+        <input type="checkbox" id="tpl-op-spend-inmail" style="width:auto; margin:0" oninput="syncMessageInMail(this.checked)" />
+        <span>Send InMail — spend an InMail credit if the lead is <strong>not</strong> an Open Profile member</span>
       </label>
     </div>
       </div><!-- /.collapsible-body (templates) -->

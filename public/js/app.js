@@ -1762,7 +1762,7 @@ document.addEventListener('DOMContentLoaded', () => {
     'sheet-url',
     'tpl-note', 'tpl-followup',
     'tpl-inmail-subject', 'tpl-inmail-body',
-    'tpl-op-subject', 'tpl-op-body', 'tpl-op-channel', 'tpl-op-spend-inmail',
+    'tpl-op-subject', 'tpl-op-body', 'tpl-op-channel', 'tpl-op-spend-inmail', 'pace-op-spend-inmail',
     // v2.59.x — IC / CC+IC fields. Without these, typing into Intro DM Body
     // didn't update the Preview button state until something else (mode
     // change, etc.) re-ran refreshPreviewButtonState.
@@ -3477,6 +3477,8 @@ function onModeChange() {
   const mode = document.getElementById('campaign-mode').value;
   const _icNote = document.getElementById('ic-beta-note');
   if (_icNote) _icNote.style.display = mode === 'introduce_back' ? '' : 'none';
+  syncMessageInMail();
+  { const _imr = document.getElementById('message-inmail-row'); if (_imr) _imr.style.display = mode === 'open_profile_only' ? '' : 'none'; }
   { const _mcr = document.getElementById('monthly-cutoff-row'); if (_mcr) _mcr.style.display = ['open_profile_only', 'inmail_only'].includes(mode) ? '' : 'none'; if (typeof syncMonthlyCutoffHelp === 'function') syncMonthlyCutoffHelp(); }
   { const _ffa = document.getElementById('free-for-all-note'); if (_ffa) _ffa.style.display = mode === 'connect_and_introduce' ? '' : 'none'; if (typeof syncFreeForAllNote === 'function') syncFreeForAllNote(); }
   { const _wcr = document.getElementById('weekly-cutoff-row'); if (_wcr) _wcr.style.display = mode === 'connect_and_introduce' ? '' : 'none'; if (typeof syncWeeklyCutoffHelp === 'function') syncWeeklyCutoffHelp(); }
@@ -6318,6 +6320,15 @@ function syncSkipIntrosHelp() {
     : '<b>Off:</b> accepted connections are introduced to the primary person as usual.';
 }
 window.syncSkipIntrosHelp = syncSkipIntrosHelp;
+
+// Both Message campaign controls edit the same serialized setting.
+function syncMessageInMail(value = document.getElementById('tpl-op-spend-inmail')?.checked === true) {
+  for (const id of ['tpl-op-spend-inmail', 'pace-op-spend-inmail']) {
+    const toggle = document.getElementById(id);
+    if (toggle) toggle.checked = !!value;
+  }
+}
+window.syncMessageInMail = syncMessageInMail;
 
 // "Free for all 25th": LinkedIn renews monthly message allowances on the 1st at
 // 00:00 UTC. Mirrors src/weekly-reset-cutoff.js (15 min before).
@@ -17552,8 +17563,7 @@ async function loadSelectedTemplate() {
     // v2.72: restore Open Profile send channel + InMail fallback
     const opChannel = document.getElementById('tpl-op-channel');
     if (opChannel) opChannel.value = tpl.opChannel || 'sn_first';
-    const opSpendInMail = document.getElementById('tpl-op-spend-inmail');
-    if (opSpendInMail) opSpendInMail.checked = !!tpl.opSpendInMail;
+    syncMessageInMail(!!tpl.opSpendInMail);
     const introBody = document.getElementById('primary-intro-body');
     if (introBody) {
       introBody.value = tpl.primaryIntroBody || '';
@@ -19048,7 +19058,7 @@ function applyPresetConfig(config) {
   setV('tpl-inmail-body', t.inmailBody || '');
   setV('tpl-op-subject', t.openProfileSubject || '');
   { const _oc = document.getElementById('tpl-op-channel'); if (_oc) _oc.value = t.opChannel || 'sn_first';
-    const _osi = document.getElementById('tpl-op-spend-inmail'); if (_osi) _osi.checked = !!t.opSpendInMail; }
+    syncMessageInMail(!!t.opSpendInMail); }
   setV('tpl-op-body', t.openProfileBody || '');
 
   // v2.14.x: CC+IC fields. These live inside config.templates as
@@ -27170,7 +27180,7 @@ function initWizardDirtyTracking() {
     'campaign-name-input', 'sheet-url', 'daily-limit-input',
     'tpl-note', 'tpl-followup',
     'tpl-inmail-subject', 'tpl-inmail-body',
-    'tpl-op-subject', 'tpl-op-body', 'tpl-op-channel', 'tpl-op-spend-inmail',
+    'tpl-op-subject', 'tpl-op-body', 'tpl-op-channel', 'tpl-op-spend-inmail', 'pace-op-spend-inmail',
     'primary-intro-body', 'intro-title',
     'primary-person-url', 'primary-person-name',
   ];
