@@ -1,11 +1,13 @@
+import {installEmailVerification} from './email-verification.mjs';
 import express from 'express';
 import { verifyRequest } from './protocol.mjs';
 const actions = new Set(['prepareSheet','ensureColumns','updateRows','updateRow','batchUpdate','getStatus','getSoO','setSoO','bumpSoOConnections','writeRecentConnections','clearRecentConnections','writeRecentMessages','getRowStatus','listTabs','listConnections','getConnection','createLeadTab']);
-export function createApp({ keys = [], bridgeUrl, claimNonce, forward = fetch, verifyGoogle, desktopClient, publicAccess = false }) {
+export function createApp({ keys = [], bridgeUrl, claimNonce, forward = fetch, verifyGoogle, desktopClient, publicAccess = false, emailVerification }) {
   const upstream = new URL(bridgeUrl);
   if (upstream.origin !== 'https://script.google.com' || !/^\/macros\/s\/[\w-]+\/exec$/.test(upstream.pathname)) throw Error('Invalid bridge configuration');
   const app = express();
   app.disable('x-powered-by');
+  if(emailVerification)installEmailVerification(app,emailVerification,express.json({limit:'4kb'}));
   app.get('/health', (_req,res) => res.json({ok:true,service:'ortus-sheets-gateway',protocol:1,publicSheetsAccess:publicAccess}));
   app.get('/auth/config', (_req,res) => {
     if (!verifyGoogle || !desktopClient?.clientId) return res.status(503).json({error:'Company Google sign-in has not been configured by the administrator yet.'});

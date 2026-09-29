@@ -1,0 +1,24 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {once} from 'node:events';
+import express from 'express';
+import cookieParser from 'cookie-parser';
+import {installEmailPasswordAuth} from '../src/email-password-auth.js';
+test('reset and signup require email verification bound to the requesting browser',async t=>{
+ const app=express();app.use(express.json());app.use(cookieParser());const changes=[],sessions=[];let time=1000,available=true;
+ installEmailPasswordAuth(app,{isAllowed:async e=>e.endsWith('@ortusclub.com'),userExists:async()=>false,createUser:async(e,p)=>changes.push(['signup',e,p]),setPassword:async(e,p)=>changes.push(['reset',e,p]),issueSession:async(r,e)=>sessions.push(e),setOperator:()=>{},now:()=>time,request:async(url,options)=>{const b=JSON.parse(options.body);if(!available)return Response.json({error:'Email unavailable'},{status:503});return url.endsWith('/start')?Response.json({id:'a'.repeat(64)}):b.code==='012345'?Response.json({ok:true}):Response.json({error:'Invalid code'},{status:400});}});
+ const server=app.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>server.close());const base=`http://127.0.0.1:${server.address().port}`;
+ const post=(path,body,cookie='',origin=base)=>fetch(base+'/api/auth/'+path,{method:'POST',headers:{'Content-Type':'application/json',Cookie:cookie,Origin:origin},body:JSON.stringify(body)});
+ const body={email:'person@ortusclub.com',password:'new-password',code:'012345'};
+ assert.equal((await post('signup',body)).status,400);
+ assert.equal((await post('reset',{email:body.email},'','https://evil.test')).status,403);
+ const r=await post('reset',{email:body.email}),cookie=r.headers.get('set-cookie').split(';')[0];assert.equal(r.status,200);assert.equal(changes.length,0);assert.equal(sessions.length,0);
+ assert.equal((await post('reset/confirm',body)).status,400);
+ assert.equal((await post('reset/confirm',{...body,code:'999999'},cookie)).status,400);assert.equal(changes.length,0);
+ assert.equal((await post('signup',body,cookie)).status,400);
+ assert.equal((await post('reset/confirm',body,cookie)).status,200);assert.deepEqual(changes,[['reset',body.email,body.password]]);assert.deepEqual(sessions,[body.email]);
+ assert.equal((await post('reset/confirm',body,cookie)).status,400);
+ const s=await post('email/start',{email:body.email,purpose:'signup'}),sc=s.headers.get('set-cookie').split(';')[0];assert.equal((await post('signup',body,sc)).status,200);
+ const exp=await post('reset',{email:body.email}),ec=exp.headers.get('set-cookie').split(';')[0];time+=600001;assert.equal((await post('reset/confirm',body,ec)).status,400);
+ available=false;assert.equal((await post('reset',{email:body.email})).status,503);assert.equal(changes.length,2);
+});

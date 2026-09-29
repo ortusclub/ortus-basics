@@ -1,3 +1,4 @@
+import { installEmailPasswordAuth } from './src/email-password-auth.js';
 import { installGoogleAppLogin } from './src/google-app-login.js';
 import { sheetsGoogle } from './src/sheets-google-auth.js';
 import { checkWorkspaceCredential } from './src/gologin-credential-check.js';
@@ -114,7 +115,7 @@ import { LATEST_RELEASE_API, parseVersion, isBehind, archLabel, dmgAssetName, la
 import {
   createUser, verifyCredentials, userExists,
   issueSessionCookie, clearSessionCookie, readSessionFromRequest,
-  isEmailAllowed, deleteUser,
+  isEmailAllowed, setPassword,
 } from './src/auth.js';
 import { getConnectionsStats, searchConnections, exportConnections, buildLeadRows, buildFgTargets, listOperators, listFgColleagues, listFgColleaguesMatched, parseRolesParam, listMasterRecords } from './src/connections/search-service.js';
 import { dbCall } from './src/connections/db-client.js';
@@ -201,55 +202,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-app.post('/api/auth/signup', async (req, res) => {
-  try {
-    const { email, password } = req.body || {};
-    const normalized = (email || '').trim().toLowerCase();
-    if (!normalized || !password) return res.status(400).json({ error: 'Email and password required' });
-    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
-    if (await userExists(normalized)) return res.status(409).json({ error: 'An account already exists for this email' });
-
-    let allowed;
-    try {
-      allowed = await isEmailAllowed(normalized);
-    } catch (err) {
-      return res.status(503).json({ error: `Could not verify email: ${err.message}` });
-    }
-    if (!allowed) return res.status(403).json({ error: 'This email isn\'t authorized — operators must use an @ortusclub.com or @ortus.solutions email.' });
-
-    await createUser(normalized, password);
-    await issueSessionCookie(res, normalized);
-    res.json({ ok: true, email: normalized });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// v2.57.x — Forgot-password reset. Wipes the user's password record so
-// they can re-sign-up with a new one. Campaigns, sheets, presets, and
-// notification prefs are NOT touched — they live in separate files keyed
-// by email and survive the wipe. Email must still pass isEmailAllowed,
-// so this can't be abused to wipe arbitrary accounts.
-app.post('/api/auth/reset', async (req, res) => {
-  try {
-    const { email } = req.body || {};
-    const normalized = (email || '').trim().toLowerCase();
-    if (!normalized.includes('@')) return res.status(400).json({ error: 'Enter a valid email' });
-
-    let allowed;
-    try {
-      allowed = await isEmailAllowed(normalized);
-    } catch (err) {
-      return res.status(503).json({ error: `Could not verify email: ${err.message}` });
-    }
-    if (!allowed) return res.status(403).json({ error: 'This email isn\'t authorized — operators must use an @ortusclub.com or @ortus.solutions email.' });
-
-    await deleteUser(normalized);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+installEmailPasswordAuth(app, {isAllowed:isEmailAllowed,userExists,createUser,setPassword,issueSession:issueSessionCookie,setOperator:setOperatorEmail});
 
 app.post('/api/auth/logout', (_req, res) => {
   clearSessionCookie(res);

@@ -1,3 +1,4 @@
+import {emailService} from './email-runtime.mjs';
 import {googleVerifier} from './google-auth.mjs';
 import {Firestore, Timestamp} from '@google-cloud/firestore';
 import {createApp} from './app.mjs';
@@ -11,7 +12,7 @@ const claimNonce = async ({id,nonce}) => {
 const publicAccess = process.env.ALLOW_PUBLIC_SHEETS === 'true';
 const clientId = process.env.GOOGLE_DESKTOP_CLIENT_ID;
 if (!publicAccess && !keys.length && !clientId) throw Error('No gateway authentication configured');
-createApp({publicAccess,keys,bridgeUrl:process.env.BRIDGE_URL,claimNonce,
+createApp({emailVerification:emailService(db),publicAccess,keys,bridgeUrl:process.env.BRIDGE_URL,claimNonce,
   verifyGoogle: clientId ? googleVerifier(clientId) : undefined,
   desktopClient: clientId ? {clientId,clientSecret:process.env.GOOGLE_DESKTOP_CLIENT_SECRET || ''} : undefined,
 }).listen(Number(process.env.PORT || 8080),'0.0.0.0');

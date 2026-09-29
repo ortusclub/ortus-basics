@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign up — Ortus Outreach</title>
+  <title>Sign up — Ortus Basics</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -20,7 +20,7 @@
       </div>
 
       <div class="auth-deck-wordmark">
-        Ortus<br><em>Outreach</em>
+        Ortus<br><em>Basics</em>
         <span class="oversub">LinkedIn · Command Deck</span>
       </div>
 
@@ -49,139 +49,39 @@
     <section class="auth-form-pane">
       <form class="auth-form" id="signup-form" autocomplete="on">
         <header class="auth-form-header">
-          <div class="auth-form-label">Enrollment · 01</div>
-          <h1 class="auth-form-title">Sign <em style="font-style:normal">up</em></h1>
-          <div class="auth-form-sub">Operators only · @ortusclub.com or @ortus.solutions</div>
+          <div class="auth-form-label">Email verification</div>
+          <h1 class="auth-form-title" id="email-auth-title">Sign up</h1>
+          <div class="auth-form-sub" id="email-auth-description">Verify your email before creating your account.</div>
         </header>
-
         <div class="auth-form-rule"></div>
-
         <div class="auth-field">
-          <div class="auth-field-head">
-            <label for="email">Email</label>
-            <span class="aside">@ortusclub.com / @ortus.solutions</span>
-          </div>
-          <input id="email" name="email" type="email" autocomplete="username" required placeholder="name@ortusclub.com">
+          <div class="auth-field-head"><label for="email">Email</label></div>
+          <input id="email" name="email" type="email" autocomplete="email" required placeholder="name@ortusclub.com">
         </div>
-
-        <div class="auth-field">
-          <div class="auth-field-head">
-            <label for="password">Password</label>
-            <span class="aside">Min 8 chars</span>
+        <button type="button" class="btn btn-secondary" id="send-code">Send verification code</button>
+        <p id="code-status" role="status" aria-live="polite" class="auth-form-sub"></p>
+        <fieldset id="verified-fields" hidden disabled style="border:0;padding:0;margin-top:24px">
+          <div class="auth-field">
+            <div class="auth-field-head"><label for="verification-code">Verification code</label><span class="aside">Expires in 10 minutes</span></div>
+            <input id="verification-code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required placeholder="6-digit code">
           </div>
-          <div class="auth-pw-wrap">
-            <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required placeholder="••••••••">
-            <button type="button" class="auth-pw-toggle" id="password-toggle" aria-label="Show password" aria-pressed="false">Show</button>
+          <div class="auth-field">
+            <div class="auth-field-head"><label for="password">New password</label><span class="aside">At least 8 characters</span></div>
+            <input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required>
           </div>
-        </div>
-
-        <div class="auth-field">
-          <div class="auth-field-head">
-            <label for="password2">Confirm</label>
+          <div class="auth-field">
+            <div class="auth-field-head"><label for="password2">Confirm password</label></div>
+            <input id="password2" name="password2" type="password" autocomplete="new-password" minlength="8" required>
           </div>
-          <div class="auth-pw-wrap">
-            <input id="password2" name="password2" type="password" autocomplete="new-password" minlength="8" required placeholder="••••••••">
-            <button type="button" class="auth-pw-toggle" id="password2-toggle" aria-label="Show password" aria-pressed="false">Show</button>
-          </div>
-        </div>
-
-        <div class="auth-actions">
-          <button type="submit" class="btn btn-start">Create account →</button>
-        </div>
-
-        <div class="auth-feedback error" id="auth-error"></div>
-
-        <div class="auth-foot">
-          <span>Already enrolled?</span>
-          <a href="/login.html">Sign in →</a>
-        </div>
+          <div class="auth-actions"><button type="submit" class="btn btn-start" id="confirm-email-auth">Create account →</button></div>
+        </fieldset>
+        <div class="auth-feedback error" id="auth-error" role="alert"></div>
+        <div class="auth-foot"><span>Already have an account?</span><a href="/login.html">Sign in →</a></div>
       </form>
     </section>
 
   </div>
 
-  <script>
-    fetch('/api/health').then(r => r.json()).then(d => {
-      if (d && d.version) {
-        const v = 'v' + d.version;
-        const el = document.getElementById('deck-version');
-        if (el) el.textContent = v;
-      }
-    }).catch(() => {});
-
-    // v2.57.x — Prefill email from ?email= query string. Used by the
-    // forgot-password flow which redirects login.html → reset endpoint →
-    // signup.html?email=<email> so the user only types their password.
-    (function prefillEmail() {
-      try {
-        const params = new URLSearchParams(window.location.search);
-        const emailParam = params.get('email');
-        if (emailParam) {
-          const emailInput = document.getElementById('email');
-          if (emailInput) emailInput.value = emailParam.trim();
-          const pw = document.getElementById('password');
-          if (pw) pw.focus();
-        }
-      } catch { /* ignore — best-effort prefill */ }
-    })();
-
-    // v2.57.x — Password show/hide toggle. Click "Show" to reveal the
-    // typed password (operator can verify what they typed). Pure UI.
-    function wirePasswordToggle(inputId, btnId) {
-      const inp = document.getElementById(inputId);
-      const btn = document.getElementById(btnId);
-      if (!inp || !btn) return;
-      btn.addEventListener('click', () => {
-        const showing = inp.type === 'text';
-        inp.type = showing ? 'password' : 'text';
-        btn.textContent = showing ? 'Show' : 'Hide';
-        btn.setAttribute('aria-pressed', String(!showing));
-        btn.setAttribute('aria-label', showing ? 'Show password' : 'Hide password');
-      });
-    }
-    wirePasswordToggle('password', 'password-toggle');
-    wirePasswordToggle('password2', 'password2-toggle');
-
-    const form = document.getElementById('signup-form');
-    const errBox = document.getElementById('auth-error');
-    const submitBtn = form.querySelector('button[type="submit"]');
-
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
-      errBox.classList.remove('visible');
-      const email = document.getElementById('email').value.trim();
-      const password = document.getElementById('password').value;
-      const password2 = document.getElementById('password2').value;
-      if (password !== password2) {
-        errBox.textContent = 'Passwords do not match';
-        errBox.classList.add('visible');
-        return;
-      }
-      submitBtn.disabled = true;
-      const original = submitBtn.textContent;
-      submitBtn.textContent = 'Creating…';
-      try {
-        const r = await fetch('/api/auth/signup', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password }),
-        });
-        const data = await r.json();
-        if (!r.ok) {
-          errBox.textContent = data.error || 'Signup failed';
-          errBox.classList.add('visible');
-          submitBtn.disabled = false;
-          submitBtn.textContent = original;
-          return;
-        }
-        window.location.href = '/';
-      } catch (err) {
-        errBox.textContent = err.message;
-        errBox.classList.add('visible');
-        submitBtn.disabled = false;
-        submitBtn.textContent = original;
-      }
-    });
-  </script>
+  <script type="module" src="/js/email-password-auth.js"></script>
 </body>
 </html>

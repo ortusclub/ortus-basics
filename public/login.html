@@ -59,7 +59,7 @@
           <p id="app-google-status" role="status" aria-live="polite"></p>
           <a id="app-google-browser" target="_blank" rel="noopener" hidden>Open Google sign-in</a>
         </div>
-        <div class="auth-google-divider">Or use your existing app login</div>
+        <div class="auth-google-divider">Or sign in with email and password</div>
         <div class="auth-form-rule"></div>
 
         <div class="auth-field">
@@ -159,47 +159,10 @@
     }
     wirePasswordToggle('password', 'password-toggle');
 
-    // v2.57.x — Forgot-password reset. Wipes the password record so the
-    // user can sign up again with a new password. Their campaigns, sheets,
-    // presets, and notification prefs survive untouched — those are keyed
-    // elsewhere and don't depend on the password store.
-    const forgotLink = document.getElementById('forgot-link');
-    if (forgotLink) {
-      forgotLink.addEventListener('click', async (e) => {
-        e.preventDefault();
-        errBox.classList.remove('visible');
-        const email = document.getElementById('email').value.trim();
-        if (!email || !email.includes('@')) {
-          errBox.textContent = 'Type your email above first, then click Reset it.';
-          errBox.classList.add('visible');
-          return;
-        }
-        const proceed = confirm(
-          `Reset password for ${email}?\n\n` +
-          `You'll be redirected to sign up again with a new password. ` +
-          `Your campaigns, sheets, presets, and notifications are NOT affected — ` +
-          `only your login password is reset.`
-        );
-        if (!proceed) return;
-        try {
-          const r = await fetch('/api/auth/reset', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ email }),
-          });
-          const data = await r.json();
-          if (!r.ok) {
-            errBox.textContent = data.error || 'Reset failed';
-            errBox.classList.add('visible');
-            return;
-          }
-          window.location.href = '/signup.html?email=' + encodeURIComponent(email);
-        } catch (err) {
-          errBox.textContent = err.message;
-          errBox.classList.add('visible');
-        }
-      });
-    }
+    document.getElementById('forgot-link').addEventListener('click', (event) => {
+      event.preventDefault();
+      window.location.href = '/signup.html?mode=reset&email=' + encodeURIComponent(document.getElementById('email').value.trim());
+    });
   </script>
   <script type="module" src="/js/google-app-login.js?v=1.7.61"></script>
 </body>
