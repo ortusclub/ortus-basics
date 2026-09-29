@@ -71,7 +71,9 @@ test('gateway Google authorization is independent of GoLogin and rejects invalid
 });
 
 test('Google library rejects forged signatures, wrong audience, issuer and expired tokens', async t => {
-  const {OAuth2Client} = await import('google-auth-library');
+  const {createRequire} = await import('node:module');
+  const gatewayRequire = createRequire(new URL('../services/sheets-gateway/google-auth.mjs', import.meta.url));
+  const {OAuth2Client} = gatewayRequire('google-auth-library');
   const {generateKeyPairSync, sign} = await import('node:crypto');
   const {googleVerifier} = await import('../services/sheets-gateway/google-auth.mjs');
   const {publicKey,privateKey} = generateKeyPairSync('rsa',{modulusLength:2048});

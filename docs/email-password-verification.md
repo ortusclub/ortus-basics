@@ -1,8 +1,8 @@
 # Email verification for Basics signup and password recovery
 
-Status: implemented and locally tested; not released. Mail sending is not yet
-configured. Existing deployed apps still use the previous recovery flow until
-the gateway and a new desktop release have both been published.
+Release: 1.7.63. Sender: sam@ortusclub.com through Gmail SMTP over TLS.
+Credentials are stored only in Secret Manager and bound to the gateway service.
+Existing installations must update to use code-based signup and recovery.
 
 The desktop requests a six-digit code from the shared gateway. Firestore stores
 only its digest, email, purpose, expiry, attempts and consumption state. A code
