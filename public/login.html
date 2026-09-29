@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sign in — Ortus Outreach</title>
+  <title>Sign in — Ortus Basics</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@300;400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css">
-  <link rel="stylesheet" href="/css/auth.css">
+  <link rel="stylesheet" href="/css/auth.css?v=1.7.60">
 </head>
 <body>
   <div class="auth-shell">
@@ -20,7 +20,7 @@
       </div>
 
       <div class="auth-deck-wordmark">
-        Ortus<br><em>Outreach</em>
+        Ortus<br><em>Basics</em>
         <span class="oversub">LinkedIn · Command Deck</span>
       </div>
 
@@ -53,6 +53,13 @@
           <h1 class="auth-form-title">Sign <em style="font-style:normal">in</em></h1>
         </header>
 
+        <div class="auth-google">
+          <button type="button" class="btn btn-start" id="app-google-signin">Sign in with Google</button>
+          <p>Use your company Google account to sign in to Basics and connect Google Sheets.</p>
+          <p id="app-google-status" role="status" aria-live="polite"></p>
+          <a id="app-google-browser" target="_blank" rel="noopener" hidden>Open Google sign-in</a>
+        </div>
+        <div class="auth-google-divider">Or use your existing app login</div>
         <div class="auth-form-rule"></div>
 
         <div class="auth-field">
@@ -194,5 +201,6 @@
       });
     }
   </script>
+  <script type="module" src="/js/google-app-login.js?v=1.7.60"></script>
 </body>
 </html>

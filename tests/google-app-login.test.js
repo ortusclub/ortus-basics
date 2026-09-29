@@ -1,0 +1,28 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {once} from 'node:events';
+import express from 'express';
+import cookieParser from 'cookie-parser';
+import {installGoogleAppLogin} from '../src/google-app-login.js';
+test('Google app login requires a fresh verified callback bound to the initiating browser', async t => {
+ const app=express();app.use(express.json());app.use(cookieParser());
+ let callback, issued=[],operator,clock=1000;
+ const connection={begin:async options=>{callback=options.onAuthenticated;return 'https://accounts.google.com/oauth';},status:()=>({connected:true,email:'previous@ortusclub.com'})};
+ installGoogleAppLogin(app,{connection,issueSession:async(res,email)=>{issued.push(email);res.cookie('session','verified',{httpOnly:true});},setOperator:email=>operator=email,now:()=>clock});
+ const server=app.listen(0,'127.0.0.1');await once(server,'listening');t.after(()=>server.close());
+ const base=`http://127.0.0.1:${server.address().port}`;
+ const post=(path,cookie='',origin=base)=>fetch(base+'/api/auth/google/'+path,{method:'POST',headers:{'Content-Type':'application/json',Origin:origin,Cookie:cookie},body:'{}'});
+ assert.equal((await post('start','','https://evil.test')).status,403);
+ assert.equal((await post('complete')).status,401);
+ const start=await post('start');assert.equal(start.status,200);const cookie=start.headers.get('set-cookie').split(';')[0];
+ assert.match(start.headers.get('set-cookie'),/HttpOnly/);assert.match(start.headers.get('set-cookie'),/SameSite=Strict/);
+ assert.deepEqual(await (await post('complete',cookie)).json(),{pending:true});assert.equal(issued.length,0);
+ await callback({email:'person@apexstrategy.io'});
+ assert.equal((await post('complete','ortus_google_login=forged')).status,401);
+ assert.equal((await post('complete',cookie,'https://evil.test')).status,403);
+ const complete=await post('complete',cookie);assert.equal(complete.status,200);assert.equal((await complete.json()).email,'person@apexstrategy.io');
+ assert.deepEqual(issued,['person@apexstrategy.io']);assert.equal(operator,'person@apexstrategy.io');
+ assert.equal((await post('complete',cookie)).status,401);
+ const next=await post('start');const nextCookie=next.headers.get('set-cookie').split(';')[0];clock+=300001;await callback({email:'person@ortusclub.com'});
+ assert.equal((await post('complete',nextCookie)).status,401);assert.equal(issued.length,1);
+});

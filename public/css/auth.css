@@ -439,3 +439,12 @@ body.theme-light .deck-card.active { background: rgba(0, 0, 0, 0.02); }
 .auth-pw-toggle:hover { color: var(--ink); }
 .auth-pw-toggle:focus { outline: none; color: var(--ink); }
 .auth-pw-toggle[aria-pressed="true"] { color: var(--ink); }
+
+.auth-google { margin-top: 28px; }
+.auth-google .btn { width: 100%; }
+.auth-google p { margin-top: 12px; font-family: var(--body); font-size: 13px; line-height: 1.5; color: var(--gray); }
+.auth-google #app-google-status { color: var(--ink); }
+.auth-google #app-google-status:empty { display: none; }
+.auth-google a { display: inline-block; margin-top: 10px; color: var(--ink); font-size: 13px; }
+.auth-google [hidden] { display: none; }
+.auth-google-divider { margin-top: 24px; color: var(--gray); font-family: var(--mono); font-size: 10px; letter-spacing: .12em; text-transform: uppercase; }

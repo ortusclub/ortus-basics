@@ -1,3 +1,4 @@
+import { installGoogleAppLogin } from './src/google-app-login.js';
 import { sheetsGoogle } from './src/sheets-google-auth.js';
 import { checkWorkspaceCredential } from './src/gologin-credential-check.js';
 import { getSalesNavAccess, setSalesNavAccess } from './src/linkedin/sales-nav-access.js';
@@ -186,6 +187,8 @@ const PUBLIC_PATHS = new Set([
   '/help.html',
 ]);
 
+installGoogleAppLogin(app, {connection:sheetsGoogle,issueSession:issueSessionCookie,setOperator:setOperatorEmail});
+
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body || {};
@@ -304,7 +307,7 @@ app.use((req, res, next) => {
 app.use(async (req, res, next) => {
   // Electron mode: no login required — the app is a local desktop tool.
   if (process.env.ORTUS_ELECTRON_MODE === '1') {
-    req.user = req.user || 'operator@ortusclub.com';
+    req.user = await readSessionFromRequest(req) || 'operator@ortusclub.com';
     return next();
   }
   if (PUBLIC_PATHS.has(req.path)) return next();

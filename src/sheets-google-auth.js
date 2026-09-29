@@ -30,7 +30,7 @@ export function createGoogleConnection({ filePath = dataPath('sheets-google-auth
   function cancel() { if (pending) { clearTimeout(pending.timer); pending.server.close(); pending = null; } }
   return {
     status: () => ({connected:!!saved?.refreshToken, email:saved?.email || '', pending:!!pending, legacyAllowed:!saved, error}),
-    async begin() {
+    async begin({onAuthenticated} = {}) {
       cancel(); error = '';
       const config = await json(base + '/auth/config');
       if (!/^[\w.-]+\.apps\.googleusercontent\.com$/.test(config.clientId || '')) throw Error('Google sign-in configuration is invalid.');
@@ -52,6 +52,7 @@ export function createGoogleConnection({ filePath = dataPath('sheets-google-auth
           if (!tokens.refresh_token) throw Error('Google did not grant offline access. Please reconnect.');
           if (pending !== attempt) throw Error('Sign-in was cancelled.');
           persist({config, refreshToken:tokens.refresh_token, idToken:tokens.id_token, expiresAt:Date.now() + (Number(tokens.expires_in) || 3600)*1000, email:user.email});
+          await onAuthenticated?.(user);
           error = '';
           res.end('Google Sheets connected. You can close this tab and return to Ortus Basics.');
           Promise.resolve().then(onConnected).catch(() => {});
