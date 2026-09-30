@@ -27,7 +27,7 @@ import { extractSheetId } from '../utils.js';
 import { buildFollowUpTask, buildAcceptTask, enqueuePrimaryTask, enqueueFollowUpBatched } from '../primary-tasks.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow, batchUpdateSheet } from '../sheets-writer.js';
-import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
+import { extractLinkedInUrl, campaign, _ops, _firstNameFromLabel } from '../campaign.js';
 import { leadIdentityKeys } from './bulk-check-connections.js';
 
 // Note-aware intro routing (spec 2026-06-10-ccic-note-group-intro). Clean-compose
@@ -674,7 +674,7 @@ export async function runAutoIntros({
       title: row['Title'] || row['title'] || row['Job Title'] || '',
       senderName: profileName || '',
       senderFirstName: (resolvedFirst && resolvedFirst.trim())
-        || (profileName || '').split(/\s+/)[0]
+        || _firstNameFromLabel(profileName)
         || '',
       // Surface the primary person under every naming flavour the
       // operator might have typed: legacy "primary name", new
