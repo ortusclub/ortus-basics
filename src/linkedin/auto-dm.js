@@ -20,7 +20,7 @@ import { sendMessage } from './actions.js';
 import { personalizeTemplate, getConnectionStatus } from './helpers.js';
 import { fetchSheet } from '../sheets.js';
 import { updateSheetRow } from '../sheets-writer.js';
-import { extractLinkedInUrl, campaign, _ops, _firstNameFromLabel } from '../campaign.js';
+import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
 import { hasDmBeenSent, recordDmSent } from '../dm-sent-log.js';
 
 function _formatLocalDate(d) {
@@ -242,7 +242,7 @@ export async function runAutoDms({
       title: row['Title'] || row['title'] || row['Job Title'] || '',
       senderName: profileName || '',
       senderFirstName: (resolvedFirst && resolvedFirst.trim())
-        || _firstNameFromLabel(profileName)
+        || (profileName || '').split(/\s+/)[0]
         || '',
     };
     log(`     · row matched=${!!rowByUrl.get(url)} firstName="${leadFirstName}" lastName="${leadLastName}"`);

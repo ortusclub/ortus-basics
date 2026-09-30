@@ -386,19 +386,6 @@ async function checkHostHealth() {
   return { ok: warnings.length === 0, warnings };
 }
 
-// Extract a human first name from a GoLogin profile label. When the label is
-// an email (e.g. "rj@ortusclub.com"), return the local part capitalised ("Rj").
-// Otherwise return the first word (e.g. "RJ Cannu" → "RJ").
-export function _firstNameFromLabel(label) {
-  const s = (label || '').trim();
-  if (!s) return '';
-  if (s.includes('@')) {
-    const local = s.split('@')[0];
-    return local.charAt(0).toUpperCase() + local.slice(1).toLowerCase();
-  }
-  return s.split(/\s+/)[0];
-}
-
 // v2.11.11: "Sender" is the canonical sheet column for sender attribution.
 // Earlier versions of the bot wrote to both "Account Used" and "Sender";
 // the Apps Script bridge schema dropped "Account Used" and the bot's
@@ -4195,7 +4182,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         data.senderName = pName || '';
         const resolvedFirst = senderFirstNames[profileId];
         data.senderFirstName = (resolvedFirst && resolvedFirst.trim())
-          || _firstNameFromLabel(pName)
+          || (pName || '').split(/\s+/)[0]
           || '';
 
         let hint = getModeHint(mode, state.processed[url]?.action);

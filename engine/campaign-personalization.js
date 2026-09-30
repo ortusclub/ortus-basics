@@ -26,16 +26,6 @@
 // DO NOT let this drift from the app. If the app's map changes, change this in
 // lockstep. See memory feedback_vm_must_mirror_local_exactly.
 
-function _firstNameFromLabel(label) {
-  const s = (label || "").trim();
-  if (!s) return "";
-  if (s.includes("@")) {
-    const local = s.split("@")[0];
-    return local.charAt(0).toUpperCase() + local.slice(1).toLowerCase();
-  }
-  return s.split(/\s+/)[0];
-}
-
 function _row(lead) {
   return lead && lead.row_data && typeof lead.row_data === "object" ? lead.row_data : {};
 }
@@ -78,7 +68,7 @@ function leadTokenData(lead, { senderName = "", senderFirst = "" } = {}) {
   const company = row["Company"] || row["company"] || (lead && lead.company) || "";
   const title = row["Title"] || row["title"] || row["Job Title"] || (lead && lead.title) || "";
   const senderFirstName =
-    (senderFirst && senderFirst.trim()) || _firstNameFromLabel(senderName) || "";
+    (senderFirst && senderFirst.trim()) || (senderName || "").split(/\s+/)[0] || "";
   const senderLabel = senderName || senderFirst || "";
   return {
     ...row, // every sheet column header is a usable token
