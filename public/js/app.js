@@ -7097,6 +7097,33 @@ async function startCampaign(opts = {}) {
     if (pName && pName !== id) senderNames[id] = pName;
   }
 
+  // Block launch when any selected profile has no senderFirstName and the
+  // templates reference it — otherwise the message goes out signed with the
+  // raw email address (e.g. "Best, rj@ortusclub.com").
+  if (!opts._skipPreflight) {
+    const _missingFirst = selectedProfileIds.filter(id => !senderFirstNames[id]);
+    if (_missingFirst.length) {
+      const _allTemplates = [
+        document.getElementById('tpl-note')?.value,
+        document.getElementById('tpl-message')?.value,
+        document.getElementById('tpl-follow-up')?.value,
+        document.getElementById('primary-intro-body')?.value,
+        document.getElementById('tpl-cc-dm-body')?.value,
+        document.getElementById('tpl-group-body')?.value,
+        document.getElementById('tpl-op-body')?.value,
+      ].filter(Boolean).join(' ');
+      if (/\{sender\s*first\s*name\}|\{senderFirstName\}/i.test(_allTemplates)) {
+        const names = _missingFirst.map(id => profileLabel(id) || id);
+        alert(
+          'Your templates use {senderFirstName}, but these accounts have no first name set:\n\n' +
+          names.map(n => `• ${n}`).join('\n') + '\n\n' +
+          'Set a first name for each account in the profile picker, or remove {senderFirstName} from your templates.'
+        );
+        return;
+      }
+    }
+  }
+
   const mode = document.getElementById('campaign-mode').value;
   // v2.13.x — Group conversation title + primary-person / Intro DM Body fields
   // belong ONLY to the two intro flows (CC+IC connect_and_introduce, IC

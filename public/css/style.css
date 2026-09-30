@@ -1358,6 +1358,9 @@ select {
 }
 .browse-card .profile-item.jt .jt-name-input::placeholder { color:var(--gray); opacity:0.8; }
 .browse-card .profile-item.jt .jt-name-input:focus { outline:none; border-color:var(--ink); }
+.browse-card .profile-item.jt .jt-name-input:placeholder-shown:not(:focus) {
+  border-color:#f85149; box-shadow:0 0 4px rgba(248,81,73,0.35);
+}
 
 /* Variant C — per-channel breakdown tile (Message Campaign · Direct Messages ·
    InMail Only). Same shell + typography as the two-zone .jt tile; a slim accent
