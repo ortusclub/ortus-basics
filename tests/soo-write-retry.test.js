@@ -27,7 +27,7 @@ function stubFetch(err) {
 
 const timeoutErr = () => Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
 
-test('the In Use flip retries a transient failure (4 attempts)', async () => {
+test('the In Use flip stays disabled', async () => {
   const f = stubFetch(timeoutErr());
   try {
     const res = await flipAccountInUse(
@@ -35,7 +35,7 @@ test('the In Use flip retries a transient failure (4 attempts)', async () => {
       NO_SLEEP,
     );
     assert.equal(res.ok, false, 'still resolves to a result — never throws to the caller');
-    assert.equal(f.calls.n, 4, 'setSoO is idempotent (fixed cells + server-side guard), so it retries');
+    assert.equal(f.calls.n, 0);
   } finally { f.restore(); }
 });
 
@@ -47,22 +47,22 @@ test('Needs Login retries too — same idempotent setSoO payload', async () => {
   } finally { f.restore(); }
 });
 
-test('the weekly connection bump NEVER retries — a repeat would double-count', async () => {
+test('the weekly connection bump stays disabled', async () => {
   const f = stubFetch(timeoutErr());
   try {
     const res = await bumpConnectionsThisWeek({ email: 'a@ortus.solutions', delta: 3 }, NO_SLEEP);
     assert.equal(res.ok, false);
-    assert.equal(f.calls.n, 1, 'a delta write gets exactly one attempt');
+    assert.equal(f.calls.n, 0);
   } finally { f.restore(); }
 });
 
-test('a permanent failure is not retried, even for the idempotent writes', async () => {
+test('a permanent login-flag failure is not retried', async () => {
   // Retrying an auth/bad-request rejection only multiplies the latency in front
   // of the send loop.
   const f = stubFetch(new Error('HTTP 401'));
   try {
-    await flipAccountInUse(
-      { email: 'a@ortus.solutions', creditHeader: 'CC (Credits)', userHeader: 'CC App User' },
+    await markAccountNeedsLoginSoO(
+      { email: 'a@ortus.solutions' },
       NO_SLEEP,
     );
     assert.equal(f.calls.n, 1);

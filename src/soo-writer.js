@@ -171,14 +171,8 @@ export function resolveSoOEmail(accountName, sooEmails, { threshold = 0.93, gap 
 }
 
 /**
- * Ortus Basics 1.0: the SoO is never written to. Campaign results go straight to
- * the campaign sheet (src/sheets-writer.js), which is untouched by this.
- *
- * Forced off rather than deleted because every writer below already returns
- * `{ ok:false, disabled:true }` through this one gate — flipping it here stops
- * the In Use flip, the weekly-connections bump and the needs-login stamp in a
- * single place, and the same gate covers src/cloud-soo-reconcile.js.
- * (was: enabled unless ORTUS_SOO_WRITEBACK is off/0/false)
+ * General SoO write-back remains disabled in Ortus Basics. Only the explicit
+ * Needs Login reporter bypasses this gate; credit, user and tally writes do not.
  */
 export function sooWritebackEnabled() {
   return false;
@@ -273,7 +267,7 @@ export function buildBumpConnectionsPayload({ email, delta = 1 }) {
   };
 }
 
-/** Build the setSoO payload for a Needs Login flag (no guard). */
+/** Build the Needs Login payload. The sheet handler skips an existing Y under its lock. */
 export function buildNeedsLoginPayload({ email }) {
   return {
     sheetId: SOO_SHEET_ID,
@@ -410,12 +404,16 @@ export async function bumpConnectionsThisWeek({ email, delta = 1 }, retryOpts) {
  * @returns {Promise<object>} { ok, matched, written } or { ok:false, ... }
  */
 export async function markAccountNeedsLoginSoO({ email }, retryOpts) {
-  if (!sooWritebackEnabled()) return { ok: false, disabled: true };
+  email = String(email || '').trim().toLowerCase();
   if (!email) return { ok: false, error: 'no email' };
   try {
     const data = await postSetSoO(buildNeedsLoginPayload({ email }), retryOpts);
     if (data && data.error) return { ok: false, error: data.error };
-    return { ok: true, ...data };
+    if (!data || data.matched !== true) return { ok: false, matched: false, error: 'No matching SoO account' };
+    const alreadySet = (data.skipped || []).some(value => /^needs login \(already y\)$/i.test(value));
+    const written = (data.written || []).some(value => String(value).trim().toLowerCase() === 'needs login');
+    if (!written && !alreadySet) return { ok: false, matched: true, error: 'Needs Login column was not updated', skipped: data.skipped || [] };
+    return { ...data, ok: true, alreadySet };
   } catch (err) {
     return { ok: false, error: err.message };
   }

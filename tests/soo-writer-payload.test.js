@@ -34,7 +34,7 @@ test('flip payload omits the user cell when operator email is blank', () => {
   assert.deepEqual(p.fields, { 'CC (Credits)': 'In Use' });
 });
 
-test('needs-login payload: Needs Login = Y, no guard', () => {
+test('needs-login payload: writes only Needs Login = Y; existing-Y guard lives in the sheet handler', () => {
   const p = buildNeedsLoginPayload({ email: 'a@x' });
   assert.equal(p.action, 'setSoO');
   assert.deepEqual(p.fields, { 'Needs Login': 'Y' });
@@ -69,7 +69,7 @@ test('isConnectSend: true only for connection_sent in a connect mode', () => {
   assert.equal(isConnectSend('message_only', 'connection_sent'), false);
 });
 
-test('kill-switch: off/0/false disable (case-insensitive); anything else enables', () => {
+test('general SoO writes stay disabled regardless of the legacy environment switch', () => {
   const orig = process.env.ORTUS_SOO_WRITEBACK;
   try {
     for (const v of ['off', '0', 'false', 'OFF', 'False']) {
@@ -78,10 +78,10 @@ test('kill-switch: off/0/false disable (case-insensitive); anything else enables
     }
     for (const v of ['', 'on', '1', 'true', 'yes']) {
       process.env.ORTUS_SOO_WRITEBACK = v;
-      assert.equal(sooWritebackEnabled(), true, v);
+      assert.equal(sooWritebackEnabled(), false, v);
     }
     delete process.env.ORTUS_SOO_WRITEBACK;
-    assert.equal(sooWritebackEnabled(), true);
+    assert.equal(sooWritebackEnabled(), false);
   } finally {
     if (orig === undefined) delete process.env.ORTUS_SOO_WRITEBACK;
     else process.env.ORTUS_SOO_WRITEBACK = orig;

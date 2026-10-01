@@ -65,7 +65,8 @@ import { shouldContinueTurn, shouldRequeue, canAddProfile } from './bench-gate.j
 import { decideResumeAction } from './monitoring-resume.js';
 import { enqueueDesktopNotification } from './notifier.js';
 import { decide429 } from './throttle-policy.js';
-import { resolveSoOTarget, resolveSoOEmail, flipAccountInUse, markAccountNeedsLoginSoO, resolveOperatorStamp, isConnectSend, bumpConnectionsThisWeek } from './soo-writer.js';
+import { resolveSoOTarget, resolveSoOEmail, flipAccountInUse, resolveOperatorStamp, isConnectSend, bumpConnectionsThisWeek } from './soo-writer.js';
+import { createSoOLoginReporter } from './soo-login-reporter.js';
 import { fetchSoOData } from './soo.js';
 import { identityRestrictionLabel } from './soo-restrictions.js';
 import { getOperatorEmail } from './operator-identity.js';
@@ -2518,7 +2519,6 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
     // never throw into the loop. They write to the team SoO "LinkedIn Accounts"
     // board, matched by Email == the account's GoLogin profile name.
     const _sooFlipped = new Set();      // accountNorm already flipped to In Use this run
-    const _sooNeedsLogin = new Set();   // accountNorm already flagged Needs Login this run
     let _sooAccountsCache = null;
     let _sooFetchedAt = 0;
     const SOO_RESTRICTION_REFRESH_MS = 5 * 60 * 1000;
@@ -2690,19 +2690,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
       }
     }
 
-    async function markSoONeedsLogin(accountName) {
-      try {
-        const acctNorm = (accountName || '').toString().toLowerCase().trim();
-        if (!acctNorm || _sooNeedsLogin.has(acctNorm)) return;
-        _sooNeedsLogin.add(acctNorm);
-        const res = await markAccountNeedsLoginSoO({ email: accountName });
-        if (res && res.ok && res.matched) {
-          log(`  ⚑ SoO: ${accountName} → Needs Login = Y.`);
-        }
-      } catch (err) {
-        log(`  ⚠ SoO Needs Login failed for ${accountName}: ${err.message}`);
-      }
-    }
+    const markSoONeedsLogin = createSoOLoginReporter({ mode, log });
 
     // v2 schema: prepareSheet provisions only this mode's columns and hides
     // every other mode's columns. Apps Script returns BAD_MODE only on
