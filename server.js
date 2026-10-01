@@ -1,3 +1,4 @@
+import { messageSubjectError } from './public/js/message-subject-validation.mjs';
 import { configureSharedGoLogin, ensureSharedGoLogin } from './src/shared-gologin.js';
 import { SHEETS_GATEWAY_URL as SHARED_GOLOGIN_GATEWAY } from './src/sheets-webapp-url.js';
 import { installEmailPasswordAuth } from './src/email-password-auth.js';
@@ -1374,6 +1375,8 @@ function cloudLog(msg) { console.log(`[${new Date().toISOString()}] ${msg}`); }
 // pipeline after stopping the original campaign (excludeLeadUrls set).
 async function handleStartCloud(req, res) {
   try {
+    const subjectError = messageSubjectError(req.body);
+    if (subjectError) return res.status(400).json({error:subjectError,launchRejected:true});
     const body = req.body || {};
     const { profileIds, sheetUrl, linkedinColumn, mode, dailyLimit, templates, name, senderColumn,
       delayMin, delayMax, launchId, startAt } = body;
@@ -3073,6 +3076,8 @@ app.post('/api/preflight/stamp', async (req, res) => {
 
 app.post('/api/campaign/start', async (req, res) => {
   try {
+    const subjectError = messageSubjectError(req.body);
+    if (subjectError) return res.status(400).json({error:subjectError,launchRejected:true});
     // Phase 11.3 (DMS-04): mutex with Check DMs — both need the same browsers.
     if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
     if (postAmp.running) return res.status(409).json({ error: 'Post Amplification is running — stop it first' });
@@ -5223,6 +5228,8 @@ app.post('/api/queue/reorder', async (req, res) => {
 // or wait for the next launchCampaign() chain.
 app.post('/api/campaign/queue-only', async (req, res) => {
   try {
+    const subjectError = messageSubjectError(req.body);
+    if (subjectError) return res.status(400).json({error:subjectError,launchRejected:true});
     if (checkDms.running) return res.status(409).json({ error: 'Check DMs is running — stop it first' });
     if (postAmp.running) return res.status(409).json({ error: 'Post Amplification is running — stop it first' });
 
@@ -8153,6 +8160,8 @@ app.get('/api/schedules', async (_req, res) => {
 
 app.post('/api/schedules', async (req, res) => {
   try {
+    const subjectError = messageSubjectError(req.body);
+    if (subjectError) return res.status(400).json({error:subjectError});
     const { name, cron: cronExpr, profileIds, sheetUrl, mode, templates, dailyLimit, delayMin, delayMax, enabled } = req.body;
     if (!name) return res.status(400).json({ error: 'name required' });
     if (!cronExpr || !cron.validate(cronExpr)) return res.status(400).json({ error: 'valid cron expression required' });

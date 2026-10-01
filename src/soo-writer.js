@@ -399,21 +399,31 @@ export async function bumpConnectionsThisWeek({ email, delta = 1 }, retryOpts) {
 }
 
 /**
- * Set the account's "Needs Login" SoO cell to 'Y'. Best-effort. Never cleared
- * by the app (manual clear by the LinkedIn team).
+ * Set or clear an account's Needs Login flag after a confirmed session result.
  * @returns {Promise<object>} { ok, matched, written } or { ok:false, ... }
  */
-export async function markAccountNeedsLoginSoO({ email }, retryOpts) {
+export function markAccountNeedsLoginSoO({ email }, retryOpts) {
+  return writeAccountLoginFlag({email, needsLogin:true}, retryOpts);
+}
+
+export function clearAccountNeedsLoginSoO({ email }, retryOpts) {
+  return writeAccountLoginFlag({email, needsLogin:false}, retryOpts);
+}
+
+async function writeAccountLoginFlag({ email, needsLogin }, retryOpts) {
   email = String(email || '').trim().toLowerCase();
   if (!email) return { ok: false, error: 'no email' };
   try {
-    const data = await postSetSoO(buildNeedsLoginPayload({ email }), retryOpts);
+    const payload = buildNeedsLoginPayload({ email });
+    if (!needsLogin) { payload.fields['Needs Login']=''; payload.clearNeedsLoginIfY=true; }
+    const data = await postSetSoO(payload, retryOpts);
     if (data && data.error) return { ok: false, error: data.error };
     if (!data || data.matched !== true) return { ok: false, matched: false, error: 'No matching SoO account' };
     const alreadySet = (data.skipped || []).some(value => /^needs login \(already y\)$/i.test(value));
+    const alreadyClear = (data.skipped || []).some(value => /^needs login \(not y\)$/i.test(value));
     const written = (data.written || []).some(value => String(value).trim().toLowerCase() === 'needs login');
-    if (!written && !alreadySet) return { ok: false, matched: true, error: 'Needs Login column was not updated', skipped: data.skipped || [] };
-    return { ...data, ok: true, alreadySet };
+    if (!written && !(needsLogin ? alreadySet : alreadyClear)) return { ok: false, matched: true, error: 'Needs Login column was not updated', skipped: data.skipped || [] };
+    return { ...data, ok: true, alreadySet, alreadyClear };
   } catch (err) {
     return { ok: false, error: err.message };
   }

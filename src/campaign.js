@@ -1,3 +1,4 @@
+import { messageSubjectError } from '../public/js/message-subject-validation.mjs';
 import { hasDailySendLimit, dailyQuotaCount, utcDayKey, nextDailyResetAt } from './campaign-limits.js';
 import { getSalesNavAccess } from './linkedin/sales-nav-access.js';
 import { ensureCampaignIdentity, getConfigById, saveConfig } from './campaign-configs.js';
@@ -2102,6 +2103,8 @@ export function setLiveTemplates(newTemplates = {}) {
   if (!campaign.running) return { ok: false, reason: 'not-running' };
   if (!campaign._paused) return { ok: false, reason: 'not-paused' };
   if (!campaign._liveTpl) return { ok: false, reason: 'no-templates' };
+  const subjectError = messageSubjectError({mode:campaign._liveMode,templates:{...campaign.templates,...newTemplates},messageOpenProfiles:campaign.messageOpenProfiles});
+  if (subjectError) return {ok:false,reason:subjectError};
   Object.assign(campaign._liveTpl, normalizeTemplates(newTemplates, campaign._liveMode));
   // Mutate the raw templates object IN PLACE (don't reassign). The send loop's
   // auto-intro / auto-DM call sites pass the closure `templates` object (=== the
@@ -2143,6 +2146,8 @@ export function setLiveCadence(min) {
 
 export async function startCampaign({ campaignId = null, profileIds, benchedProfileIds = [], sheetUrl, sheetGid = '', templates, dailyLimit = 50, mode = 'connect_only', messageOpenProfiles = false, delayMin = 10, delayMax = 20, linkedinColumn = '', senderFirstNames = {}, concurrency = 1, name = '', acceptanceTrackingDays = 0, preflightCheckStatus = false, checkIntervalMinutes = 60, autoChecksEnabled = true, createdBy = null, senderColumn = '', allLeadsConnected = false, resumeContext = null, primaryCheckTiming = 'immediately', pauseOnThrottle = true, stopBeforeWeeklyReset = false, stopBeforeMonthlyReset = false, skipIntroductions = false, excludedUrls = [] }) {
   if (campaign.running) throw new Error('Campaign already running');
+  const subjectError = messageSubjectError({mode,templates,messageOpenProfiles});
+  if (subjectError) throw new Error(subjectError);
   const identity = ensureCampaignIdentity({ campaignId, name, config: { profileIds, sheetUrl, templates, mode } });
   campaignId = identity.campaignId;
   name = identity.name;
@@ -3237,7 +3242,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
           await setAccountNeedsLogin(pName, true);
           // v2.95: ALSO flag this account on the SoO "LinkedIn Accounts" board
           // (matched by Email == profile name) so the LinkedIn team re-logs it.
-          // Never auto-cleared. Best-effort — cannot affect the loop.
+          // Cleared only after confirmed login. Best-effort — cannot affect the loop.
           await markSoONeedsLogin(pName);
           // Close the now-unusable session immediately to free RAM
           try {
@@ -3259,6 +3264,8 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         // per profile launch. The cache-clear nav already loads LinkedIn home,
         // and the per-lead navigation has its own networkidle0 + DOM-settle
         // waits, so the additional dwell here was redundant.
+
+        await markSoONeedsLogin.confirmLoggedIn(pName,page);
 
         const session = { profileId, pName, browser: launched.browser, page, warmedUp: true };
         sessions.set(profileId, session);
@@ -4880,6 +4887,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
               row.Stage = 'IC Sent';
             }
             await setAccountNeedsLogin(pName, false);
+            if (['connection_sent','message_sent','inmail_sent','op_message_sent'].includes(result.action)) await markSoONeedsLogin(pName,false);
 
             // Connect + Introduce Back / Connect + DM: piggy-back a bulk
             // acceptance sweep on this profile's turn, but with two gates:
@@ -5113,6 +5121,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
                 if (recovered) { page = recovery.page || page; session.page = page; }
               }
               if (recovered) {
+                await markSoONeedsLogin.confirmLoggedIn(pName,page);
                 log(`  ✓ ${pName}: re-logged in — staying in rotation.`);
               } else {
                 log(`  ⚠ ${pName}: session expired — parking account for rest of run (re-login required).`);
@@ -5130,7 +5139,7 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
                 await setAccountNeedsLogin(pName, true);
                 // v2.95: ALSO flag this account on the SoO "LinkedIn Accounts" board
                 // (matched by Email == profile name) so the LinkedIn team re-logs it.
-                // Never auto-cleared. Best-effort — cannot affect the loop.
+                // Cleared only after confirmed login. Best-effort — cannot affect the loop.
                 await markSoONeedsLogin(pName);
               }
             }

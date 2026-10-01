@@ -2011,10 +2011,14 @@ function handleSetSoO(sheet, data) {
       if (col === -1) { skipped.push(header + ' (no column)'); return; }
       var key = (header || '').toString().toLowerCase().trim();
       // Login flags are idempotent across campaigns/operators, under this lock.
-      // Only inspect this field; never clear it or modify other SoO columns.
+      // Inspect only this flag. Verified-login clears must preserve non-Y notes.
       if (key === 'needs login' && String(data.fields[header]).trim().toUpperCase() === 'Y') {
         var loginFlag = String(sheet.getRange(targetRow, col + 1).getValue() || '').trim().toUpperCase();
         if (loginFlag === 'Y') { skipped.push(header + ' (already Y)'); return; }
+      }
+      if (key === 'needs login' && data.fields[header] === '' && data.clearNeedsLoginIfY === true) {
+        var currentLoginFlag = String(sheet.getRange(targetRow, col + 1).getValue() || '').trim().toUpperCase();
+        if (currentLoginFlag !== 'Y') { skipped.push(header + ' (not Y)'); return; }
       }
       if (guard[key]) {
         var cur = (sheet.getRange(targetRow, col + 1).getValue() || '').toString().toLowerCase().trim();

@@ -1,3 +1,4 @@
+import { messageSubjectError } from '/js/message-subject-validation.mjs';
 import { completeCredentialUpdate } from './credential-feedback.mjs';
 import { dailyCountText, batchCountText, dailyResetText } from '/js/campaign-counters.mjs';
 import { campaignTitle } from '/js/campaign-title.mjs';
@@ -7021,6 +7022,8 @@ async function startCampaign(opts = {}) {
   // both templates must be filled before the campaign can start.
   const _mode = document.getElementById('campaign-mode').value;
   const _opMsgOn = !!document.getElementById('open-profile-msg')?.checked;
+  const subjectError = messageSubjectError({mode:_mode, messageOpenProfiles:_opMsgOn, templates:{opChannel:document.getElementById('tpl-op-channel')?.value || 'sn_first', openProfileSubject:document.getElementById('tpl-op-subject')?.value || ''}});
+  if (subjectError) { alert(subjectError); document.getElementById('tpl-op-subject')?.focus(); return; }
   if (_mode === 'connect_only' && _opMsgOn) {
     const opBody = (document.getElementById('tpl-op-body')?.value || '').trim();
     if (!opBody) { alert('Open Profile body template is required when "Message Open Profiles Directly" is on.'); return; }
