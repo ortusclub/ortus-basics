@@ -4179,11 +4179,13 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         data.lastName = row['Last Name'] || row['lastName'] || row['last_name'] || '';
         data.company = row['Company'] || row['company'] || '';
         data.title = row['Title'] || row['title'] || row['Job Title'] || '';
-        data.senderName = pName || '';
-        const resolvedFirst = senderFirstNames[profileId];
-        data.senderFirstName = (resolvedFirst && resolvedFirst.trim())
+        const resolvedFirst = (senderFirstNames[profileId] || '').trim();
+        data.senderFirstName = resolvedFirst
           || (pName || '').split(/\s+/)[0]
           || '';
+        // senderName: use the resolved first name when available so
+        // {senderName} never resolves to a raw email like "rj@ortusclub.com".
+        data.senderName = resolvedFirst || pName || '';
 
         let hint = getModeHint(mode, state.processed[url]?.action);
 

@@ -1755,6 +1755,87 @@ function renderPreviewModal(previews, error) {
   document.addEventListener('keydown', onKey);
 }
 
+// ── Pre-launch preview modal ─────────────────────────────────────────────────
+// Shows what the first message of the batch will look like with all tokens
+// resolved, so the operator can verify {senderFirstName} / {senderName} etc.
+// before anything is sent. Returns a Promise<boolean>: true = launch, false = cancel.
+function showPreLaunchPreview(preview, senderFirstNames, senderNames) {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('preview-modal');
+    const body = document.getElementById('preview-modal-body');
+    const closeBtn = document.getElementById('preview-modal-close');
+    const backdrop = document.getElementById('preview-modal-backdrop');
+    if (!modal || !body) { resolve(true); return; }
+
+    const leadName = [preview.lead?.firstName, preview.lead?.lastName].filter(Boolean).join(' ') || '(no name)';
+
+    // Build the sender-variable summary so the operator sees the resolved values
+    const _firstId = selectedProfileIds[0];
+    const _resolvedFirst = (_firstId && senderFirstNames[_firstId]) || '';
+    const _resolvedName = (_firstId && senderNames[_firstId]) || '';
+    const _profileLabel = _firstId ? profileLabel(_firstId) : '';
+
+    let html = '';
+    html += `<div style="margin-bottom:12px;padding:10px 14px;border-radius:6px;background:var(--bg-2,#1a1a1a);border:1px solid var(--border,#333)">`;
+    html += `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--fg-3,#888);margin-bottom:6px">Sender Variables</div>`;
+    html += `<div style="display:grid;grid-template-columns:max-content 1fr;gap:4px 12px;font-size:13px">`;
+    html += `<span style="color:var(--fg-3,#888)">{senderFirstName}</span><span style="color:var(--fg-1,#eee)">${escapeHtml(_resolvedFirst || '(empty)')}</span>`;
+    html += `<span style="color:var(--fg-3,#888)">{senderName}</span><span style="color:var(--fg-1,#eee)">${escapeHtml(_resolvedFirst || _resolvedName || '(empty)')}</span>`;
+    html += `<span style="color:var(--fg-3,#888)">Account</span><span style="color:var(--fg-1,#eee)">${escapeHtml(_profileLabel || '(none)')}</span>`;
+    html += `</div></div>`;
+
+    html += `<div class="preview-card">`;
+    html += `<div class="preview-card__lead">`;
+    html += `<strong>${escapeHtml(leadName)}</strong>`;
+    if (preview.lead?.company) html += ` <span class="preview-card__company">— ${escapeHtml(preview.lead.company)}</span>`;
+    html += `</div>`;
+
+    for (const key of Object.keys(PREVIEW_FIELD_LABELS)) {
+      const text = preview.rendered?.[key];
+      if (!text) continue;
+      const limit = CHAR_LIMITS[key];
+      const len = text.length;
+      const over = limit !== undefined && len > limit;
+      const countLabel = limit !== undefined ? `${len} / ${limit} chars` : `${len} chars`;
+      html += `<div class="preview-card__field">`;
+      html += `<div class="preview-card__field-header">`;
+      html += `<span class="preview-card__field-name">${escapeHtml(PREVIEW_FIELD_LABELS[key])}</span>`;
+      html += `<span class="preview-card__count ${over ? 'preview-card__count--over' : ''}">${escapeHtml(countLabel)}</span>`;
+      html += `</div>`;
+      html += `<pre class="preview-card__text">${escapeHtml(text)}</pre>`;
+      html += `</div>`;
+    }
+
+    if (preview.warnings?.length) {
+      html += `<div class="preview-card__warnings">`;
+      html += `<div class="preview-card__warnings-title">Warnings</div>`;
+      html += `<ul>${preview.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join('')}</ul>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+
+    // Action buttons
+    html += `<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">`;
+    html += `<button id="prelaunch-cancel" style="padding:8px 20px;border-radius:9999px;border:1px solid var(--border,#444);background:transparent;color:var(--fg-1,#eee);cursor:pointer;font-size:13px">Cancel</button>`;
+    html += `<button id="prelaunch-confirm" style="padding:8px 20px;border-radius:9999px;border:none;background:var(--gold,#c9a227);color:#000;cursor:pointer;font-weight:600;font-size:13px">Launch Campaign</button>`;
+    html += `</div>`;
+
+    body.innerHTML = html;
+    modal.hidden = false;
+
+    const cleanup = () => {
+      modal.hidden = true;
+      document.removeEventListener('keydown', onKey);
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); cleanup(); resolve(false); } };
+    document.addEventListener('keydown', onKey);
+    closeBtn.addEventListener('click', () => { cleanup(); resolve(false); }, { once: true });
+    backdrop.addEventListener('click', () => { cleanup(); resolve(false); }, { once: true });
+    document.getElementById('prelaunch-cancel')?.addEventListener('click', () => { cleanup(); resolve(false); }, { once: true });
+    document.getElementById('prelaunch-confirm')?.addEventListener('click', () => { cleanup(); resolve(true); }, { once: true });
+  });
+}
+
 // Keep the Preview button state in sync as the user types / changes selections.
 document.addEventListener('DOMContentLoaded', () => {
   refreshPreviewButtonState();
@@ -7438,6 +7519,33 @@ async function startCampaign(opts = {}) {
       body.monthlyBudget = Number.isFinite(_b) && _b > 0 ? _b : 30;
     }
   }
+
+  // ── Pre-launch preview (Sam, 2026-09-30) ───────────────────────────────────
+  // Show the operator what the first message of the batch will look like with
+  // all variables resolved — catches {senderFirstName}/{senderName} mismatches
+  // before anything goes out. Skipped on queue-only, cloud-scheduled, and
+  // when the operator already confirmed via preflight re-entry.
+  if (!opts._skipPreLaunchPreview && !opts.queueOnly && !opts.startAt) {
+    try {
+      endLaunching(); // hide the spinner so the preview modal isn't fighting it
+      const _plState = gatherCampaignFormState();
+      const _plRes = await fetch('/api/templates/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(_plState),
+      });
+      const _plData = await _plRes.json();
+      if (_plRes.ok && Array.isArray(_plData.previews) && _plData.previews.length > 0) {
+        const proceed = await showPreLaunchPreview(_plData.previews[0], senderFirstNames, senderNames);
+        if (!proceed) return; // operator cancelled
+      }
+      beginLaunching((document.getElementById('campaign-name-input')?.value || '').trim());
+    } catch (err) {
+      console.warn('[pre-launch preview] skipped:', err.message);
+      beginLaunching((document.getElementById('campaign-name-input')?.value || '').trim());
+    }
+  }
+  // ── End pre-launch preview ────────────────────────────────────────────────
 
   const _outcome = await submitStartCampaign(body, opts);
   // ⑤+①: retire the launch popup. On an immediate LOCAL start the new run needs

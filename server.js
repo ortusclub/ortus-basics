@@ -1014,15 +1014,17 @@ app.post('/api/templates/preview', async (req, res) => {
         ? (_soOFirstByName[_perRowSender.toLowerCase()] || '')
         : '';
 
-      data.senderName = _perRowSender || pName || '';
-      const resolvedFirst = _perRowFirst || senderFirstNames[profileId];
+      const resolvedFirst = (_perRowFirst || (senderFirstNames[profileId] || '')).trim();
       // v2.11.14: friendlier fallback for local-browser — if the operator
       // hasn't set a localBrowserFirstName yet, prefer "You" over the raw
       // profile id string so the preview reads naturally.
       const fallbackFirst = (profileId === 'local-browser')
         ? 'You'
         : ((pName || '').split(/\s+/)[0] || '');
-      data.senderFirstName = (resolvedFirst && resolvedFirst.trim()) || fallbackFirst;
+      data.senderFirstName = resolvedFirst || fallbackFirst;
+      // senderName: use the resolved first name when available so
+      // {senderName} never resolves to a raw email like "rj@ortusclub.com".
+      data.senderName = resolvedFirst || _perRowSender || pName || '';
 
       // v2.11.14: when intro mode is on, mirror outreach.js:462's introData
       // injection so {intro name} / {intro first name} / {intro last name}

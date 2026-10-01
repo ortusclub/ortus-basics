@@ -240,10 +240,10 @@ export async function runAutoDms({
       'last name': leadLastName,
       company: row['Company'] || row['company'] || '',
       title: row['Title'] || row['title'] || row['Job Title'] || '',
-      senderName: profileName || '',
       senderFirstName: (resolvedFirst && resolvedFirst.trim())
         || (profileName || '').split(/\s+/)[0]
         || '',
+      senderName: (resolvedFirst && resolvedFirst.trim()) || profileName || '',
     };
     log(`     · row matched=${!!rowByUrl.get(url)} firstName="${leadFirstName}" lastName="${leadLastName}"`);
     log(`  ✓ [${profileName}] ${url}: Connection Accepted (stamped at detection)`);
