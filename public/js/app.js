@@ -1650,8 +1650,8 @@ function refreshPreviewButtonState() {
   btn.title = 'Render your templates against sample rows from the sheet';
 }
 
-async function handlePreviewClick() {
-  const btn = document.getElementById('btn-preview-messages');
+async function handlePreviewClick(button, fields = '') {
+  const btn = button?.tagName === 'BUTTON' ? button : document.getElementById('btn-preview-messages');
   if (!btn) return;
   // Always openable. Need a sheet to render against real rows — if it's missing,
   // open the modal with guidance instead of silently doing nothing.
@@ -1662,6 +1662,9 @@ async function handlePreviewClick() {
   }
 
   const state = gatherCampaignFormState();
+  state.previewLimit = 1;
+  state.sheetGid = window._chosenSheetGid || '';
+  if (fields) state.previewFields = fields.split(',');
   const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Loading…';
@@ -1682,6 +1685,7 @@ async function handlePreviewClick() {
     renderPreviewModal([], err.message || 'Network error');
   } finally {
     btn.textContent = originalText;
+    btn.disabled = false;
     refreshPreviewButtonState();
   }
 }

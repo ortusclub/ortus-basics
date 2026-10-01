@@ -67,7 +67,7 @@ import { isAwaitingAccept, sendersToAcceptTasks, computeAcceptedIds, hasSignaled
 import { buildAcceptTask, enqueuePrimaryTask, loadTasks } from './src/primary-tasks.js';
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
 import { startAmbientSampling } from './src/resource-monitor.js';
-import { personalizeTemplate } from './src/linkedin/helpers.js';
+import { personalizeTemplate, findUnresolvedPlaceholders } from './src/linkedin/helpers.js';
 import { primaryKeyFromUrl, loadPrimaryStatus, seedConnectedIds } from './src/primary-status-store.js';
 import { checkProfileDms, checkProfileDmsPerLead } from './src/linkedin/check-dms.js';
 import { sweepProfileInbox, applyReplyWriteBack, makeInitialSweepStatus, loadSalesNavConversations, classifyConversations, replyCheckResultsForRows } from './src/linkedin/inbox-sweep.js';
@@ -881,6 +881,9 @@ app.post('/api/templates/preview', async (req, res) => {
     const {
       sheetUrl,
       linkedinColumn = '',
+      sheetGid = '',
+      previewLimit = 3,
+      previewFields,
       templates = {},
       profileIds = [],
       senderFirstNames = {},
@@ -932,6 +935,9 @@ app.post('/api/templates/preview', async (req, res) => {
     const introFirst = introMode ? (introTokens[0] || '') : '';
     const introLast  = introMode ? (introTokens.slice(1).join(' ')) : '';
 
+    if (Array.isArray(previewFields)) {
+      for (const key of Object.keys(tpl)) if (!previewFields.includes(key)) tpl[key] = '';
+    }
     const anyFilled = Object.values(tpl).some(v => v && v.trim());
     if (!anyFilled) {
       return res.status(400).json({ error: 'At least one template field must be provided' });
@@ -941,7 +947,7 @@ app.post('/api/templates/preview', async (req, res) => {
     // show it without parsing error codes (mirrors the general pattern).
     let rows;
     try {
-      rows = await fetchSheet(sheetUrl);
+      rows = await fetchSheet(withGid(sheetUrl, String(sheetGid || '').replace(/\D/g, '')));
     } catch (err) {
       console.error('Templates preview — sheet fetch error:', err.message);
       return res.json({ previews: [], error: err.message });
@@ -950,7 +956,7 @@ app.post('/api/templates/preview', async (req, res) => {
     // Pick the first 3 rows with an extractable LinkedIn URL.
     const picked = [];
     for (const row of rows) {
-      if (picked.length >= 3) break;
+      if (picked.length >= (Number(previewLimit) === 1 ? 1 : 3)) break;
       const url = extractLinkedInUrl(row, linkedinColumn);
       if (url) picked.push({ row, url });
     }
@@ -1083,13 +1089,7 @@ app.post('/api/templates/preview', async (req, res) => {
       };
       for (const [key, raw] of Object.entries(tpl)) {
         if (!raw) { rendered[key] = ''; continue; }
-        const placeholderMatches = raw.match(/\{([a-zA-Z0-9_ ]+)\}/g) || [];
-        const unresolved = placeholderMatches
-          .map(m => m.slice(1, -1))
-          .filter(name => {
-            const val = data[name];
-            return val === undefined || val === null || val === '';
-          });
+        const unresolved = findUnresolvedPlaceholders(raw, data);
         for (const name of unresolved) {
           warnings.push(`{${name}} not resolved for ${fieldLabels[key]}`);
         }

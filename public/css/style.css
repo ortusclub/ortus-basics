@@ -8996,3 +8996,17 @@ body.route-dashboard #live-console {
   outline: 3px solid var(--ink);
   outline-offset: 4px;
 }
+
+.template-preview-button {
+  background: var(--bg);
+  color: var(--ink);
+  border: 2px solid var(--ink);
+  border-radius: 9999px;
+  padding: 9px 18px;
+  margin: 0 0 18px;
+  font: 600 14px var(--body);
+  cursor: pointer;
+}
+.template-preview-button:hover { box-shadow: inset 0 0 0 1px var(--ink); }
+.template-preview-button:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+.template-preview-button:disabled { cursor: wait; }

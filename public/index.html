@@ -2751,6 +2751,7 @@
          connectionNote: "" whatever is typed here. -->
     <div class="section tpl-section" id="tpl-connect-section" style="display:none">
       <h2><span data-edit="h2-connect">Connection Note</span> <small>(optional, max 300 chars)</small></h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'connectionNote')">Preview for first lead</button>
       <div id="tpl-note-salesnav-warn" class="note-hint note-hint-callout"><span class="nh-ic">!</span><span class="nh-tx"><b>Needs Sales Navigator.</b> If the sending account doesn't have Sales Navigator, the connection note will not work — the request still goes out, but without the note.</span></div>
       <textarea id="tpl-note" maxlength="300" rows="2" placeholder="Hi {firstName}, I'd love to connect!" oninput="updateTplNoteCount(); wizardDirtyOnInput()"></textarea>
       <div id="tpl-note-count" style="font-size:0.7rem; color:var(--gray); margin-top:4px; text-align:right; font-family:var(--mono);">0 / 300</div>
@@ -2761,6 +2762,7 @@
     <!-- ── Direct message (message_only) — introduce_back keeps this hidden ── -->
     <div class="section tpl-section" id="tpl-message-section" style="display:none">
       <h2><span data-edit="h2-followup">Direct message</span> <small>sent to each connected lead</small></h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'followUpMessage')">Preview for first lead</button>
       <textarea id="tpl-followup" rows="3" placeholder="Thanks for connecting, {firstName}! I wanted to reach out because…"></textarea>
       <div class="placeholder-tags" data-target="tpl-followup"></div>
     </div>
@@ -2768,6 +2770,7 @@
     <!-- ── InMail (inmail_only, auto) ── -->
     <div class="section tpl-section" id="tpl-inmail-section" style="display:none">
       <h2 data-edit="h2-inmail">InMail Template</h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'inmailSubject,inmailBody')">Preview for first lead</button>
       <label for="tpl-inmail-subject">Subject</label>
       <input type="text" id="tpl-inmail-subject" placeholder="Invite for exclusive Dinner Roundtable for Executive Leaders" />
       <label for="tpl-inmail-body">Body</label>
@@ -2781,6 +2784,7 @@
          driven by applyTemplateVisibility (mode-aware). -->
     <div id="intro-title-block" class="section tpl-section" style="display:none">
       <h2 data-edit="h2-intro-title">Group Conversation Title</h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'introTitle,primaryIntroBody')">Preview for first lead</button>
       <input type="text" id="intro-title" value="Introduction: {firstName} <> {primaryFirstName}" style="width:100%; background:transparent; border:none; border-bottom:1px solid var(--hairline); color:var(--ink); padding:8px 0; font-family:var(--body); font-size:0.95rem; outline:none;" oninput="saveIntroFields()">
       <div class="placeholder-tags" data-target="intro-title" style="margin-top:10px"></div>
       <div style="font-size:11px; color:var(--gray); margin-top:4px">Click a chip to insert at the cursor. Available: <code>{firstName}</code>, <code>{primaryFirstName}</code>, <code>{primaryLastName}</code>, <code>{primaryFullName}</code>, plus any sheet column.</div>
@@ -2789,6 +2793,7 @@
     <!-- ── Intro DM Body (connect_and_introduce) ── -->
     <div class="section tpl-section" id="tpl-intro-section" style="display:none">
       <h2 data-edit="h2-intro-dm">Group Conversation Body</h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'introTitle,primaryIntroBody')">Preview for first lead</button>
       <!-- v2.102: set expectations — this is the opener, not the whole pitch. -->
       <div style="font-size:11px; color:var(--gray); margin-top:-4px; margin-bottom:8px">Keep it short — this is just the opener that creates the group. The bulk of the message goes in the <b>First Follow-up</b> below.</div>
       <textarea id="primary-intro-body" rows="5" placeholder="Hey {firstName}, thanks for connecting! I'd love to introduce you to {primaryFirstName} — they're..." oninput="savePrimaryPersonFields()"></textarea>
@@ -2800,6 +2805,7 @@
          (driven by onModeChange + toggleFollowUpFields). -->
     <div class="section tpl-section" id="tpl-followup-section" style="display:none">
       <h2 data-edit="h2-followup">First Follow-up Message <small>sent in the group thread — all queued follow-ups go together, after the last intro</small></h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'followUpBody')">Preview for first lead</button>
       <textarea id="follow-up-body" rows="4" placeholder="Hi {firstName}, great to be connected…" oninput="savePrimaryPersonFields()"></textarea>
       <div class="placeholder-tags" data-target="follow-up-body"></div>
     </div>
@@ -2809,6 +2815,7 @@
          by onModeChange to mode === 'connect_and_message'. -->
     <div class="section tpl-section" id="tpl-cc-dm-section" style="display:none">
       <h2><span data-edit="h2-cc-dm">Direct message</span> <small>sent after they accept</small></h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'ccDmBody')">Preview for first lead</button>
       <textarea id="tpl-cc-dm-body" rows="5" placeholder="Hi {firstName}, thanks for connecting! I wanted to reach out because…" oninput="saveCcDmFields()"></textarea>
       <div class="placeholder-tags" data-target="tpl-cc-dm-body"></div>
     </div>
@@ -2816,6 +2823,7 @@
     <!-- ── Open Profile (open_profile_only) ── -->
     <div class="section tpl-section" id="tpl-op-section" style="display:none">
       <h2><span data-edit="h2-op">Open Profile Message Template</span> <span style="font-weight:400; font-size:0.75em; color:#8b949e">(free — no credits used)</span></h2>
+      <button type="button" class="template-preview-button" onclick="handlePreviewClick(this, 'opProfileSubject,opProfileBody')">Preview for first lead</button>
       <label for="tpl-op-subject">Subject <span style="font-weight:400; font-size:0.75em; color:#8b949e">(required for Sales Navigator)</span></label>
       <input type="text" id="tpl-op-subject" placeholder="Invite for exclusive Dinner Roundtable for Executive Leaders" />
       <label for="tpl-op-body">Body</label>
