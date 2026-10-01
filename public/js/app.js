@@ -1817,8 +1817,8 @@ function showPreLaunchPreview(preview, senderFirstNames, senderNames) {
 
     // Action buttons
     html += `<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px">`;
-    html += `<button id="prelaunch-cancel" style="padding:8px 20px;border-radius:9999px;border:1px solid var(--border,#444);background:transparent;color:var(--fg-1,#eee);cursor:pointer;font-size:13px">Cancel</button>`;
-    html += `<button id="prelaunch-confirm" style="padding:8px 20px;border-radius:9999px;border:none;background:var(--gold,#c9a227);color:#000;cursor:pointer;font-weight:600;font-size:13px">Launch Campaign</button>`;
+    html += `<button type="button" id="prelaunch-cancel" class="prelaunch-button prelaunch-button--cancel">Cancel</button>`;
+    html += `<button type="button" id="prelaunch-confirm" class="prelaunch-button prelaunch-button--confirm">Launch Campaign</button>`;
     html += `</div>`;
 
     body.innerHTML = html;
