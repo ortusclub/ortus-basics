@@ -1,7 +1,7 @@
 {
   "name": "ortus-basics",
   "productName": "Ortus Basics",
-  "version": "1.7.74",
+  "version": "1.7.75",
   "description": "LinkedIn outreach automation for The Ortus Club",
   "type": "module",
   "main": "electron/main.js",

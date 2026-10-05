@@ -6366,14 +6366,15 @@ function _nextZoneTime(timeZone, weekday, hour) {
   }
   return null;
 }
-// The free-for-all window in the reader's own clock: Sat 12:00 → Sun 12:00, Philippine time.
+// The free-for-all window in the reader's own clock: Sat 00:00 (midnight at the
+// end of Friday) → Sun 12:00, Philippine time. Changed from Sat 12:00 on 2026-10-05.
 function syncFreeForAllNote() {
   const el = document.getElementById('free-for-all-local');
   if (!el) return;
   const end = _nextZoneTime('Asia/Manila', 'Sun', 12);
   if (!end) { el.textContent = ''; return; }
-  // The start that belongs to THIS end: the Saturday-midday-Manila just before it.
-  let start = _nextZoneTime('Asia/Manila', 'Sat', 12);
+  // The start that belongs to THIS end: the Saturday-midnight-Manila just before it.
+  let start = _nextZoneTime('Asia/Manila', 'Sat', 0);
   if (start && start > end) start = new Date(start.getTime() - 7 * 86400000);
   const f = (d) => d.toLocaleString(undefined, { weekday: 'long', hour: '2-digit', minute: '2-digit' });
   const live = start && Date.now() >= start.getTime() && Date.now() < end.getTime();

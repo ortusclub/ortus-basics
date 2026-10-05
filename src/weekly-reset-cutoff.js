@@ -11,7 +11,8 @@ export const RESET_TIME_ZONE = 'America/Los_Angeles';
 export const RESET_WEEKDAY = 1;            // Monday (0 = Sunday)
 export const STOP_BEFORE_RESET_MS = 15 * 60 * 1000;   // monthly cutoff only
 // Free for all Friday stops when the weekend free-for-all ends: Sunday 12:00
-// Philippine time (operator, 2026-09-21). The window opens Saturday 12:00 PH time.
+// Philippine time (operator, 2026-09-21). The window opens Saturday 00:00 PH time,
+// i.e. midnight at the end of Friday (operator, 2026-10-05; it was Saturday 12:00).
 export const WEEKLY_STOP_TIME_ZONE = 'Asia/Manila';
 export const WEEKLY_STOP_WEEKDAY = 0;      // Sunday
 export const WEEKLY_STOP_HOUR = 12;        // midday, reset time zone
