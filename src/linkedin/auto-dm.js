@@ -225,13 +225,17 @@ export async function runAutoDms({
       continue;
     }
 
-    const resolvedFirst = senderFirstNames[profileId];
+    const resolvedFirst = (senderFirstNames[profileId] || '').trim();
     const leadFirstName = row['First Name'] || row['First name'] || row['first name']
       || row['FIRST NAME'] || row['firstName'] || row['FirstName'] || row['first_name'] || '';
     const leadLastName = row['Last Name'] || row['Last name'] || row['last name']
       || row['LAST NAME'] || row['lastName'] || row['LastName'] || row['last_name'] || '';
     // Name the person the check is on, so a stop can say who it interrupted.
     campaign._checkingLead = `${leadFirstName} ${leadLastName}`.trim() || null;
+    const _senderFirst = resolvedFirst
+      || (profileName || '').split(/\s+/)[0]
+      || '';
+    const _senderFull = resolvedFirst || profileName || '';
     const data = {
       ...row,
       firstName: leadFirstName,
@@ -240,10 +244,10 @@ export async function runAutoDms({
       'last name': leadLastName,
       company: row['Company'] || row['company'] || '',
       title: row['Title'] || row['title'] || row['Job Title'] || '',
-      senderFirstName: (resolvedFirst && resolvedFirst.trim())
-        || (profileName || '').split(/\s+/)[0]
-        || '',
-      senderName: (resolvedFirst && resolvedFirst.trim()) || profileName || '',
+      senderFirstName: _senderFirst,
+      'sender first name': _senderFirst,
+      senderName: _senderFull,
+      'sender name': _senderFull,
     };
     log(`     · row matched=${!!rowByUrl.get(url)} firstName="${leadFirstName}" lastName="${leadLastName}"`);
     log(`  ✓ [${profileName}] ${url}: Connection Accepted (stamped at detection)`);

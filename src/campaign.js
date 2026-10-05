@@ -4175,12 +4175,12 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         data.company = row['Company'] || row['company'] || '';
         data.title = row['Title'] || row['title'] || row['Job Title'] || '';
         const resolvedFirst = (senderFirstNames[profileId] || '').trim();
-        data.senderFirstName = resolvedFirst
-          || (pName || '').split(/\s+/)[0]
-          || '';
-        // senderName: use the resolved first name when available so
-        // {senderName} never resolves to a raw email like "rj@ortusclub.com".
-        data.senderName = resolvedFirst || pName || '';
+        const _sf = resolvedFirst || (pName || '').split(/\s+/)[0] || '';
+        const _sn = resolvedFirst || pName || '';
+        data.senderFirstName = _sf;
+        data['sender first name'] = _sf;
+        data.senderName = _sn;
+        data['sender name'] = _sn;
 
         let hint = getModeHint(mode, state.processed[url]?.action);
 

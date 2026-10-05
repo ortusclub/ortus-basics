@@ -645,7 +645,7 @@ export async function runAutoIntros({
     // map first, falling back to splitting the profile display name —
     // matching IB byte-for-byte.
     const row = rowByUrl.get(url) || {};
-    const resolvedFirst = senderFirstNames[profileId];
+    const resolvedFirst = (senderFirstNames[profileId] || '').trim();
     // v2.14.x: tolerate every reasonable casing of the name columns —
     // "First Name" / "first name" / "FIRST NAME" / "First name" /
     // "firstName" / "first_name". Without this, a column header like
@@ -658,6 +658,11 @@ export async function runAutoIntros({
       || row['LAST NAME'] || row['lastName'] || row['LastName'] || row['last_name'] || '';
     // Name the person the check is on, so a stop can say who it interrupted.
     campaign._checkingLead = `${leadFirstName} ${leadLastName}`.trim() || null;
+    const _senderFirst = resolvedFirst
+      || (profileName || '').split(/\s+/)[0]
+      || '';
+    const _senderFull = resolvedFirst || profileName || '';
+    log(`     · senderFirstNames[${profileId}]=${JSON.stringify(senderFirstNames[profileId])} resolvedFirst=${JSON.stringify(resolvedFirst)} → senderFirstName=${JSON.stringify(_senderFirst)}`);
     const data = {
       ...row,
       firstName: leadFirstName,
@@ -672,10 +677,10 @@ export async function runAutoIntros({
       'last name': leadLastName,
       company: row['Company'] || row['company'] || '',
       title: row['Title'] || row['title'] || row['Job Title'] || '',
-      senderFirstName: (resolvedFirst && resolvedFirst.trim())
-        || (profileName || '').split(/\s+/)[0]
-        || '',
-      senderName: (resolvedFirst && resolvedFirst.trim()) || profileName || '',
+      senderFirstName: _senderFirst,
+      'sender first name': _senderFirst,
+      senderName: _senderFull,
+      'sender name': _senderFull,
       // Surface the primary person under every naming flavour the
       // operator might have typed: legacy "primary name", new
       // "primary full name" (v2.14.x rename), and the camelCase form.

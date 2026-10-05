@@ -64,5 +64,5 @@ test('senderFirstName still resolves independently', () => {
   // the SoO map. This fix must not disturb it, since it is what the operator
   // should be using in the template.
   assert.match(APP, /senderFirstNames\[id\] = resolveSenderFirstName\(id, pName\);/);
-  assert.match(SERVER, /const resolvedFirst = _perRowFirst \|\| senderFirstNames\[profileId\];/);
+  assert.match(SERVER, /const resolvedFirst = \(_perRowFirst \|\| \(senderFirstNames\[profileId\] \|\| ''\)\)\.trim\(\);/);
 });

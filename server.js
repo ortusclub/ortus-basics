@@ -1029,9 +1029,11 @@ app.post('/api/templates/preview', async (req, res) => {
         ? 'You'
         : ((pName || '').split(/\s+/)[0] || '');
       data.senderFirstName = resolvedFirst || fallbackFirst;
+      data['sender first name'] = resolvedFirst || fallbackFirst;
       // senderName: use the resolved first name when available so
       // {senderName} never resolves to a raw email like "rj@ortusclub.com".
       data.senderName = resolvedFirst || _perRowSender || pName || '';
+      data['sender name'] = resolvedFirst || _perRowSender || pName || '';
 
       // v2.11.14: when intro mode is on, mirror outreach.js:462's introData
       // injection so {intro name} / {intro first name} / {intro last name}
