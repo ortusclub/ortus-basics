@@ -20,60 +20,28 @@ test('tickMonitoringNow does nothing when nextCheckAt is in the future', async (
   assert.equal(fired, false);
 });
 
-test('tickMonitoringNow fires when overdue and reschedules by the EXACT cadence (no floor)', async () => {
-  const past = new Date(Date.now() - 1000);
-  _setTestState({
-    state: 'monitoring',
-    nextCheckAt: past.toISOString(),
-    monitoringUntil: new Date(Date.now() + 86400_000).toISOString(),
-    checkIntervalMinutes: 30, // set directly (bypasses intake clamp) to prove the reschedule does NOT floor
-    logs: [],
-  });
+test('overdue legacy monitoring never starts an automatic browser check', async () => {
+  const nextCheckAt = new Date(Date.now() - 1000).toISOString();
+  _setTestState({ state: 'monitoring', autoChecksEnabled: true, nextCheckAt,
+    monitoringUntil: new Date(Date.now() + 86400000).toISOString(), checkIntervalMinutes: 30, logs: [] });
   let fired = false;
-  await tickMonitoringNow({ _testStub: async () => { fired = true; } });
-  assert.equal(fired, true);
-  const s = getCampaignState();
-  const nextMs = new Date(s.nextCheckAt).getTime();
-  // No 60-min floor anymore: a 30-min value reschedules ~30 min out, not ~60.
-  assert.ok(nextMs > Date.now() + 29 * 60_000, 'nextCheckAt should be ~30 min out');
-  assert.ok(nextMs <= Date.now() + 31 * 60_000, 'nextCheckAt should not exceed 30 min + slack');
+  await tickMonitoringNow({ _testStub: () => { fired = true; } });
+  assert.equal(fired, false);
+  assert.equal(getCampaignState().nextCheckAt, nextCheckAt);
 });
 
-// Review finding 6 — the real (non-stub) tick path was never exercised, and
-// it is the only path that runs the adaptive-cadence wiring: _testStub
-// replaces the whole check call, so campaign._lastCheckNewlyAccepted is
-// never set under it. participatingProfileIds=[] drives the REAL
-// runMonitoringCheckAll() → it loops zero accounts → a genuine "nothing
-// looked" sweep, with no browser/network involved.
-test('a zero-account sweep is actionable and retries in ten minutes without changing the base cadence', async () => {
-  const past = new Date(Date.now() - 1000);
-  _setTestState({
-    state: 'monitoring',
-    nextCheckAt: past.toISOString(),
-    monitoringUntil: new Date(Date.now() + 86400_000).toISOString(),
-    checkIntervalMinutes: 60,
-    emptyCheckStreak: 6, // already stretched — x4 → 240min
-    participatingProfileIds: [],
-    logs: [],
-  });
-  const t0 = Date.now();
-  await tickMonitoringNow(); // no _testStub — real runMonitoringCheckAll()
-  const t1 = Date.now();
+// Even a stale schedule with no accounts must remain inert in manual-only Basics.
+test('manual-only monitoring does not enqueue retries or change cadence', async () => {
+  const nextCheckAt = new Date(Date.now() - 1000).toISOString();
+  _setTestState({ state: 'monitoring', nextCheckAt,
+    monitoringUntil: new Date(Date.now() + 86400000).toISOString(),
+    checkIntervalMinutes: 60, emptyCheckStreak: 6, participatingProfileIds: [], logs: [] });
+  await tickMonitoringNow();
   const s = getCampaignState();
-  // Finding 1: zero accounts swept = nothing looked = streak untouched.
-  assert.equal(s.emptyCheckStreak, 6, 'a sweep that looked at nobody must not advance the streak');
-  // Finding 6 / the planted compounding bug: the operator's OWN setting must
-  // survive the tick unchanged — only the (separate) status payload may show
-  // the stretched effective value.
-  assert.equal(s.checkIntervalMinutes, 60, 'the base cadence must never be overwritten with the stretched value');
-  assert.match(s.monitorCheckError, /no monitoring accounts are configured/i);
-  // An incomplete sweep retries soon instead of disappearing for the stretched cadence.
-  // Measured against the window the tick actually ran in, never against the
-  // clock at assert time: this test took 81s on a loaded CI runner (2026-09-02),
-  // which ate a fixed one-minute margin and failed a correct 10-minute retry.
-  const nextMs = new Date(s.nextCheckAt).getTime();
-  assert.ok(nextMs >= t0 + 10 * 60_000 - 1000, 'nextCheckAt should be ~10 min out');
-  assert.ok(nextMs <= t1 + 10 * 60_000 + 1000, 'nextCheckAt should not exceed 10 min + slack');
+  assert.equal(s.nextCheckAt, nextCheckAt);
+  assert.equal(s.checkIntervalMinutes, 60);
+  assert.equal(s.emptyCheckStreak, 6);
+  assert.deepEqual(s.logs, []);
 });
 
 test('tickMonitoringNow does not reschedule when state changes during fire', async () => {

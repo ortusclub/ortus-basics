@@ -9,7 +9,7 @@ test('VM launch never shows the local singleton monitoring warning', () => {
   const end = app.indexOf('const _modeForValidation', start);
   const guard = app.slice(start, end);
 
-  assert.match(guard, /if \(!isCloudRunOn\(\)[\s\S]*?__cockpit\.state === 'monitoring'\)/);
+  assert.match(guard, /if \(!opts\.queueOnly && !isCloudRunOn\(\)[\s\S]*?__cockpit\.state === 'monitoring'\)/);
   assert.match(guard, /Starting a new campaign will end that monitoring/);
 });
 

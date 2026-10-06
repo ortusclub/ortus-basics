@@ -1,3 +1,4 @@
+import { appFunction } from './helpers/app-source.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -10,10 +11,11 @@ test('cloud mutations require a successful HTTP response', () => {
   assert.match(app, /Stop was not confirmed by the VM/);
 });
 
-test('a failed first VM detail read is unknown, never fabricated as running', () => {
-  assert.match(app, /state: 'connection-unknown'/);
-  assert.match(app, /running: false, queued: true/);
-  assert.doesNotMatch(app, /name: 'Cloud campaign', running: true, logs: \[\]/);
+test('local binding does not fabricate a running state for an absent snapshot', () => {
+  const bind = appFunction('_bindLiveStatusToCampaign');
+  assert.match(bind, /running: !!snapshot\?\.running/);
+  assert.match(bind, /state: snapshot\?\.state \|\| \(snapshot\?\.running \? null : 'done'\)/);
+  assert.doesNotMatch(bind, /fetch\(|_refreshCloudActiveStatus\(/);
 });
 
 test('the rich live stage is rendered during the queued branch', () => {

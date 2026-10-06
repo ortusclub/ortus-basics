@@ -1,3 +1,4 @@
+import { appFunction } from './helpers/app-source.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -15,19 +16,16 @@ test('the hero still needs a real quiet spell, not a blip', () => {
   assert.equal(linkIsLost(600, true), false, 'a local campaign has no VM link to lose');
 });
 
-test('the reason reaches the LOG, not only the banner', () => {
-  assert.match(APP, /No answer from the VM \(\$\{_why\}\)/);
-  assert.match(APP, /_pushCloudEvent\(id, `⚠️ No answer from the VM/);
+test('legacy refresh never fabricates VM outage messages', () => {
+  assert.doesNotMatch(appFunction('_refreshCloudActiveStatus'), /No answer from the VM|_pushCloudEvent/);
 });
 
-test('one line per quiet spell, not one per failed poll', () => {
-  assert.match(APP, /const _cloudQuietSince = new Map\(\)/);
-  assert.match(APP, /if \(!_cloudQuietSince\.has\(String\(id\)\)\)/);
+test('legacy refresh does not start a cloud outage clock', () => {
+  assert.doesNotMatch(appFunction('_refreshCloudActiveStatus'), /_cloudQuietSince|fetch\(/);
 });
 
-test('recovery is logged too, with how long it was quiet', () => {
-  assert.match(APP, /The VM is answering again — it was quiet for \$\{_quiet\}s/);
-  assert.match(APP, /_cloudQuietSince\.delete\(String\(id\)\)/);
+test('legacy refresh never claims the VM recovered', () => {
+  assert.doesNotMatch(appFunction('_refreshCloudActiveStatus'), /answering again|_cloudQuietSince/);
 });
 
 test('the hero offers a way to check without waiting for the poll', () => {

@@ -2739,8 +2739,8 @@ function renderProfiles(profiles) {
             : (_noSoo ? _sm.word : ((_reason === 'na' || _reason === 'unavailable') ? 'N/A' : _sm.word));
       const _statCls = (_foreign || _wrongMode) ? 'stop' : _otherRosterVerdict ? 'nosoo' : _sm.cls;
       let _sub;
-      if (_sooUnavailable) _sub = 'Could not check the SoO — status unknown and selection disabled.';
-      else if (_sooPending) _sub = 'Checking the SoO now — selection stays disabled until confirmed.';
+      if (_sooUnavailable) _sub = 'Could not check the SoO — status unknown.';
+      else if (_sooPending) _sub = 'Checking the SoO now — status pending.';
       else if (_noSoo) _sub = 'Not in the SoO — no first name or credits.';
       else
       // v2.112.27: operator asked to drop "who uses who" from the picker for now —

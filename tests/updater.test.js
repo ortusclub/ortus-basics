@@ -35,22 +35,22 @@ test('isBehind only true when latest is strictly newer', () => {
   assert.equal(isBehind('2.72.1', null), false);
 });
 
-test('archLabel maps arm64 to arm64, everything else to intel', () => {
+test('archLabel maps arm64 to arm64, everything else to x64', () => {
   assert.equal(archLabel('arm64'), 'arm64');
-  assert.equal(archLabel('x64'), 'intel');
-  assert.equal(archLabel('ia32'), 'intel');
+  assert.equal(archLabel('x64'), 'x64');
+  assert.equal(archLabel('ia32'), 'x64');
 });
 
 test('dmgAssetName matches the released artifact names', () => {
-  assert.equal(dmgAssetName('arm64'), 'Ortus-Outreach-arm64.dmg');
-  assert.equal(dmgAssetName('intel'), 'Ortus-Outreach-intel.dmg');
+  assert.equal(dmgAssetName('arm64'), 'Ortus-Basics-arm64.dmg');
+  assert.equal(dmgAssetName('x64'), 'Ortus-Basics-x64.dmg');
 });
 
 test('download + release URLs point at the latest release of the right repo', () => {
   assert.equal(
     latestDownloadUrl('arm64'),
-    `https://github.com/${UPDATE_REPO}/releases/latest/download/Ortus-Outreach-arm64.dmg`
+    `https://github.com/${UPDATE_REPO}/releases/latest/download/Ortus-Basics-arm64.dmg`
   );
   assert.equal(latestReleaseUrl(), `https://github.com/${UPDATE_REPO}/releases/latest`);
-  assert.equal(UPDATE_REPO, 'ortusclub/ortus-outreach-installer');
+  assert.equal(UPDATE_REPO, 'ortusclub/ortus-basics');
 });

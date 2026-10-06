@@ -1,3 +1,4 @@
+import { appFunction } from './helpers/app-source.js';
 // Pressing "Resume sending" must do three things AT THE CLICK, not after the
 // VM round-trip: write a line in the log, turn the card green, and not be
 // undone by the very next poll. Operator, 2026-09-01: "I need JUST THAT WHEN I
@@ -56,11 +57,10 @@ test('a refused or unreachable resume clears the flag', () => {
   assert.equal(offs, 2, 'both failure paths must put the card back');
 });
 
-test('the next poll does not flip the card back to blue', () => {
-  const i = APP.indexOf('_wasResuming');
-  assert.ok(i > 0, 'the rebuild drops the resuming flag');
-  const body = APP.slice(i, i + 1200);
-  assert.ok(body.includes("_engineStatus === 'monitoring'"),
-    'the flag must survive only while the engine still says monitoring');
-  assert.ok(/90000/.test(body), 'the optimistic flag needs a ceiling');
+test('polling another campaign preserves the selected local running status', () => {
+  const selected = { id: 'a', status: { id: 'a', running: true, state: 'sending' } };
+  const view = new Function('_viewingLocalCampaign', 'location', 'sameCampaign',
+    appFunction('localCampaignViewStatus') + '; return localCampaignViewStatus;')(
+      selected, { hash: '#/new' }, () => false);
+  assert.deepEqual(view({ id: 'b', running: true, state: 'monitoring' }), selected.status);
 });

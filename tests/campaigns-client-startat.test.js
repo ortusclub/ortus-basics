@@ -1,68 +1,33 @@
-// tests/campaigns-client-startat.test.js
-//
-// "Schedule on the VM" — the wire contract for a scheduled cloud launch. The
-// dispatch is an ordinary cloud start plus `startAt`; the ENGINE parks the
-// campaign in 'scheduled' and starts it itself at that instant, so this Mac can
-// be shut. The engine half (scheduled status, durable start_campaign task, a
-// cancelled campaign never resurrected) is covered by
-// test-campaign-scheduled-start.js in the engine repo.
-import { test } from 'node:test';
+// Basics retired cloud campaign transport. These calls must remain offline,
+// including legacy saved configurations with schedules or remembered primaries.
+import test from 'node:test';
 import assert from 'node:assert/strict';
-import { startCloudCampaign } from '../src/campaigns-client.js';
+import { startCloudCampaign, restartCloudCampaign } from '../src/campaigns-client.js';
 
-const LEADS = [{ leadUrl: 'https://www.linkedin.com/in/lead-one' }];
-
-async function capture(payload) {
-  const origFetch = globalThis.fetch;
-  let body = null;
-  globalThis.fetch = async (_url, opts) => {
-    body = opts?.body ? JSON.parse(opts.body) : null;
-    return { ok: true, status: 200, text: async () => JSON.stringify({ id: 'c1', leadsAdded: 1 }) };
-  };
-  try { await startCloudCampaign(payload); } finally { globalThis.fetch = origFetch; }
-  return body;
-}
-
-const base = { mode: 'connect_only', name: 'Monday 9am', owner: 'op@ortus.solutions', profileIds: ['gl_a'], leads: LEADS };
-
-test('startAt rides along with the launch', async () => {
-  const when = new Date(Date.now() + 3600e3).toISOString();
-  const body = await capture({ ...base, startAt: when });
-  assert.equal(body.startAt, when);
+test('Basics rejects scheduled launch without network access', async (t) => {
+  const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('unexpected network'); });
+  const result = await startCloudCampaign({ mode: 'connect_and_introduce', profileIds: ['p1'], leads: [{ leadUrl: 'https://www.linkedin.com/in/test' }],  startAt: '2026-12-01T12:00:00Z' });
+  assert.deepEqual(result, { error: 'Cloud campaigns are discontinued in this version' });
+  assert.equal(fetch.mock.callCount(), 0);
 });
 
-test('the field is OMITTED for an immediate launch', async () => {
-  // Absent — not null, not '' — so the engine's `b.startAt ? …` check can never
-  // read a falsy value as a date and park the campaign by accident.
-  for (const startAt of [undefined, null, '']) {
-    const body = await capture({ ...base, startAt });
-    assert.equal('startAt' in body, false, `startAt should be absent for ${JSON.stringify(startAt)}`);
-  }
+test('Basics rejects immediate launch without network access', async (t) => {
+  const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('unexpected network'); });
+  const result = await startCloudCampaign({ mode: 'connect_and_introduce', profileIds: ['p1'], leads: [{ leadUrl: 'https://www.linkedin.com/in/test' }], });
+  assert.deepEqual(result, { error: 'Cloud campaigns are discontinued in this version' });
+  assert.equal(fetch.mock.callCount(), 0);
 });
 
-// ── scheduled RESTART: an opened stopped/done campaign, scheduled instead of
-// started. Same idea, different route — the engine restarts the SAME campaign
-// rather than creating one (a new dispatch would clone it "…_c" → "…_d").
-const { restartCloudCampaign } = await import('../src/campaigns-client.js');
-
-async function captureRestart(opts) {
-  const origFetch = globalThis.fetch;
-  let body = null;
-  globalThis.fetch = async (_url, o) => {
-    body = o?.body ? JSON.parse(o.body) : null;
-    return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true }) };
-  };
-  try { await restartCloudCampaign('cmp_1', opts); } finally { globalThis.fetch = origFetch; }
-  return body;
-}
-
-test('restart carries startAt when scheduling', async () => {
-  const when = new Date(Date.now() + 7200e3).toISOString();
-  assert.equal((await captureRestart({ startAt: when })).startAt, when);
+test('Basics rejects scheduled restart without network access', async (t) => {
+  const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('unexpected network'); });
+  const result = await restartCloudCampaign('legacy', { startAt: '2026-12-01T12:00:00Z' });
+  assert.deepEqual(result, { error: 'Cloud campaigns are discontinued in this version' });
+  assert.equal(fetch.mock.callCount(), 0);
 });
 
-test('restart omits startAt for an immediate restart', async () => {
-  const body = await captureRestart({ fromStart: true });
-  assert.equal('startAt' in body, false);
-  assert.equal(body.fromStart, true);
+test('Basics rejects immediate restart without network access', async (t) => {
+  const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('unexpected network'); });
+  const result = await restartCloudCampaign('legacy');
+  assert.deepEqual(result, { error: 'Cloud campaigns are discontinued in this version' });
+  assert.equal(fetch.mock.callCount(), 0);
 });

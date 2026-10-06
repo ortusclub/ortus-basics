@@ -8,6 +8,7 @@ import { checkWorkspaceCredential } from './src/gologin-credential-check.js';
 import { getSalesNavAccess, setSalesNavAccess } from './src/linkedin/sales-nav-access.js';
 import { ensureCampaignIdentity, getConfigById } from './src/campaign-configs.js';
 import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
+import { repairOrbitaCache } from './src/orbita-cache-repair.js';
 import { campaignLifecycle } from './public/js/campaign-lifecycle.mjs';
 import 'dotenv/config';
 
@@ -8776,6 +8777,9 @@ app.post('/api/credentials', async (req, res) => {
 // Start server
 // ---------------------------------------------------------------------------
 migrateCampaignIdentities();
+
+// Finish cache repair before accepting requests that could launch a browser.
+await repairOrbitaCache();
 
 app.listen(PORT, '127.0.0.1', async () => {
   startSheetSync();

@@ -1,15 +1,15 @@
+import { appFunction } from './helpers/app-source.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const app = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
 
-test('a newer authoritative lead result advances the top banner beyond stale browser progress', () => {
-  assert.match(app, /if \(d\) d\._leads = leads;/);
-  assert.match(app, /normLead\(l\.fullName\) === normLead\(who\)/);
-  assert.match(app, /Latest verified event/);
-  assert.match(app, /sent and confirmed/);
-  assert.match(app, /\['Sheet', ok \? 'result stamped' : 'error stamped', 'done'\]/);
+test('legacy cloud refresh binds local status without remote lead requests', async () => {
+  const ids = [];
+  const refresh = new Function('_bindLiveStatusToCampaign', 'return async ' + appFunction('_refreshCloudActiveStatus'))((id) => ids.push(id));
+  await refresh('campaign-a');
+  assert.deepEqual(ids, ['campaign-a']);
 });
 
 test('a completed monitoring sweep returns to the idle monitoring banner', () => {

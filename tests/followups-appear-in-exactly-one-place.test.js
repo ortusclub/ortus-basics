@@ -5,12 +5,10 @@ import { readFileSync } from 'node:fs';
 const APP = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
 const HTML = readFileSync(new URL('../public/index.html', import.meta.url), 'utf8');
 
-test('the card asks for ONE campaign, never the whole app', () => {
-  // The unscoped call is what printed another campaign's totals on every card.
-  assert.match(APP, /followups\/health\?\$\{_q\}/);
-  assert.match(APP, /campaignId=\$\{encodeURIComponent\(id\)\}/);
-  assert.equal(/fetch\('\/api\/followups\/health'\)/.test(APP), false,
-    'the unscoped whole-app fetch must not come back');
+test('the board requests scoped health and indexes it by campaign', () => {
+  assert.match(APP, /body: JSON\.stringify\(\{ campaigns \}\)/);
+  assert.match(APP, /_followupHealthById\.set\(String\(cid\), h\)/);
+  assert.doesNotMatch(APP, /fetch\('\/api\/followups\/health'\)/);
 });
 
 test('the strip is told which campaigns are on the board', () => {

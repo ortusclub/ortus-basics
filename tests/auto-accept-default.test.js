@@ -1,6 +1,5 @@
-// Auto-accept the primary's invitation is ON by default (operator, 2026-08-27).
-// The accept-ALL sub-toggle stays OFF: it accepts every pending invite in the
-// primary's inbox, strangers included, and its own hint says to leave it off.
+// Basics removes automatic acceptance controls; legacy saved intent is retained
+// by the loader but must not restore an automatic acceptance checkbox.
 import test from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -9,20 +8,12 @@ import { fileURLToPath } from 'node:url';
 const html = fs.readFileSync(fileURLToPath(new URL('../public/index.html', import.meta.url)), 'utf8');
 const app = fs.readFileSync(fileURLToPath(new URL('../public/js/app.js', import.meta.url)), 'utf8');
 
-const tagFor = (id) => {
-  const m = html.match(new RegExp(`<input[^>]*id="${id}"[^>]*>`));
-  assert.ok(m, `${id} input not found`);
-  return m[0];
-};
-
-test('the primary auto-accept box ships checked, with its intent seeded', () => {
-  const tag = tagFor('auto-accept-toggle');
-  assert.match(tag, /\schecked\b/);
-  assert.match(tag, /data-wanted="1"/);
+test('Basics omits automatic primary acceptance from the wizard', () => {
+  assert.doesNotMatch(html, /<input[^>]*id="auto-accept-toggle"/);
 });
 
-test('accept-ALL-pending stays off by default', () => {
-  assert.doesNotMatch(tagFor('auto-accept-all-toggle'), /\schecked\b/);
+test('Basics omits automatic acceptance of strangers', () => {
+  assert.doesNotMatch(html, /<input[^>]*id="auto-accept-all-toggle"/);
 });
 
 // The gate blanks `checked` whenever no primary URL is set, so the default has

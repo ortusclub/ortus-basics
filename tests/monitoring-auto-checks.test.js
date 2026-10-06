@@ -6,9 +6,10 @@ const T0 = Date.parse('2026-06-18T12:00:00Z');
 const past = new Date(T0 - 1000).toISOString();
 const future = new Date(T0 + 60_000).toISOString();
 
-test('fires when enabled (or unset) and nextCheckAt is due', () => {
-  assert.equal(shouldAutoFireCheck({ autoChecksEnabled: true, nextCheckAt: past, now: T0 }), true);
-  assert.equal(shouldAutoFireCheck({ autoChecksEnabled: undefined, nextCheckAt: past, now: T0 }), true);
+test('Basics never auto-fires even with a legacy enabled flag and overdue check', () => {
+  for (const autoChecksEnabled of [true, undefined, false]) {
+    assert.equal(shouldAutoFireCheck({ autoChecksEnabled, nextCheckAt: past, now: T0 }), false);
+  }
 });
 
 test('does not fire when not yet due', () => {

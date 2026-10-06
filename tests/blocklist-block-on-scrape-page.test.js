@@ -1,15 +1,5 @@
-// The blocklist excludes people from Sales Nav scrapes, but the only place to
-// edit it was section 2 of the CAMPAIGN wizard — a different page from the
-// scraper. Measured in the running app on 2026-09-01 while on #/salesnav:
-//
-//   wizBlocklist:   zero size
-//   section2:       hidden by css
-//   fullPanelScrim: hidden by css
-//   manageLink:     zero size
-//
-// Every entry point to a scrape feature was unreachable from the scrape screen.
-// There is ONE list per machine (data/blocklist.json), so the fix is a second
-// copy of the same block, driven by the same code, on the page that uses it.
+// Basics exposes its shared blocklist on the scrape page and in the manager.
+// The campaign wizard copy was removed; scraping must still use the same list.
 import test from 'node:test';
 import assert from 'node:assert';
 import fs from 'node:fs';
@@ -26,19 +16,20 @@ test('the scrape setup has its own blocklist box', () => {
   assert.ok(scrape.includes('id="sn-bl-chips"'), 'nowhere to render the chips');
 });
 
-test('the campaign wizard keeps its box — this adds one, it does not move it', () => {
-  assert.ok(html.includes('id="wiz-bl-value"'));
-  assert.ok(html.includes('id="wiz-bl-add"'));
-  assert.ok(html.includes('id="wiz-bl-chips"'));
+test('Basics exposes the blocklist on the scrape page only', () => {
+  assert.ok(!html.includes('id="wiz-bl-value"'));
+  assert.ok(html.includes('id="sn-bl-value"'));
+  assert.ok(html.includes('id="sn-bl-add"'));
+  assert.ok(html.includes('id="sn-bl-chips"'));
 });
 
-test('both copies are found by the SAME class, so they share one code path', () => {
+test('the scrape controls retain the shared blocklist handlers', () => {
   const inputs = html.match(/class="wiz-bl-value"/g) || [];
   const adds = html.match(/class="btn btn-secondary btn-sm wiz-bl-add"/g) || [];
   const chips = html.match(/wiz-bl-chips/g) || [];
-  assert.equal(inputs.length, 2, 'each copy needs the shared input class');
-  assert.equal(adds.length, 2, 'each copy needs the shared button class');
-  assert.ok(chips.length >= 2, 'each copy needs a chips host');
+  assert.equal(inputs.length, 1, 'each copy needs the shared input class');
+  assert.equal(adds.length, 1, 'each copy needs the shared button class');
+  assert.ok(chips.length >= 1, 'each copy needs a chips host');
 });
 
 test('the renderer paints every copy, not just the first', () => {

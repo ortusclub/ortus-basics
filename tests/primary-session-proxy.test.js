@@ -28,26 +28,8 @@ test('extractPrimarySlug returns empty for an encoded member token (no vanity sl
   assert.equal(extractPrimarySlug('https://www.linkedin.com/in/ACoAAB1UsBwj3RaMock/'), '');
 });
 
-test('getPrimarySession GETs the engine by-slug endpoint with the bare slug', async () => {
-  const origFetch = globalThis.fetch;
-  let sawUrl = null, sawMethod = null;
-  globalThis.fetch = async (url, opts) => {
-    sawUrl = url; sawMethod = opts?.method;
-    return { ok: true, status: 200, text: async () => JSON.stringify({ state: 'live', name: 'Jane Doe', capturedAt: '2026-07-16T10:00:00Z' }) };
-  };
-  try {
-    const r = await getPrimarySession('jane-doe');
-    assert.equal(sawMethod, 'GET');
-    assert.match(sawUrl, /\/api\/primaries\/by-slug\/jane-doe$/);
-    assert.deepEqual(r, { state: 'live', name: 'Jane Doe', capturedAt: '2026-07-16T10:00:00Z' });
-  } finally { globalThis.fetch = origFetch; }
-});
-
-test('getPrimarySession never throws — a transport failure returns a structured { error }', async () => {
-  const origFetch = globalThis.fetch;
-  globalThis.fetch = async () => { throw new Error('network disabled in test'); };
-  try {
-    const r = await getPrimarySession('jane-doe');
-    assert.equal(r.error, 'network disabled in test');
-  } finally { globalThis.fetch = origFetch; }
+test('Basics rejects cloud primary session reads without using the network', async (t) => {
+  const fetch = t.mock.method(globalThis, 'fetch', async () => { throw new Error('unexpected network'); });
+  assert.deepEqual(await getPrimarySession('jane-doe'), { error: 'Cloud campaigns are discontinued in this version' });
+  assert.equal(fetch.mock.callCount(), 0);
 });
