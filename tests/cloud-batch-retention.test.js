@@ -1,15 +1,20 @@
+import { appFunction } from './helpers/app-source.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const src = fs.readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
 
-test('cloud sending cards share a retained verified turn counter', () => {
-  assert.match(src, /function _cloudSendingTurn\(id, d\)/);
-  assert.match(src, /line\.match\(\/\(\\d\+\)\\s\+of\\s\+\(\\d\+\)\\s\+this turn\/i\)/);
-  assert.match(src, /done = Math\.max\(done, Number\(remembered\.done\) \|\| 0\)/);
-  assert.match(src, /window\.__cloudActiveStatus\.batchDone = activeTurn\.done/);
-  assert.match(src, /batchDone: _cloudSendingTurn\(c\.id, d\)\.done/);
+test('local campaign snapshots retain batch progress intact', () => {
+  const selected = { id: 'a', status: {} };
+  const incoming = { id: 'a', batchDone: 3, batchSize: 5, running: true };
+  const view = new Function('_viewingLocalCampaign', 'location', 'sameCampaign',
+    appFunction('localCampaignViewStatus') + '; return localCampaignViewStatus;')(
+      selected, { hash: '#/new' }, () => true);
+  const status = view(incoming);
+  assert.equal(status.batchDone, 3);
+  assert.equal(status.batchSize, 5);
+  assert.equal(status._cloud, false);
 });
 
 test('Open sheet is rendered only in the canonical campaign control row', () => {

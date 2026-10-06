@@ -67,9 +67,9 @@ test('adopting a send-complete campaign lands it in local monitoring, not done',
     emptyCheckStreak: 5,           // the VM's backoff must NOT come along
   });
   assert.equal(r.ok, true);
-  // The 60s watcher is what actually fires the checks: adopted-but-unarmed is
-  // the same stranding, one step later.
-  assert.ok(timers() > timersBefore, 'the monitoring watcher must be armed by the adopt');
+  // Basics preserves the monitoring snapshot for manual checks without starting
+  // the legacy automatic watcher.
+  assert.equal(timers(), timersBefore, 'Basics must not arm an automatic monitoring watcher');
 
   const s = getCampaignStatus();
   assert.equal(s.state, 'monitoring', 'a moved check-only campaign must monitor here, never land on done');

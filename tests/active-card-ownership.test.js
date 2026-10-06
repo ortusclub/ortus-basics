@@ -1,3 +1,4 @@
+import { appFunction } from './helpers/app-source.js';
 // Screen recording 2026-08-27 17:18: pressing Open on the stopped VM campaign
 // "CC+IC TOAST TEST" showed TEST_24/08_CC+IC_A's live status card instead —
 // the campaign that had been handed to this Mac and was monitoring. pollStatus
@@ -41,25 +42,16 @@ test('nothing is blocked when either side is unidentified', () => {
   assert.equal(accepts(null, null), true);
 });
 
-test('Open pins the selected campaign before revealing the shared card', () => {
-  const start = src.indexOf('async function openRunningCampaignReadOnly');
-  const end = src.indexOf('window.openRunningCampaignReadOnly', start);
-  const open = src.slice(start, end);
-  const bindAt = open.indexOf('_bindLiveStatusToCampaign(id, _it ? statusFromItem(_it) : null)');
-  const navigateAt = open.indexOf('goCreateCampaign()');
-  assert.ok(bindAt >= 0, 'the selected Dashboard item seeds Live Status');
-  assert.ok(navigateAt >= 0, 'the Campaign page is opened');
-  assert.ok(bindAt < navigateAt, 'the exact campaign must paint before the shared card becomes visible');
+test('legacy Open delegates to the local campaign editor', async () => {
+  const open = new Function('openCampaignForEdit', 'return async ' + appFunction('openRunningCampaignReadOnly'))((id) => ({ opened: id }));
+  assert.deepEqual(await open('campaign-a'), { opened: 'campaign-a' });
 });
 
-test('binding synchronously replaces the stale aggregate before fetching detail', () => {
-  const start = src.indexOf('function _bindLiveStatusToCampaign');
-  const end = src.indexOf('// v2.160.46: OPEN', start);
-  const bind = src.slice(start, end);
-  const seedAt = bind.indexOf('window.__cloudActiveStatus = seededStatus');
-  const renderAt = bind.indexOf('renderActiveCard(seededStatus)');
-  const fetchAt = bind.indexOf('Promise.resolve(_refreshCloudActiveStatus(id))');
-  assert.ok(seedAt >= 0 && renderAt >= 0 && fetchAt >= 0);
-  assert.ok(seedAt < fetchAt && renderAt < fetchAt,
-    'the selected campaign must replace the generic summary without waiting for the network');
+test('binding paints the selected local snapshot before polling', () => {
+  const bind = appFunction('_bindLiveStatusToCampaign');
+  const renderAt = bind.indexOf('renderActiveCard(_viewingLocalCampaign.status)');
+  const fetchAt = bind.indexOf('pollStatus()');
+  assert.ok(renderAt >= 0 && fetchAt > renderAt);
+  assert.ok(bind.includes('_cloud: false'));
+  assert.ok(!bind.includes('_refreshCloudActiveStatus('));
 });

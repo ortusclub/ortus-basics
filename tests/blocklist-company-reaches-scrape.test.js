@@ -43,6 +43,6 @@ test('no surface still promises that domains are excluded from scrapes', () => {
   assert.ok(!/excluded from scrapes/.test(html),
     'the old blanket claim must be gone from every hint');
   // and the honest version names what actually happens
-  assert.match(html, /Scrapes also skip blocklisted companies/);
+  assert.match(html, /Scrapes additionally skip blocklisted <b>companies<\/b> and <b>people<\/b>/);
   assert.match(html, /campaign-only, because a scrape has no email address/);
 });

@@ -1,3 +1,4 @@
+import { appFunction } from './helpers/app-source.js';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -21,14 +22,16 @@ test('native local board row carries the complete shared stage contract', () => 
   ]) assert.match(row, new RegExp(`\\b${field}\\b`), `${field} must reach the shared card`);
 });
 
-test('an adopted This Mac campaign overlays live progress, not frozen VM progress', () => {
-  const marker = "window.__cloudActiveStatus.runsOn = 'local'";
-  const start = source.indexOf(marker);
-  const end = source.indexOf('_cloudPolledAt.set', start);
-  assert.ok(start > 0 && end > start);
-  const overlay = source.slice(start, end);
-  for (const field of ['liveAccount', 'currentAction', 'batchDone', 'batchSize', 'participatingProfileIds']) {
-    assert.match(overlay, new RegExp(field));
+test('selected local campaign carries its full live snapshot', () => {
+  const selected = { id: 'a', status: {} };
+  const incoming = { id: 'a', liveAccount: 'p1', currentAction: 'sending', batchDone: 2,
+    batchSize: 5, participatingProfileIds: ['p1'], running: true };
+  const view = new Function('_viewingLocalCampaign', 'location', 'sameCampaign',
+    appFunction('localCampaignViewStatus') + '; return localCampaignViewStatus;')(
+      selected, { hash: '#/new' }, () => true);
+  const status = view(incoming);
+  for (const key of ['liveAccount', 'currentAction', 'batchDone', 'batchSize', 'participatingProfileIds']) {
+    assert.deepEqual(status[key], incoming[key]);
   }
 });
 

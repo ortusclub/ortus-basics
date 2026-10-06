@@ -8778,10 +8778,10 @@ app.post('/api/credentials', async (req, res) => {
 // ---------------------------------------------------------------------------
 migrateCampaignIdentities();
 
+// Finish cache repair before accepting requests that could launch a browser.
+await repairOrbitaCache();
+
 app.listen(PORT, '127.0.0.1', async () => {
-  // One-time: drop any corrupt Orbita download (spawn error -86) BEFORE the queue
-  // drains or any campaign can launch, so GoLogin re-downloads a clean copy.
-  await repairOrbitaCache();
   startSheetSync();
   console.log(`\n  ✦ Ortus Basics — Version ${APP_VERSION}`);
   console.log(`  ✦ build: v${APP_VERSION}`);

@@ -1,3 +1,4 @@
+import { appFunction } from './helpers/app-source.js';
 // statusFromItem is a whitelist, so every new field has to be added by hand or the
 // board silently drops it. Yesterday's adaptive-cadence work shipped with exactly
 // this bug. A dropped runsOn is worse: the board would show the VM/Mac control in
@@ -68,9 +69,13 @@ test("the board's LOCAL running item carries accountPanel to statusFromItem", ()
 // A campaign handed to this Mac keeps its Postgres row, so it is built by the
 // CLOUD push site, which the engine cannot fill: only this Mac knows what its
 // own accounts are doing. The local overlay is where that field arrives.
-test('an adopted (runs_on local) campaign overlays the local accountPanel', () => {
-  assert.match(appJs, /_row\.accountPanel = _localLive\.accountPanel/);
-  assert.match(appJs, /window\.__cloudActiveStatus\.accountPanel = _localLive\.accountPanel/);
+test('local selection keeps the live account panel', () => {
+  const selected = { id: 'a', status: {} };
+  const panel = [{ email: 'a@example.test', state: 'working' }];
+  const view = new Function('_viewingLocalCampaign', 'location', 'sameCampaign',
+    appFunction('localCampaignViewStatus') + '; return localCampaignViewStatus;')(
+      selected, { hash: '#/new' }, () => true);
+  assert.deepEqual(view({ id: 'a', accountPanel: panel }).accountPanel, panel);
 });
 
 // The panel is rendered by ONE function called from both card fillers. If a

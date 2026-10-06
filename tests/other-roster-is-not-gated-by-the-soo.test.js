@@ -16,12 +16,9 @@ test('the lock consults who owns the profile', () => {
   assert.match(picker, /_nonOrtusRoster = !_foreign && \(\(!!p\.account && p\.account !== 'ortus'\)/);
 });
 
-test('no SoO verdict locks another workspace tile', () => {
-  const rule = picker.slice(picker.indexOf('const _sooLock'), picker.indexOf('const _locked'));
-  assert.match(rule, /_nonOrtusRoster\s*\n?\s*\?\s*false/);
-  // The Ortus branch is untouched: its own roster still obeys the sheet.
-  assert.match(rule, /_br\.blocked \|\| !_br\.anyActive/);
-  assert.match(rule, /_state\.state === 'blocked'/);
+test('Basics keeps SoO advisory while enforcing workspace and mode restrictions', () => {
+  assert.match(picker, /const _sooLock = false;/);
+  assert.match(picker, /const _locked = _foreign \|\| _wrongMode \|\| _sooLock;/);
 });
 
 test('the verdict is shown, attributed, instead of disappearing', () => {

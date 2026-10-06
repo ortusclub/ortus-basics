@@ -34,18 +34,9 @@ const whereBlockHtml = new Function(`
   return whereBlockHtml;
 `)();
 
-test('a campaign whose monitor is live keeps the machine switcher', () => {
-  const html = whereBlockHtml({
-    id: 'cmp_13s04kukmt7b0ro6',
-    state: 'stopping',
-    running: false,
-    monitoring: true,
-    stopReason: 'operator-stopped',
-    _cloud: true,
-  });
-  assert.match(html, /Running on/);
-  assert.match(html, /Cloud VM/);
-  assert.match(html, /This Mac/);
+test('Basics does not offer a VM switcher even for legacy monitoring records', () => {
+  assert.equal(whereBlockHtml({ id: 'legacy', state: 'stopping', running: false,
+    monitoring: true, _cloud: true }), '');
 });
 
 test('the switcher still hides when nothing is running or monitoring', () => {

@@ -43,12 +43,14 @@ test('monitoring with unsent leads shows the approved restart action band', () =
   assert.doesNotMatch(app, /Sending starts at \$\{sendResumeClock\} · or choose Start now/);
 });
 
-test('cloud Start now from monitoring restarts pending sending instead of resuming a pause', () => {
-  assert.match(app, /sendingFromMonitoring = phase === 'sending-from-monitoring'/);
-  assert.match(app, /if \(sendingFromMonitoring\) \{[\s\S]*?What should resume now\?[\s\S]*?restartCloudCampaignUI\(id, false, undefined, true\)/);
-  assert.match(app, /_resumeAcceptanceCheckNow\(id, current, btn\)/);
-  assert.match(app, /await _forceCloudItemsAfterAction\(id\)/);
-  assert.match(app, /if \(btn && btn\.isConnected && !accepted\)/);
+test('Basics explicitly chooses local sending or acceptance checking from monitoring', () => {
+  const start = app.indexOf('window.openCampaignResumeDecision =');
+  const body = app.slice(start, app.indexOf('\n};', start));
+  assert.match(body, /current = 'local'/);
+  assert.match(body, /What should resume now\?/);
+  assert.match(body, /_resumeAcceptanceCheckNow\(id, current, btn\)/);
+  assert.match(body, /campaignHandover\(id, 'local', null, 'sending'\)/);
+  assert.doesNotMatch(body, /restartCloudCampaignUI\(/);
 });
 
 test('expanded banner cannot override the visible log with a private remembered event', () => {

@@ -55,14 +55,10 @@ test('a failed refresh preserves the last successful snapshot', async () => {
   assert.match(stale.error.message, /Google overloaded/);
 });
 
-test('the picker distinguishes an outage from an account absent from SoO', () => {
+test('the picker reports SoO outages without overriding Basics account eligibility', () => {
   const app = readFileSync(new URL('../public/js/app.js', import.meta.url), 'utf8');
-  assert.match(app, /sooLoadState === 'error'/);
   assert.match(app, /word: _sooUnavailable \? 'SoO UNAVAILABLE'/);
-  assert.match(app, /Could not check the SoO — status unknown and selection disabled/);
-  assert.match(app, /const _sooUnknown = !_soo/);
-  assert.match(app, /_sooUnknown \|\| \(_showBreakdown/,
-    'unknown SoO status must lock the account rather than merely changing its label');
-  assert.match(app, /else if \(_noSoo\) _sub = 'Not in the SoO/,
-    'NOT IN SoO remains reserved for a successful lookup with no matching row');
+  assert.match(app, /else if \(_noSoo\) _sub = 'Not in the SoO/);
+  assert.match(app, /const _sooLock = false;/);
+  assert.doesNotMatch(app, /status unknown and selection disabled|selection stays disabled until confirmed/);
 });

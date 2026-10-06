@@ -42,14 +42,18 @@ test('an existing Follower Growth unlock survives the storage change', () => {
   assert.match(APP, /value === 'follower_growth' && localStorage\.getItem\(LEGACY_FG_UNLOCK_KEY\)/);
 });
 
-test('Post Amplification is live and locked, not coming soon', () => {
-  const card = APP.slice(APP.indexOf("value: 'post_amplification',"));
-  const head = card.slice(0, 260);
-  assert.ok(head.includes('lock: true'), 'Post Amp card must be password-locked');
-  assert.equal(head.includes('comingSoon'), false, 'Post Amp is no longer coming soon');
+test('post_amplification is not offered by Basics', () => {
+  const start = APP.indexOf('const MODE_LIST = [');
+  const modes = APP.slice(start, APP.indexOf('\n];', start));
+  assert.ok(start > 0);
+  assert.ok(!modes.includes("value: 'post_amplification'"));
+  assert.ok(modes.includes("value: 'open_profile_only'"));
 });
 
-test('Follower Growth stays locked', () => {
-  const card = APP.slice(APP.indexOf("value: 'follower_growth',"));
-  assert.ok(card.slice(0, 260).includes('lock: true'), 'FG must stay password-locked');
+test('follower_growth is not offered by Basics', () => {
+  const start = APP.indexOf('const MODE_LIST = [');
+  const modes = APP.slice(start, APP.indexOf('\n];', start));
+  assert.ok(start > 0);
+  assert.ok(!modes.includes("value: 'follower_growth'"));
+  assert.ok(modes.includes("value: 'open_profile_only'"));
 });
