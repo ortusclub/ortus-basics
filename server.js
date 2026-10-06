@@ -8,7 +8,6 @@ import { checkWorkspaceCredential } from './src/gologin-credential-check.js';
 import { getSalesNavAccess, setSalesNavAccess } from './src/linkedin/sales-nav-access.js';
 import { ensureCampaignIdentity, getConfigById } from './src/campaign-configs.js';
 import { migrateCampaignIdentities } from './src/campaign-identity-migration.js';
-import { repairOrbitaCache } from './src/orbita-cache-repair.js';
 import { campaignLifecycle } from './public/js/campaign-lifecycle.mjs';
 import 'dotenv/config';
 
@@ -8779,9 +8778,6 @@ app.post('/api/credentials', async (req, res) => {
 migrateCampaignIdentities();
 
 app.listen(PORT, '127.0.0.1', async () => {
-  // One-time: drop any corrupt Orbita download (spawn error -86) BEFORE the queue
-  // drains or any campaign can launch, so GoLogin re-downloads a clean copy.
-  await repairOrbitaCache();
   startSheetSync();
   console.log(`\n  ✦ Ortus Basics — Version ${APP_VERSION}`);
   console.log(`  ✦ build: v${APP_VERSION}`);
