@@ -8782,8 +8782,13 @@ migrateCampaignIdentities();
 // Finish cache repair before accepting requests that could launch a browser.
 await repairOrbitaCache();
 
-// Campaign auto-tester (tests/sim). Admin-only gate matches the dev-engine allowlist in outreach.
-registerSimRoutes(app, { campaignRunning: () => campaign.running, allowed: (req) => isAdminEmail(viewerEmail(req)) });
+// Campaign auto-tester (tests/sim). Separate allowlist from ADMIN_EMAILS — only
+// the dev team sees the button, not every admin.
+const SIM_ALLOWED_EMAILS = new Set(
+  String(process.env.SIM_ALLOWED_EMAILS || 'sam@ortusclub.com,ej@ortusclub.com,stevenj@ortusclub.com,mickey@ortusclub.com')
+    .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
+);
+registerSimRoutes(app, { campaignRunning: () => campaign.running, allowed: (req) => SIM_ALLOWED_EMAILS.has(String(viewerEmail(req) || '').trim().toLowerCase()) });
 
 app.listen(PORT, '127.0.0.1', async () => {
   startSheetSync();
