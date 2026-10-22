@@ -20,7 +20,9 @@
     "electron:build": "electron-builder",
     "electron:build:mac": "node scripts/detach-stale-dmgs.js && electron-builder --mac && node scripts/rename-dmgs.js && node scripts/notarize-dmgs.js",
     "electron:build:win": "electron-builder --win",
-    "release:mac": "npm run electron:build:mac && node scripts/release-mac.js"
+    "release:mac": "npm run electron:build:mac && node scripts/release-mac.js",
+    "test:sim": "node --import tests/sim/register.mjs tests/sim/run.mjs",
+    "test:sim:quick": "SIM_ONLY='/(happy|acceptance-followup)$' node --import tests/sim/register.mjs tests/sim/run.mjs"
   },
   "dependencies": {
     "@google-cloud/storage": "^7.21.0",

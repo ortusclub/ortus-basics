@@ -9,6 +9,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/css/style.css?v=1.7.61-shared-sheets" />
   <link rel="stylesheet" href="/css/dashboard-v0.3.css?v=3.1.60.14" />
+  <link rel="stylesheet" href="/css/campaign-test.css" />
 </head>
 <body data-dashboard="v3">
   <div class="app">
@@ -28,6 +29,12 @@
           <div id="update-status-text" class="update-status-text"></div>
         </div>
         <div id="update-detail" class="update-detail hidden"></div>
+        <!-- Campaign test button — stays hidden unless /api/sim/status says available. -->
+        <button type="button" id="ctest-pill" class="update-pill update-pill-muted ctest-pill hidden">Test campaigns</button>
+        <div id="ctest-progress" class="ctest-progress hidden">
+          <div class="ctest-bar"><div id="ctest-bar-fill" class="ctest-bar-fill"></div></div>
+          <div id="ctest-progress-text" class="ctest-progress-text"></div>
+        </div>
         <!-- Ortus Basics 1.0: engine info moved out of the page header into the
              sidebar, under Check for updates, and made compact. Same ids, so
              the /api/health handler that fills it needs no changes. -->
@@ -4322,5 +4329,6 @@
     <p class="google-welcome-note">Already connected? Basics remembers your sign-in on this computer.</p>
   </dialog>
   <script type="module" src="/js/sheets-google-settings.js?v=1.7.61"></script>
+  <script src="/js/campaign-test.js"></script>
 </body>
 </html>

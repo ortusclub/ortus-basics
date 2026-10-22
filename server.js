@@ -64,6 +64,7 @@ import { startCloudFollowupPoller, lastLateCount } from './src/cloud-followup-po
 import { loadTasks as loadPrimaryTasks, saveTasks as savePrimaryTasks, summarizeFollowUps, markTask as markPrimaryTask } from './src/primary-tasks.js';
 import { belongsToCampaign, healthForCampaign, countFollowUpHealth, groupStaleFollowUps, discardGroups, restoreDiscarded } from './src/followup-groups.js';
 import { heldSummary } from './src/followup-dnc.js';
+import { registerSimRoutes } from './src/sim-runner.js';
 import { isAwaitingAccept, sendersToAcceptTasks, computeAcceptedIds, hasSignaled, markSignaled } from './src/cloud-primary-handshake.js';
 import { buildAcceptTask, enqueuePrimaryTask, loadTasks } from './src/primary-tasks.js';
 import { listReplies, unseenCount as unseenReplyCount, markAllSeen as markRepliesSeen } from './src/replies-log.js';
@@ -8780,6 +8781,9 @@ migrateCampaignIdentities();
 
 // Finish cache repair before accepting requests that could launch a browser.
 await repairOrbitaCache();
+
+// Campaign auto-tester (tests/sim). Available to all operators in basics.
+registerSimRoutes(app, { campaignRunning: () => campaign.running, allowed: () => true });
 
 app.listen(PORT, '127.0.0.1', async () => {
   startSheetSync();
