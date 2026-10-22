@@ -8782,8 +8782,8 @@ migrateCampaignIdentities();
 // Finish cache repair before accepting requests that could launch a browser.
 await repairOrbitaCache();
 
-// Campaign auto-tester (tests/sim). Available to all operators in basics.
-registerSimRoutes(app, { campaignRunning: () => campaign.running, allowed: () => true });
+// Campaign auto-tester (tests/sim). Admin-only gate matches the dev-engine allowlist in outreach.
+registerSimRoutes(app, { campaignRunning: () => campaign.running, allowed: (req) => isAdminEmail(viewerEmail(req)) });
 
 app.listen(PORT, '127.0.0.1', async () => {
   startSheetSync();
