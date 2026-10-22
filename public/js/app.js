@@ -23576,8 +23576,10 @@ async function startNewCampaign() {
   const _icExtras = document.getElementById('ic-extras');
   const _icExtrasEmpty = document.getElementById('ic-extras-empty');
   const _icExtrasFilled = document.getElementById('ic-extras-filled');
-  if (_icExtrasFilled) _icExtrasFilled.style.display = 'none';
-  if (_icExtrasEmpty) _icExtrasEmpty.style.display = '';
+  // previewSheet() switches these two cards with the `hidden` class, so reset them the same way. An inline
+  // display:none here survived the next preview and left the 1st Connection picker invisible for the whole campaign.
+  if (_icExtrasFilled) { _icExtrasFilled.classList.add('hidden'); _icExtrasFilled.style.display = ''; }
+  if (_icExtrasEmpty) { _icExtrasEmpty.classList.remove('hidden'); _icExtrasEmpty.style.display = ''; }
   selectedProfileIds = [];
   selectedProfileNames = {};
   if (typeof renderProfiles === 'function' && Array.isArray(allProfilesData)) renderProfiles(allProfilesData);
