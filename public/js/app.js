@@ -1481,7 +1481,7 @@ function resolveSenderFirstName(profileId, profileName) {
 
 // LinkedIn-imposed length limits. undefined = no hard limit.
 const CHAR_LIMITS = {
-  connectionNote: 300,
+  connectionNote: 190,
   followUpMessage: undefined,
   inmailSubject: 200,
   inmailBody: 1900,
@@ -3249,8 +3249,12 @@ function updateTplNoteCount() {
   const out = document.getElementById('tpl-note-count');
   if (!ta || !out) return;
   const n = (ta.value || '').length;
-  out.textContent = `${n} / 300`;
-  out.style.color = n >= 280 ? '#dc2626' : 'var(--gray)';
+  const over = n > 190;
+  out.textContent = `${n} / 190`;
+  out.style.color = n >= 170 ? '#dc2626' : 'var(--gray)';
+  ta.classList.toggle('note-over-limit', over);
+  const err = document.getElementById('tpl-note-over-limit-error');
+  if (err) err.classList.toggle('visible', over);
   const hint = document.getElementById('tpl-note-hint');
   if (hint) hint.classList.toggle('hidden', !shouldShowNoteHint(ta.value || ''));
 }
@@ -7032,6 +7036,30 @@ async function startCampaign(opts = {}) {
   if (_mode === 'connect_only' && _opMsgOn) {
     const opBody = (document.getElementById('tpl-op-body')?.value || '').trim();
     if (!opBody) { alert('Open Profile body template is required when "Message Open Profiles Directly" is on.'); return; }
+  }
+
+  // v2.14.x: Hard-block Start when the connection note exceeds LinkedIn's
+  // 200-char limit for free accounts. The NOTE_TOO_LONG error benches every
+  // non-Premium account and effectively halts the campaign.
+  const _addNoteOn = localStorage.getItem('ortus-add-note') === '1';
+  if (_addNoteOn) {
+    const _noteVal = (document.getElementById('tpl-note')?.value || '');
+    if (_noteVal.length > 190) {
+      alert(
+        'Connection note is too long (' + _noteVal.length + ' chars).\n\n' +
+        'The limit is 190 characters. ' +
+        'Shorten the note or turn off "Add a note" to start the campaign.'
+      );
+      const _noteEl = document.getElementById('tpl-note');
+      if (_noteEl) {
+        _noteEl.classList.add('note-over-limit');
+        const _noteErr = document.getElementById('tpl-note-over-limit-error');
+        if (_noteErr) _noteErr.classList.add('visible');
+        _noteEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => _noteEl.focus(), 400);
+      }
+      return;
+    }
   }
 
   // v2.14.x: Hard-block Start for Connect + Introduce Back when the primary

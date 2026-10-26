@@ -2128,6 +2128,13 @@ body.theme-light .btn-stop:hover { opacity: 0.9; }
    value isn't a real personal /in/ profile link. Clears the moment it's valid. */
 .intro-config-input--invalid,
 .intro-config-input--invalid:focus { border-bottom-color: var(--red, #f85149); }
+/* Note too long — red outline + inline error below the textarea */
+#tpl-note.note-over-limit { border-color: var(--red, #f85149); box-shadow: 0 0 0 1px var(--red, #f85149); }
+#tpl-note-over-limit-error {
+  font-size: 0.82rem; color: var(--red, #f85149); margin-top: 6px; line-height: 1.5;
+  font-weight: 500; display: none;
+}
+#tpl-note-over-limit-error.visible { display: block; }
 .intro-config-error {
   font-size: 0.82rem; color: var(--red, #f85149); margin-top: 6px; line-height: 1.5;
   font-weight: 500;
