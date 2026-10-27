@@ -6,6 +6,7 @@ import { installFakeLinkedIn } from './fake-linkedin.mjs';
 import { findBrowser } from '../browser.mjs';
 
 export * from '../../../src/gologin-launcher.js';
+import { DEFAULT_ACCOUNT_ID } from '../../../src/gologin-accounts.js';
 
 const CHROME = findBrowser();
 const open = new Map();   // profileId -> browser
@@ -13,10 +14,11 @@ const open = new Map();   // profileId -> browser
 export function simState() { return globalThis.__SIM__; }
 
 export async function getProfiles() {
-  return simState().accounts.map(a => ({ id: a.id, name: a.name, notes: '', account: 'sim' }));
+  return simState().accounts.map(a => ({ id: a.id, name: a.name, notes: '', account: DEFAULT_ACCOUNT_ID }));
 }
 export async function tokenForProfile() { return 'sim-token'; }
-export function accountOfProfile() { return 'sim'; }
+// Basics gates launches by GoLogin workspace; the sim's accounts belong to the default one, which any operator may use.
+export function accountOfProfile() { return DEFAULT_ACCOUNT_ID; }
 export function getProfileLoadWarnings() { return []; }
 export async function applyFocusEmulation() {}
 export function getProfilePid() { return null; }
