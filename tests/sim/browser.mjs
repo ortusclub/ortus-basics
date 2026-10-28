@@ -53,23 +53,43 @@ export async function ensureBrowser(onProgress = () => {}) {
   }
 }
 
-/** Opens the browser once and closes it. Resolves { ok: true } or { ok: false, message } within `ms`. */
-export async function checkBrowser(puppeteer, ms = 20000) {
-  const path = findBrowser();
-  if (!path) return { ok: false, message: 'No browser found for the test. Install Google Chrome (the test can\'t use GoLogin\'s browser, which only starts inside GoLogin).' };
+/** One try at opening the browser and closing it again. Resolves { ok: true, path } or { ok: false, message } within `ms`. */
+async function tryOpenBrowser(puppeteer, path, ms) {
   const opts = { executablePath: path, args: ['--no-sandbox', '--disable-gpu'] };
-  let timer;
+  let timer, browser, cancelled = false;
   const attempt = (async () => {
-    let browser;
     try { browser = await puppeteer.launch({ ...opts, headless: true }); }
     catch { browser = await puppeteer.launch({ ...opts, headless: 'shell' }); }
+    // The time ran out while it was still starting: do not leave a browser running behind the next try.
+    if (cancelled) { try { await browser.close(); } catch { /* */ } return { ok: false, message: 'cancelled' }; }
     const page = await browser.newPage();
     await page.goto('about:blank');
     await browser.close();
+    browser = null;
     return { ok: true, path };
   })();
   const limit = new Promise((resolve) => { timer = setTimeout(() => resolve({ ok: false, message: `The test browser did not start within ${ms / 1000}s (${path}).` }), ms); });
   try { return await Promise.race([attempt, limit]); }
   catch (e) { return { ok: false, message: `The test browser would not start (${path}): ${String(e.message || e).split('\n')[0]}` }; }
-  finally { clearTimeout(timer); }
+  finally {
+    clearTimeout(timer);
+    cancelled = true;
+    if (browser) { try { await browser.close(); } catch { /* */ } }
+  }
+}
+
+/**
+ * Opens the browser and closes it again, to prove it can start. The first start after a while can be very slow on a
+ * busy laptop (measured on the operator's Mac 2026-10-28: 22.9s cold, 3.3s warm), so each try gets `ms` (60s) and a
+ * failed try is repeated once — by then the browser is usually warm. Resolves { ok: true } or { ok: false, message }.
+ */
+export async function checkBrowser(puppeteer, ms = 60000, tries = 2) {
+  const path = findBrowser();
+  if (!path) return { ok: false, message: 'No browser found for the test. Install Google Chrome (the test can\'t use GoLogin\'s browser, which only starts inside GoLogin).' };
+  let last = { ok: false, message: 'The test browser did not start.' };
+  for (let i = 0; i < tries; i++) {
+    last = await tryOpenBrowser(puppeteer, path, ms);
+    if (last.ok) return last;
+  }
+  return tries > 1 ? { ok: false, message: `${last.message} Tried ${tries} times.` } : last;
 }
