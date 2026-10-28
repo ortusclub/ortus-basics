@@ -188,7 +188,9 @@ export function runChecks(spec, r) {
   if (spec.expect.acceptance && p.followUp) {
     const accepted = spec.phase2.accept;
     const ph = r.phase2 || {};
-    check('enters-monitoring-after-send', ph.stateAfterSend === 'monitoring', `campaign.state after the send loop was "${ph.stateAfterSend}"`);
+    // Basics 1.0 ends a campaign without 'monitoring' (checks are manual); it must still remember who sent, so Check now has accounts.
+    check('enters-monitoring-after-send', ph.stateAfterSend === 'monitoring' || (!ph.runningAfterSend && (ph.participatingAfterSend || []).length > 0),
+      `after the send loop: state "${ph.stateAfterSend}", running ${!!ph.runningAfterSend}, accounts recorded for a check: ${(ph.participatingAfterSend || []).length}`);
     check('acceptance-sweeps-complete', ph.ran && (ph.sweeps || []).length > 0 && ph.sweeps.every(x => x.ok),
       (ph.sweeps || []).filter(x => !x.ok).map(x => x.error).join(' | ') || 'sweeps did not run');
     const msgs = r.messages.filter(m => m.ok !== false);
