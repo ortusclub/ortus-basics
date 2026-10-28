@@ -7570,8 +7570,20 @@ export function nextCheckLogLine(at) {
   return `⏱ Next check ${txt} · nothing happens until then, the campaign stays running.`;
 }
 
+/**
+ * May an acceptance check run right now? Basics 1.0 campaigns end without entering
+ * 'monitoring' (checks are manual), so a finished campaign with recorded sender
+ * accounts must be checkable too. A check never runs over a live campaign, and
+ * never without accounts to open.
+ */
+export function canRunAcceptanceCheck(c) {
+  if (!c) return false;
+  if (c.state === 'monitoring') return true;
+  return !c.running && Array.isArray(c.participatingProfileIds) && c.participatingProfileIds.length > 0;
+}
+
 export async function runMonitoringCheck(profileId, profileName) {
-  if (campaign.state !== 'monitoring') {
+  if (!canRunAcceptanceCheck(campaign)) {
     return { ok: false, error: 'Campaign not in monitoring state' };
   }
   const sheetUrl = campaign.sheetUrl;
@@ -7726,9 +7738,10 @@ export async function runMonitoringCheck(profileId, profileName) {
  * sequentially. Returns an array of per-profile results.
  */
 export async function runMonitoringCheckAll() {
-  if (campaign.state !== 'monitoring') {
+  if (!canRunAcceptanceCheck(campaign)) {
     return { ok: false, error: 'Campaign not in monitoring state' };
   }
+  const _wasMonitoring = campaign.state === 'monitoring';
   const results = [];
   const monitoringProfiles = campaign.participatingProfileIds || [];
   // Monitoring opens the same sender browsers as outreach, so the SoO safety
@@ -7760,7 +7773,9 @@ export async function runMonitoringCheckAll() {
     // remaining account.
     // _abortCheck stops only this sweep: monitoring, the cadence and the next
     // check time all survive it.
-    if (campaign._abort || campaign._abortCheck || campaign.state !== 'monitoring') break;
+    // A sweep that started from 'monitoring' also ends when monitoring is stopped; a sweep on a finished
+    // campaign ends if a new campaign starts running.
+    if (campaign._abort || campaign._abortCheck || (_wasMonitoring && campaign.state !== 'monitoring') || (!_wasMonitoring && campaign.running)) break;
     const idx = (campaign.profileIds || []).indexOf(pid);
     const pName = idx >= 0 ? (campaign.profileNames || [])[idx] : pid;
     if (restrictedNow.has(pid)) {

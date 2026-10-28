@@ -8,7 +8,7 @@ test('the note toggle lives in Throughput, off by default, and the note section 
   assert.match(html, /id="add-note-row" style="display:none"/);
   assert.match(html, /<input type="checkbox" id="add-note-toggle" onchange="setAddNote\(this\.checked\); wizardDirtyOnInput\(\)" \/>/);
   assert.match(html, /id="tpl-connect-section" style="display:none"/);
-  assert.match(html, /<textarea id="tpl-note" maxlength="300" rows="2"/);
+  assert.match(html, /<textarea id="tpl-note" maxlength="190" rows="2"/);
   assert.doesNotMatch(html, /Connection notes are disabled in this version/);
   assert.doesNotMatch(html, /<textarea id="tpl-note" hidden disabled>/);
 });

@@ -23,13 +23,13 @@ import { updateSheetRow } from '../sheets-writer.js';
 import { extractLinkedInUrl, campaign, _ops } from '../campaign.js';
 import { hasDmBeenSent, recordDmSent } from '../dm-sent-log.js';
 
-function _formatLocalDate(d) {
+export function _formatLocalDate(d) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const day = d.getDate();
   const ord = (n) => (n % 10 === 1 && n % 100 !== 11) ? 'st'
     : (n % 10 === 2 && n % 100 !== 12) ? 'nd'
     : (n % 10 === 3 && n % 100 !== 13) ? 'rd' : 'th';
-  return `${months[d.getMonth()]} ${day}${ord}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return `${months[d.getMonth()]} ${day}${ord(day)}, ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 
 // Pure decision helper for reverify-and-downgrade (mirrors auto-intro.js).

@@ -34,7 +34,7 @@ const CONC = Number(process.env.SIM_CONCURRENCY || 3);
 const SIM_ROOT = mkdtempSync(join(tmpdir(), 'sim-root-'));
 function child(args) {
   return new Promise((resolve) => {
-    const p = spawn(process.execPath, ['--import', REGISTER, ...args], { cwd: join(HERE, '../..'), env: { ...process.env, ORTUS_DATA_DIR: join(SIM_ROOT, 'data') } });
+    const p = spawn(process.execPath, ['--import', REGISTER, ...args], { cwd: join(HERE, '../..'), env: { ...process.env, ORTUS_DATA_DIR: join(SIM_ROOT, 'data'), ORTUS_SHEETS_WEBAPP_URL: 'https://script.google.com/macros/s/SIMSHEET/exec' } });
     let out = '';
     p.stdout.on('data', d => { out += d; });
     p.stderr.on('data', d => { out += d; });

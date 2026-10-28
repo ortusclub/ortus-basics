@@ -34,7 +34,10 @@ export async function bootServer(sheet, { email = 'sim@example.com' } = {}) {
   let out = '';
   const child = spawn(process.execPath, ['--import', join(SIM, 'register.mjs'), '--import', join(SIM, 'startup/preload.mjs'), join(ROOT, 'server.js')], {
     cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, PORT: String(port), ORTUS_DATA_DIR: dataDir, SIM_STARTUP_SPEC: specFile },
+    // ORTUS_ELECTRON_MODE is blanked: when the test is started from inside the app it inherits '1', which switches the login
+    // gate off. Then /api/status (the readiness probe below) falls through to a 404 instead of answering 401, and the harness
+    // waits 60s for a server that is already up. The test signs in with a cookie, so it needs the normal login gate.
+    env: { ...process.env, ORTUS_ELECTRON_MODE: '', PORT: String(port), ORTUS_DATA_DIR: dataDir, SIM_STARTUP_SPEC: specFile },
   });
   child.stdout.on('data', d => { out = (out + d).slice(-4000); });
   child.stderr.on('data', d => { out = (out + d).slice(-4000); });

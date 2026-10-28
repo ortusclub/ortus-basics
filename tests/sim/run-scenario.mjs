@@ -40,7 +40,7 @@ if (campaign.running) { hung = true; try { (await import('../../src/campaign.js'
 // ── Phase 2 (modes that follow up after acceptance): accept some invites, then run the real
 //    acceptance sweep — the same function the "Run check now" button calls — and sweep again.
 const sim = globalThis.__SIM__;
-const phase2 = { ran: false, stateAfterSend: campaign.state, sweeps: [] };
+const phase2 = { ran: false, stateAfterSend: campaign.state, runningAfterSend: !!campaign.running, participatingAfterSend: [...(campaign.participatingProfileIds || [])], sweeps: [] };
 if (spec.phase2 && !hung && !threw) {
   phase2.ran = true;
   for (const slug of spec.phase2.accept) {

@@ -17,3 +17,14 @@ test('runMonitoringCheckAll rejects when campaign not in monitoring state', asyn
   const r = await mod.runMonitoringCheckAll();
   assert.equal(r.ok, false);
 });
+
+test('canRunAcceptanceCheck: monitoring, or finished with recorded accounts; never over a live run or without accounts', async () => {
+  const { canRunAcceptanceCheck } = await import('../src/campaign.js');
+  assert.equal(canRunAcceptanceCheck({ state: 'monitoring', running: false, participatingProfileIds: [] }), true);
+  assert.equal(canRunAcceptanceCheck({ state: null, running: false, participatingProfileIds: ['p1'] }), true);
+  assert.equal(canRunAcceptanceCheck({ state: 'done', running: false, participatingProfileIds: ['p1'] }), true);
+  assert.equal(canRunAcceptanceCheck({ state: null, running: true, participatingProfileIds: ['p1'] }), false);
+  assert.equal(canRunAcceptanceCheck({ state: null, running: false, participatingProfileIds: [] }), false);
+  assert.equal(canRunAcceptanceCheck({ state: null, running: false }), false);
+  assert.equal(canRunAcceptanceCheck(null), false);
+});
