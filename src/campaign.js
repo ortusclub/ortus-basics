@@ -69,6 +69,7 @@ import { decide429 } from './throttle-policy.js';
 import { resolveSoOTarget, resolveSoOEmail, flipAccountInUse, resolveOperatorStamp, isConnectSend, bumpConnectionsThisWeek } from './soo-writer.js';
 import { createSoOLoginReporter } from './soo-login-reporter.js';
 import { fetchSoOData } from './soo.js';
+import { resolveSenderIdentity } from './sender-identity.js';
 import { identityRestrictionLabel } from './soo-restrictions.js';
 import { getOperatorEmail } from './operator-identity.js';
 import { dataPath } from './paths.js';
@@ -4174,9 +4175,21 @@ export async function startCampaign({ campaignId = null, profileIds, benchedProf
         data.lastName = row['Last Name'] || row['lastName'] || row['last_name'] || '';
         data.company = row['Company'] || row['company'] || '';
         data.title = row['Title'] || row['title'] || row['Job Title'] || '';
-        const resolvedFirst = (senderFirstNames[profileId] || '').trim();
-        const _sf = resolvedFirst || (pName || '').split(/\s+/)[0] || '';
-        const _sn = resolvedFirst || pName || '';
+        // Same resolution order as the preview (server.js /api/templates/preview):
+        // never let the GoLogin profile name — usually an email — stand in for the
+        // sender's name when the SoO knows it.
+        const _rowSenderForName = getSenderName(row, senderColumn);
+        const _idn = resolveSenderIdentity({
+          profileFirst: senderFirstNames[profileId],
+          rowSender: _rowSenderForName,
+          profileName: pName,
+          sooAccounts: (senderFirstNames[profileId] || '').trim() ? [] : await sooAccounts(),
+        });
+        if (_idn.source === 'profile-name-fallback' && /@/.test(_idn.name)) {
+          log(`  ⚠ [${pName}] no first name found in the SoO for this account — {sender name} will read "${_idn.name}"`);
+        }
+        const _sf = _idn.first;
+        const _sn = _idn.name;
         data.senderFirstName = _sf;
         data['sender first name'] = _sf;
         data.senderName = _sn;
