@@ -1924,7 +1924,7 @@
           </div>
 
           <div id="scrape-pairing" class="scrape-hint" style="margin-top:12px; padding:12px 14px; background:var(--hairline-soft); border-left:2px solid var(--hairline);"></div>
-          <div class="scrape-hint" id="scrape-hint-accounts" style="margin-top:8px;">↓ Pick the GoLogin accounts (one per URL) in <strong>section 3 · Select GoLogin Accounts</strong> below — each needs a Sales Nav seat.</div>
+          <div class="scrape-hint" id="scrape-hint-accounts" style="margin-top:8px;">↓ Pick the GoLogin accounts (one per URL) in <strong>section 3 · Select Accounts</strong> below — each needs a Sales Nav seat.</div>
         </div>
 
         <!-- DESTINATION panel -->
@@ -2063,7 +2063,7 @@
 
     <!-- ── GoLogin Profiles ── -->
     <div class="section collapsible collapsed" id="nav-accounts">
-      <h2 class="section-toggle" onclick="toggleSection('nav-accounts')"><span class="caret">▾</span> <span data-edit="h2-accounts">3. Select GoLogin Accounts</span> <span class="section-summary" id="summary-accounts"></span></h2>
+      <h2 class="section-toggle" onclick="toggleSection('nav-accounts')"><span class="caret">▾</span> <span data-edit="h2-accounts">3. Select Accounts</span> <span class="section-summary" id="summary-accounts"></span></h2>
       <div class="collapsible-body">
 
       <!-- Apply / Cancel for an account-picker session on a LIVE campaign. It
@@ -2137,7 +2137,19 @@
             <p id="account-paste-status" role="status" aria-live="polite"></p>
           </details>
 
-          <!-- Ortus Basics 1.0: Local Browser tile removed. -->
+          <div id="local-browser-host" class="local-browser-host" hidden>
+            <div id="local-browser-tile" class="profile-item local-browser local-browser-tile" data-profile-id="local-browser">
+              <input type="checkbox" id="local-browser-account" value="local-browser" aria-describedby="local-browser-hint" />
+              <div class="local-browser-body">
+                <label class="name" for="local-browser-account">Local Browser</label>
+                <div class="id" id="local-browser-hint">Uses a separate Chrome profile on this machine. Sign in to LinkedIn the first time it opens.</div>
+                <div id="local-browser-name-row" class="local-browser-name-row" hidden>
+                  <label for="local-browser-first-name" class="local-browser-name-label">Your first name (used as {senderFirstName})</label>
+                  <input type="text" id="local-browser-first-name" autocomplete="given-name" />
+                </div>
+              </div>
+            </div>
+          </div>
           <div id="guardrail-alert" class="guardrail-alert hidden"></div>
           <div id="profiles-loading">Loading profiles…</div>
           <div id="profiles-grid" class="profile-grid hidden"></div>
@@ -4050,7 +4062,7 @@
     </div>
   </div>
 
-<script type="module" src="/js/app.js?v=1.7.61-shared-sheets"></script>
+<script type="module" src="/js/app.js?v=1.7.79-local-browser"></script>
   <script>
     // ?uipreview=1 — seeds the states a pending change produces (see
     // public/js/ui-preview.mjs) so they can be looked at in the real UI before

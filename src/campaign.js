@@ -30,6 +30,7 @@ import { readFile, writeFile, appendFile } from 'node:fs/promises';
 import os from 'node:os';
 import { launchProfile, closeProfile, closeAllProfiles, getProfiles, getProfilePid, applyFocusEmulation, getProfileLoadWarnings } from './gologin-launcher.js';
 import { launchLocalBrowser, closeLocalBrowser } from './local-launcher.js';
+import { unhideByPids } from './mac-window.js';
 import { fetchSheet as fetchSheetRows, isSystemTabName, looksLikeLeadRows, listSheetTabs } from './sheets.js';
 import { withGid, extractSheetGid } from './utils.js';
 import { updateSheetRow, batchUpdateSheet, ensureTrackingColumns, prepareSheet, setOperatorTz, clearRecentConnectionsTab, flushSheetWrites } from './sheets-writer.js';
@@ -1623,6 +1624,16 @@ export async function parkProfile(page, parkUrl = 'about:blank') {
   }
 }
 
+async function showLocalLoginWindow(page) {
+  try {
+    const client = await page.target().createCDPSession();
+    const { windowId } = await client.send('Browser.getWindowForTarget');
+    await client.send('Browser.setWindowBounds', { windowId, bounds: { left: 100, top: 100, width: 1366, height: 900, windowState: 'normal' } });
+  } catch { /* best effort */ }
+  const pid = page.browser()?.process?.()?.pid;
+  if (pid) await unhideByPids([pid]);
+}
+
 /**
  * Local-browser re-login recovery loop (2026-06-15). Brings the Chromium window
  * on-screen, raises the in-app "log into LinkedIn" popup (via campaign.awaitingLogin),
@@ -1633,12 +1644,7 @@ export async function parkProfile(page, parkUrl = 'about:blank') {
  * @returns {Promise<{ ok: boolean, page: object }>}
  */
 async function awaitLocalLogin(page, profileId, pName) {
-  // Bring the window forward so the operator can see + use it. Best-effort.
-  try {
-    const client = await page.target().createCDPSession();
-    const { windowId } = await client.send('Browser.getWindowForTarget');
-    await client.send('Browser.setWindowBounds', { windowId, bounds: { left: 100, top: 100, width: 1366, height: 900, windowState: 'normal' } });
-  } catch { /* */ }
+  await showLocalLoginWindow(page);
 
   campaign.awaitingLogin = { profileId, pName, since: Date.now() };
   campaign._loginDone = false;
@@ -1773,11 +1779,7 @@ async function ensureProfileLoggedIn(launched, profileId, pName) {
       log(`⏳ Waiting up to 120s for you to log in...`);
       await page.evaluate(() => { document.body.style.zoom = '90%'; }).catch(() => {});
       await page.evaluate(() => { if (window.moveTo) window.moveTo(100, 100); }).catch(() => {});
-      try {
-        const client = await page.target().createCDPSession();
-        const { windowId } = await client.send('Browser.getWindowForTarget');
-        await client.send('Browser.setWindowBounds', { windowId, bounds: { left: 100, top: 100, width: 1366, height: 900, windowState: 'normal' } });
-      } catch { /* */ }
+      await showLocalLoginWindow(page);
 
       let loggedIn = false;
       for (let wait = 0; wait < 24; wait++) {

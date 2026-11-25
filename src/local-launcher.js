@@ -118,9 +118,10 @@ export async function launchLocalBrowser({ visible = false } = {}) {
 
   console.log('[local] ✓ Chrome launched with persistent profile (stealth enabled).');
 
-  // Phase 11.2 (D-16): minimize the Chromium window on macOS.
+  // Hide background launches on macOS before returning. Login recovery can
+  // show the process as soon as the caller detects a signed-out session.
   const pid = browser.process?.()?.pid;
-  if (pid) { hideByPid(pid).catch(() => {}); }
+  if (!visible && pid) await hideByPid(pid);
 
   return { browser, page };
 }

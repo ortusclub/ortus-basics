@@ -2210,6 +2210,7 @@ function _indexProfileNames(profiles) {
  */
 function profileLabel(id) {
   if (!id) return '';
+  if (id === 'local-browser') return 'Local Browser';
   const picked = selectedProfileNames[id];
   if (picked) return picked;
   const known = _profileNameById.get(id);
@@ -2507,67 +2508,30 @@ async function loadProfiles() {
   }
 }
 
+function initLocalBrowserPicker() {
+  const checkbox = document.getElementById('local-browser-account');
+  const firstName = document.getElementById('local-browser-first-name');
+  firstName.value = localBrowserFirstName;
+  firstName.addEventListener('input', () => {
+    localBrowserFirstName = firstName.value;
+    try { localStorage.setItem('localBrowserFirstName', localBrowserFirstName); } catch { /* */ }
+    renderSelectedPanel();
+  });
+  checkbox.addEventListener('change', () => {
+    if (!checkbox.checked) {
+      removeProfile('local-browser');
+      return;
+    }
+    if (!selectedProfileIds.includes('local-browser')) selectedProfileIds.push('local-browser');
+    renderSelectedPanel();
+    updateCampaignSummary();
+    if (!firstName.value) firstName.focus();
+  });
+}
+
 function renderProfiles(profiles) {
   const grid = document.getElementById('profiles-grid');
   grid.innerHTML = '';
-
-  // Local Browser — rendered into a dedicated host above the GoLogin grid.
-  // It has unique semantics (local Chromium, not Orbita) and the first-name
-  // input is gated behind the checkbox: we only ask once the operator opts in.
-  const localHost = document.getElementById('local-browser-host');
-  if (localHost) {
-    const isSelected = selectedProfileIds.includes('local-browser');
-    localHost.innerHTML = '';
-    const localItem = document.createElement('label');
-    localItem.className = 'profile-item local-browser local-browser-tile' + (isSelected ? ' selected' : '');
-    localItem.dataset.profileId = 'local-browser';
-    localItem.innerHTML = `
-      <input type="checkbox" class="local-cb" value="local-browser" ${isSelected ? 'checked' : ''} />
-      <div class="local-browser-body">
-        <div class="name">Local Browser</div>
-        <div class="id">Your system Chrome. If this is your first time, you will have to log in to LinkedIn when the Chrome browser pops up locally.</div>
-        <div class="local-browser-name-row" ${isSelected ? '' : 'hidden'}>
-          <label for="local-browser-first-name" class="local-browser-name-label">Your first name (used as {senderFirstName})</label>
-          <input type="text" id="local-browser-first-name" placeholder="e.g. Antonio"
-            value="${escHtml(localBrowserFirstName)}" />
-        </div>
-      </div>
-    `;
-    const localNameRow = localItem.querySelector('.local-browser-name-row');
-    const localNameInput = localItem.querySelector('#local-browser-first-name');
-    localNameInput.addEventListener('click', (e) => e.stopPropagation());
-    localNameInput.addEventListener('input', (e) => {
-      localBrowserFirstName = e.target.value;
-      try { localStorage.setItem('localBrowserFirstName', localBrowserFirstName); } catch { /* */ }
-      renderSelectedPanel();
-    });
-    const localCb = localItem.querySelector('input.local-cb');
-    localCb.addEventListener('change', () => {
-      if (localCb.checked) {
-        if (!selectedProfileIds.includes('local-browser')) {
-          selectedProfileIds.push('local-browser');
-          selectedProfileNames['local-browser'] = 'Local Browser';
-        }
-        localItem.classList.add('selected');
-        if (localNameRow) {
-          localNameRow.hidden = false;
-          // Auto-focus the name input the first time someone ticks the box —
-          // makes the "now we need your name" interaction feel obvious.
-          if (!localNameInput.value) setTimeout(() => localNameInput.focus(), 0);
-        }
-      } else {
-        selectedProfileIds = selectedProfileIds.filter(id => id !== 'local-browser');
-        delete selectedProfileNames['local-browser'];
-        localItem.classList.remove('selected');
-        if (localNameRow) localNameRow.hidden = true;
-      }
-      renderSelectedPanel();
-      // The Local Browser counts as an account toward the 2+-account parallel
-      // unlock and the throughput math — recompute, matching the GoLogin handler.
-      updateCampaignSummary();
-    });
-    localHost.appendChild(localItem);
-  }
 
   // v2.112.10 (Window C, free-first): compute each profile's state ONCE so we can
   // both sort (usable accounts first) and render from the same value. State comes
@@ -2841,12 +2805,19 @@ function renderProfiles(profiles) {
 }
 
 function renderSelectedPanel() {
+  const localSelected = selectedProfileIds.includes('local-browser');
+  document.getElementById('local-browser-account').checked = localSelected;
+  document.getElementById('local-browser-tile').classList.toggle('selected', localSelected);
+  document.getElementById('local-browser-name-row').hidden = !localSelected;
+
   // Live "N to add · M to remove" while picking accounts for a running cloud
   // campaign. No-op (and cheap) when that flow isn't active.
   try { if (_acctAdd) _renderAcctAddBanner(); } catch (_) { /* */ }
   const panel = document.getElementById('selected-panel');
   const list = document.getElementById('selected-list');
   const count = document.getElementById('profiles-count');
+  const accountTotal = allProfilesData.length + Number(!document.getElementById('local-browser-host').hidden);
+  if (count) count.textContent = `${selectedProfileIds.length} selected / ${accountTotal} total`;
 
   // Right-pane mirror
   const rpCount = document.getElementById('rp-selected-count');
@@ -2863,12 +2834,10 @@ function renderSelectedPanel() {
 
   if (selectedProfileIds.length === 0) {
     panel.classList.add('hidden');
-    if (count) count.textContent = `0 selected / ${allProfilesData.length} total`;
     return;
   }
 
   panel.classList.remove('hidden');
-  if (count) count.textContent = `${selectedProfileIds.length} selected / ${allProfilesData.length} total`;
 
   list.innerHTML = selectedProfileIds.map((id, i) => {
     const name = profileLabel(id);
@@ -7015,7 +6984,7 @@ async function startCampaign(opts = {}) {
   const _modeForValidation = _modeEarly;
   const _autoRoutedModes = new Set(['check_status', 'message_only', 'introduce_back']);
   if (!_autoRoutedModes.has(_modeForValidation) && selectedProfileIds.length === 0) {
-    alert('Select at least one GoLogin profile.'); return;
+    alert('Select at least one account.'); return;
   }
   // v2.112.26 (#1): the "Before you start…" assigned/in-use confirm dialog was
   // removed as obsolete — the persistent banner in the accounts picker already
@@ -7684,14 +7653,10 @@ function refreshLaunchForRunTarget() {
 function refreshAccountPickerForRunTarget() {
   const cloud = getRunTarget() === 'cloud';
   const localHost = document.getElementById('local-browser-host');
-  // A cloud VM has no local browser — the "Local Browser" sender can't run there.
-  if (localHost) localHost.style.display = cloud ? 'none' : '';
-  if (cloud && selectedProfileIds.includes('local-browser')) {
-    selectedProfileIds = selectedProfileIds.filter((id) => id !== 'local-browser');
-    delete selectedProfileNames['local-browser'];
-    if (typeof renderSelectedPanel === 'function') renderSelectedPanel();
-    if (typeof updateCampaignSummary === 'function') updateCampaignSummary();
-  }
+  const mode = document.getElementById('campaign-mode')?.value;
+  // These campaign modes take a manually selected local sender.
+  localHost.hidden = cloud || (mode !== 'open_profile_only' && mode !== 'connect_and_introduce');
+  if (localHost.hidden && selectedProfileIds.includes('local-browser')) removeProfile('local-browser');
 }
 // Disable the ☁︎ Cloud VM tab when the engine isn't configured (no SCRAPER_ENGINE_URL);
 // a disabled <button> can't be clicked, and we coerce any programmatic cloud selection to local.
@@ -18961,6 +18926,7 @@ applySavedEdits();
 initMyIdentifier();
 restoreCollapsedSections();
 restoreLastMode();
+initLocalBrowserPicker();
 loadProfiles();
 // Defer the first onModeChange to a microtask so the ENTIRE module finishes
 // evaluating first. onModeChange -> initFollowerGrowth touches module state
