@@ -82,23 +82,20 @@ Look at existing commits (`git log --oneline -20`) and match the pattern:
 
 Body explains **why**, not **what** (the diff shows what). Reference the bug/feature reasoning so future-you can re-read and understand the motivation.
 
-### Shipping a new release
+### Shipping a macOS release
 
-Only when you and Antonio have agreed it's time:
+When you and Antonio have agreed to release, merge the changes and bump both
+`package.json` and `package-lock.json` on `main`. Use
+`npm version <version> --no-git-tag-version` in the version bump branch.
 
-```bash
-# 1. Bump version in package.json (e.g. 2.11.1 → 2.11.2)
-# 2. Commit + push
-git commit -am "v2.11.2: <summary>"
-git push
+In GitHub, open **Actions → Release macOS → Run workflow** and select `main`.
+Leave **Publish both DMGs to GitHub Releases** checked to publish, or clear it to
+build and download the DMGs from the workflow run's **Artifacts** section.
 
-# 3. Tag and build DMGs
-git tag v2.11.2
-git push origin v2.11.2
-npm run release:mac    # builds DMGs and uploads them to the GitHub release
-```
-
-The Apps Script "Install" modal automatically picks up the new version — no Apps Script changes needed.
+Publishing uses the version in `package.json`. Both builds must succeed before
+the workflow publishes `Ortus-Basics-arm64.dmg` and `Ortus-Basics-x64.dmg` to the
+matching tag. Use a new version for each release. The app picks up the published
+version through **Check for updates**.
 
 ## Project structure
 
