@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
 
+env:
+  RELEASE_COMMIT: e078d2d82b67d9ccc13f5134ea4912967155eb0f
+
 concurrency:
   group: release-macos
   cancel-in-progress: false
@@ -18,7 +21,7 @@ concurrency:
 jobs:
   build:
     name: Build macOS DMG (${{ matrix.arch }})
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/codex/release-v1.7.80-recovery'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 45
     strategy:
@@ -27,12 +30,13 @@ jobs:
           - arch: arm64
             runner: macos-15
           - arch: x64
-            runner: macos-15-intel
+            runner: macos-15
 
     steps:
       - name: Check out the release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ env.RELEASE_COMMIT }}
           persist-credentials: false
 
       - name: Set up Node.js
@@ -54,6 +58,14 @@ jobs:
           # An explicit target overrides the dual-architecture target in package.json.
           npm run electron:build -- --mac "dmg:$DMG_ARCH" --publish never
           test -s "dist/Ortus-Basics-$DMG_ARCH.dmg"
+          if [[ "$DMG_ARCH" == x64 ]]; then
+            app="dist/mac/Ortus Basics.app/Contents"
+            test "$(lipo -archs "$app/MacOS/Ortus Basics")" = x86_64
+            sqlite="$(find "$app/Resources/app/node_modules/sqlite3" -name node_sqlite3.node -print -quit)"
+            test -n "$sqlite"
+            test "$(lipo -archs "$sqlite")" = x86_64
+            echo "Verified the packaged app and SQLite binary are x86_64."
+          fi
 
       - name: Upload the DMG
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -65,7 +77,7 @@ jobs:
 
   publish:
     name: Publish the GitHub Release
-    if: github.ref == 'refs/heads/main' && inputs.publish
+    if: github.ref == 'refs/heads/codex/release-v1.7.80-recovery' && inputs.publish
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 15
@@ -76,6 +88,7 @@ jobs:
       - name: Check out the release commit
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ env.RELEASE_COMMIT }}
           persist-credentials: false
 
       - name: Download both DMGs
@@ -104,11 +117,11 @@ jobs:
             --jq ".[] | select(.ref == \"refs/tags/$tag\") | .ref")"
           if [[ -z "$tag_ref" ]]; then
             gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
-              -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" --silent
+              -f ref="refs/tags/$tag" -f sha="$RELEASE_COMMIT" --silent
           fi
 
           tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)"
-          if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+          if [[ "$tag_commit" != "$RELEASE_COMMIT" ]]; then
             echo "::error::Tag $tag points to a different commit. Bump the version in package.json and package-lock.json."
             exit 1
           fi
