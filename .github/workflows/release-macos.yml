@@ -1,0 +1,117 @@
+name: Release macOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish both DMGs to GitHub Releases
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-macos
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build macOS DMG (${{ matrix.arch }})
+    if: github.ref == 'refs/heads/main'
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            runner: macos-15
+          - arch: x64
+            runner: macos-15-intel
+
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        env:
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: npm ci --no-audit --no-fund
+
+      - name: Build a credential-free DMG
+        env:
+          DMG_ARCH: ${{ matrix.arch }}
+        run: |
+          printf '%s\n' '# Release build with no bundled credentials' > .env
+          npm run electron:build -- --mac "--$DMG_ARCH" --publish never
+          test -s "dist/Ortus-Basics-$DMG_ARCH.dmg"
+
+      - name: Upload the DMG
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ortus-basics-macos-${{ matrix.arch }}
+          path: dist/Ortus-Basics-${{ matrix.arch }}.dmg
+          if-no-files-found: error
+          compression-level: 0
+
+  publish:
+    name: Publish the GitHub Release
+    if: github.ref == 'refs/heads/main' && inputs.publish
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out the release commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download both DMGs
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: ortus-basics-macos-*
+          merge-multiple: true
+          path: dist
+
+      - name: Tag the built commit and publish both DMGs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -s dist/Ortus-Basics-arm64.dmg
+          test -s dist/Ortus-Basics-x64.dmg
+
+          version="$(jq -er '.version' package.json)"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::package.json must contain a stable version such as 1.7.80"
+            exit 1
+          fi
+          tag="v$version"
+
+          tag_ref="$(gh api "repos/$GITHUB_REPOSITORY/git/matching-refs/tags/$tag" \
+            --jq ".[] | select(.ref == \"refs/tags/$tag\") | .ref")"
+          if [[ -z "$tag_ref" ]]; then
+            gh api --method POST "repos/$GITHUB_REPOSITORY/git/refs" \
+              -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA" --silent
+          fi
+
+          tag_commit="$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha)"
+          if [[ "$tag_commit" != "$GITHUB_SHA" ]]; then
+            echo "::error::Tag $tag points to a different commit. Bump the version in package.json and package-lock.json."
+            exit 1
+          fi
+
+          gh release create "$tag" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "Ortus Basics $version" --generate-notes \
+            dist/Ortus-Basics-arm64.dmg dist/Ortus-Basics-x64.dmg
