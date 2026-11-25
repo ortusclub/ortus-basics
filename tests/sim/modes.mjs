@@ -35,6 +35,7 @@ const PRIMARY_CONTROLS = [
   { id: 'primary-person-name', label: 'Primary person · name field' },
   { id: 'primary-intro-body', label: 'Introduction message box' },
 ];
+const LOCAL_BROWSER_CONTROL = { id: 'local-browser-account', label: 'Local Browser account checkbox' };
 const PRIMARY = {
   primaryName: 'Pat Primary',
   primaryUrl: 'https://www.linkedin.com/in/pat-primary/',
@@ -58,7 +59,7 @@ export const MODE_PROFILES = {
     successStamp: { stage: 'Connect Pending' },
   },
   connect_and_introduce: {
-    screenControls: PRIMARY_CONTROLS, primaryChecked: true,
+    screenControls: [...PRIMARY_CONTROLS, LOCAL_BROWSER_CONTROL], primaryChecked: true,
     leadKind: 'cold', templates: { ...PRIMARY }, startOpts: { primaryCheckTiming: 'skip' }, sends: 'invite',
     successStamp: { stage: 'Connect Pending' },
     followUp: { kind: 'intro', stamp: { introductionStatus: /Introduction Made|IC Sent/i } },
@@ -85,7 +86,11 @@ export const MODE_PROFILES = {
     successStamp: { introStatus: /IC Sent|Introduction/i },
   },
   open_profile_only: {
-    screenControls: [{ id: 'tpl-op-subject', label: 'Message subject field' }, { id: 'tpl-op-body', label: 'Message box' }],
+    screenControls: [
+      LOCAL_BROWSER_CONTROL,
+      { id: 'tpl-op-subject', label: 'Message subject field' },
+      { id: 'tpl-op-body', label: 'Message box' },
+    ],
     leadKind: 'open_profile',
     templates: { openProfileSubject: 'Hello', openProfileBody: 'Hi {first name}, quick hello.', opChannel: 'ln_only' },
     startOpts: {}, sends: 'message',
