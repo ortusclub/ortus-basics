@@ -51,7 +51,8 @@ jobs:
           DMG_ARCH: ${{ matrix.arch }}
         run: |
           printf '%s\n' '# Release build with no bundled credentials' > .env
-          npm run electron:build -- --mac "--$DMG_ARCH" --publish never
+          # An explicit target overrides the dual-architecture target in package.json.
+          npm run electron:build -- --mac "dmg:$DMG_ARCH" --publish never
           test -s "dist/Ortus-Basics-$DMG_ARCH.dmg"
 
       - name: Upload the DMG
